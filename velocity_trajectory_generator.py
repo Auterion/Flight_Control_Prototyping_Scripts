@@ -129,23 +129,23 @@ x_T[0] = x0
 v_d[0] = -2.0
 
 # Main loop
-for k in range(0, n-1):
+for k in range(1, n-1):
 
     # Change the desired velocity (simulate user RC sticks)
     if t[k] < 3.0:
-        v_d[k+1] = v_d[k]
+        v_d[k] = v_d[k-1]
     elif t[k] < 4.0:
-        v_d[k+1] = 4.0
+        v_d[k] = 4.0
     else:
-        v_d[k+1] = -5.0
+        v_d[k] = -5.0
 
     # Depending of the direction, start accelerating positively or negatively
-    if sign(v_d[k+1]-v_T[k]) > 0:
+    if sign(v_d[k]-v_T[k-1]) > 0:
         j_max = abs(j_max)
     else:
         j_max = -abs(j_max)
 
-    T1 = compute_T1(a_T[k], v_T[k], v_d[k+1], j_max, a_max)
+    T1 = compute_T1(a_T[k], v_T[k], v_d[k], j_max, a_max)
 
     # Force T1/2/3 to zero if smaller than an epoch to avoid chattering
     if T1 < dt:
@@ -156,23 +156,23 @@ for k in range(0, n-1):
     if T3 < dt:
         T3 = 0.0
 
-    T2 = compute_T2(T1, T3, a_T[k], v_T[k], v_d[k+1], j_max)
+    T2 = compute_T2(T1, T3, a_T[k], v_T[k], v_d[k], j_max)
 
     if T2 < dt:
         T2 = 0.0
 
     # Apply correct jerk (min, max or zero)
     if T1 > 0.0:
-        j_T[k+1] = j_max
+        j_T[k] = j_max
     elif T2 > 0.0:
-        j_T[k+1] = 0.0
+        j_T[k] = 0.0
     elif T3 > 0.0:
-        j_T[k+1] = -j_max
+        j_T[k] = -j_max
     else:
-        j_T[k+1] = 0.0
+        j_T[k] = 0.0
 
     # Integrate the trajectory
-    (a_T[k+1], v_T[k+1], x_T_new) = integrate_T(j_T[k+1], a_T[k], v_T[k], x_T[k], k, dt, a_max, v_max)
+    (a_T[k+1], v_T[k+1], x_T_new) = integrate_T(j_T[k], a_T[k], v_T[k], x_T[k], k, dt, a_max, v_max)
 
     # Lock the position setpoint if the error is bigger than some value
     drone_position = 0.0
