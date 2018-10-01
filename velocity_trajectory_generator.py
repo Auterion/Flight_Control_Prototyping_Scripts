@@ -183,11 +183,11 @@ for k in range(0, n-1):
         x_T[k+1] = x_T_new
 
 # Plot trajectory and desired setpoint
-plt.plot(t, v_d)
-plt.plot(t, j_T)
-plt.plot(t, a_T)
-plt.plot(t, v_T)
-plt.plot(t, x_T)
+plt.step(t, v_d)
+plt.step(t, j_T)
+plt.step(t, a_T)
+plt.step(t, v_T)
+plt.step(t, x_T)
 plt.legend(["v_d", "j_T", "a_T", "v_T", "x_T"])
 plt.xlabel("time (s)")
 plt.ylabel("metric amplitude")
