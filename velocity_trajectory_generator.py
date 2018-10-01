@@ -51,7 +51,7 @@ def integrate_T(j, a_prev, v_prev, x_prev, k, dt, a_max, v_max):
     elif v_T < -v_max:
         v_T = -v_max
 
-    x_T = dt/3.0 * (v_prev + a0*dt/2.0 + 2*v0) + x_prev
+    x_T = dt/3.0 * (v_prev + a_prev*dt/2.0 + 2*v_prev) + x_prev
 
     return (a_T, v_T, x_T)
 
