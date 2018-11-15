@@ -36,6 +36,10 @@ def compute_PID(K_u, T_u, rule="classical"):
 
     return (K_p, K_i, K_d)
 
+def compute_ARW_gain(K_p, K_i, K_d):
+    K_ARW = 2.0 / K_p
+
+    return K_ARW
 
 K_u = 0.8 # Ultimate closed-loop gain
 T_u = 0.5 # Oscillation period in seconds at critical gain
@@ -45,4 +49,5 @@ rules = ["classical", "overshoot", "no_overshoot", "pessen"]
 for rule in rules:
 
     (K_p, K_i, K_d) = compute_PID(K_u, T_u, rule=rule)
-    print("Rule \"{}\"\nKp = {}\nKi = {}\nKd = {}\n".format(rule, K_p, K_i, K_d))
+    K_ARW = compute_ARW_gain(K_p, K_i, K_d)
+    print("Rule \"{}\"\nKp = {}\nKi = {}\nKd = {}\nK_ARW = {}".format(rule, K_p, K_i, K_d, K_ARW))
