@@ -30,15 +30,17 @@ res_T3 = res_T3[0]
 f2 = a_0*T_1 + j/2.0*T_1**2 + v_0 + a_0*T_2 + j*T_1*T_2 + a_0*T_3 + j*T_1*T_3 - j/2.0*T_3**2 - v_3
 print("Step 1 - Setting T_2 = 0, compute T_1 as follows:")
 res_T1 = solve(f2.subs([(T_2, 0), (T_3, res_T3)]), T_1)
+res_T1 = res_T1[0]
 print("T_1 =")
 pprint(res_T1)
 print("Step 2 - Check for saturation. If a_0 + j*T_1 > a_max, recompute T_1 using:")
 print("T_1 =")
-pprint(solve(a_0 + j*T_1 - a_max, T_1))
+pprint(solve(a_0 + j*T_1 - a_max, T_1)[0])
 print("Step 3 - Compute T3 using:")
 print("T_3 =")
 pprint(res_T3)
 res_T2 = solve(f2, T_2)
+res_T2 = res_T2[0]
 print("Step 3 - Finally compute the required constant acceleration part using:")
 print("T_2 =")
 pprint(res_T2)
@@ -65,3 +67,20 @@ f_v_sp_subs = f_v_sp.subs(f_a_sp, a_sp)
 pprint(f_v_sp_subs)
 print("x_sp =")
 pprint(f_x_sp)
+
+print("=============== Time synchronization ===============")
+T = Symbol("T", real=True) # Total time
+
+f3 = T - T_1 - T_2 - T_3 # Time constraint
+res_T2 = solve(f3.subs(T_3, res_T3), T_2)
+res_T2 = res_T2[0]
+res_T1 = solve(f2.subs([(T_2, res_T2), (T_3, res_T3)]), T_1)
+res_T1 = res_T1
+print("For multiple axes applications, we need to synchronize the trajectories such that they all end at the same time.\n\
+Given the total time of the longest trajectory T, we can solve again T_1, T_2 and T_3 for the other axes:")
+print("T_1 =")
+pprint(res_T1)
+print("T_3 =")
+pprint(res_T3)
+print("T_2 =")
+pprint(solve(f3, T_2)[0])

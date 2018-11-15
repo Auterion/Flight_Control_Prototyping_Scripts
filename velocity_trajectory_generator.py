@@ -85,6 +85,32 @@ def compute_T1(a0, v0, v3, j_max, a_max):
 
     return T1
 
+
+def computeT1_T123(T123, accel_prev, vel_prev, vel_setpoint, max_jerk):
+	a = -max_jerk;
+	b = max_jerk * T123 - accel_prev;
+        c = vel_prev + accel_prev * T123 - accel_prev**2 / (2.0 * max_jerk) - vel_setpoint
+	delta = b**2 - 4.0 * a * c
+
+	sqrt_delta = sqrt(delta);
+	denominator_inv = 1.0 / (2.0 * a);
+	T1_plus = (-b + sqrt_delta) * denominator_inv;
+	T1_minus = (-b - sqrt_delta) * denominator_inv;
+        T1_plus = max(T1_plus, 0.0)
+        T1_minus = max(T1_minus, 0.0)
+        T3_plus = compute_T3(T1_plus, accel_prev, max_jerk)
+        T3_minus = compute_T3(T1_minus, accel_prev, max_jerk)
+        if (T1_plus + T3_plus > T123):
+            T1 = T1_minus
+        elif (T1_minus + T3_minus > T123):
+            T1 = T1_plus
+        else:
+            T1 = max(T1_plus, T1_minus)
+
+        print("plus = {}, minus = {}".format(T1_plus, T1_minus))
+
+	return T1
+
 def compute_T3(T1, a0, j_max):
     T3 = a0/j_max + T1
     T3 = max(T3, 0.0)
@@ -94,6 +120,10 @@ def compute_T2(T1, T3, a0, v0, v3, j_max):
     f = a0*T1 + j_max*T1*T1/2.0 + v0 + a0*T3 + j_max*T1*T3 - j_max*T3*T3/2.0
     T2 = (v3 - f) / (a0 + j_max*T1)
     T2 = max(T2, 0.0)
+    return T2
+
+def compute_T2_T123(T123, T1, T3):
+    T2 = T123 - T1 - T3
     return T2
 
 # ============================================================
@@ -184,6 +214,11 @@ for k in range(1, n-1):
     else :
         x_T[k+1] = x_T_new
 
+T123 = 5.0
+T1 = computeT1_T123(T123, accel_prev=0.0, vel_prev=0.0, vel_setpoint=2.0, max_jerk=10.0)
+T3 = compute_T3(T1, 0.0, 10.0)
+T2 = compute_T2_T123(T123, T1, T3)
+print("T1 = {}\tT2 = {}\tT3 = {}\n".format(T1, T2, T3))
 # Plot trajectory and desired setpoint
 plt.step(t, v_d)
 plt.step(t, j_T)
