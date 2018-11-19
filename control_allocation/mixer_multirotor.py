@@ -46,12 +46,9 @@ def minimize_sat(u, u_min, u_max, delta_u):
     k_1 = compute_desaturation_gain(u, u_min, u_max, delta_u)
     u_1 = u + k_1 * delta_u # Try to unsaturate
     k_2 = compute_desaturation_gain(u_1, u_min, u_max, delta_u)
-    if abs(k_2) > 1e-6:
-        # Unsaturating an actuator saturates an other one:
-        # Equilibrate the saturations
-        k_opt = 0.25 * (k_1 - k_2)
-    else:
-        k_opt = k_1
+
+    # Compute optimal gain that equilibrates the saturations
+    k_opt = k_1 + 0.5 * k_2
 
     u_prime = u + k_opt * delta_u
     return u_prime
@@ -171,7 +168,7 @@ u_new_sat = np.minimum(u_new_sat, np.matlib.ones(u.size).T)
 # Display some results
 print("u = {}\n".format(u))
 print("u_new = {}\n".format(u_new))
-print("u_new_sat = {}\n".format(u_new))
+print("u_new_sat = {}\n".format(u_new_sat))
 print("Desired accelerations = {}\n".format(m_sp))
 # Compute back the allocated accelerations
 m_new = B * u_new_sat
