@@ -1,7 +1,9 @@
 # Multicopter control allocation
-The general idea is the same as it is now: the output is computed and then we try to relax some constraints (e.g.: vertical thrust or yaw acceleration) to minimize the saturation. The actuator effectiveness matrix B is defined in the toml files and the control allocation matrix P is computed in the python script during compilation and is given to the mixer (nothing different so far).
-However, instead of decreasing the input and re-mixing several times, directly change the mixed output using the vectors given by the control allocation matrix P. Those vectors are orthogonal (4D space) and give the direct information about how to change the outputs in order to modify an input (in the case of a symmetric quad, the result is the same as before: add the same value to the 4 motors to modify thrust without changing roll/pitch/yaw accelerations).
-This gives a more general approach and gives a good base for 6D control allocation of fully actuated vehicles.
+The algorithm implements the following idea: the signals going to the actuators are computed by the multiplication of the control vector **m** (desired rotational and linear accelerations/torques) by the control allocation matrix **P**. Then, some constraints (e.g.: vertical thrust or yaw acceleration) are relxed to minimize the saturation of the actuators. 
+In PX4, the actuator effectiveness matrix **B** is defined in the toml files by the geometry of the vehicle and the control allocation matrix **P** is computed in the python script during compilation and is given to the mixer (nothing different so far).
+
+Instead of decreasing the input and re-mixing several times as it is done at the moment, this algorithm makes use of the vectors given by the control allocation matrix P to directly manipulate the output vector. Those vectors are orthogonal (4D space) and give the direct information about how to change the outputs in order to modify an input. In the case of a symmetric quad, the result is the same as before: add the same value to the 4 motors to modify thrust without changing roll/pitch/yaw accelerations.
+This strategy gives a more general approach and gives a good base for 6D control allocation of fully actuated vehicles.
 
 ## Saturation minimization
 Given that each axes given by the columns of the control allocation are orthogonal, we only need to optimize a single variable at a time an the optimal gain ca be find in a few simple steps:
@@ -32,6 +34,6 @@ Three modes of prioritization are currently supported:
 ### When to use which mode?
 The normal mode is the default mode as it is the safest one and should be used for all the new platform bringups.
 
-The Airmode XY is useful some fixedwings VTOLs (e.g.: quadplane) as it helps to maintain stability when the wing has lift but the control surfaces become uneffective.
+The Airmode XY is useful for some fixedwings VTOLs (e.g.: quadplane) as it helps to maintain stability when the wing has lift but the control surfaces become uneffective. It can also be used on multicopters with weak yaw control.
 
 The Airmode XYZ is useful for racer quads that have good yaw authority and require full attitude control even at zero and full throttle.
