@@ -69,10 +69,14 @@ def airmode_xy(m_sp, P ,u_min, u_max):
     m_sp_yaw_only[2, 0] = m_sp[2, 0]
     u_pp = u_prime + P * m_sp_yaw_only
 
-    # Change yaw acceleration to unsaturate the outputs if needed (do not change roll/pitch/thrust)
+    # Change yaw acceleration to unsaturate the outputs if needed (do not change roll/pitch),
+    # and allow some yaw response at maximum thrust
     u_r_dot = P[:,2]
-    u_ppp = minimize_sat(u_pp, u_min, u_max, u_r_dot)
-    return (u, u_ppp)
+    u_ppp = minimize_sat(u_pp, u_min, u_max+0.15, u_r_dot)
+    u_T = P[:, 3]
+    u_ppp2 = minimize_sat(u_ppp, -1000, u_max, u_T)
+
+    return (u, u_ppp2)
 
 
 def airmode_xyz(m_sp, P, u_min, u_max):
