@@ -137,11 +137,21 @@ B = np.matrix([
 # u = P * m
 P = np.linalg.pinv(B)
 
+##################################
+# quad x
+P = np.matrix([
+	[ -0.707107,  0.707107,  1.000000,  1.000000 ],
+	[  0.707107, -0.707107,  1.000000,  1.000000 ],
+	[  0.707107,  0.707107, -1.000000,  1.000000 ],
+	[ -0.707107, -0.707107, -1.000000,  1.000000 ]])
+B = np.linalg.pinv(P)
+##################################
+
 # Desired accelerations (actuator controls)
-p_dot_sp = -0.3 # roll acceleration (p is the roll rate)
-q_dot_sp = 0.4 # pitch acceleration
-r_dot_sp = 0.8 # yaw acceleration
-T_sp = 3.9 # vertical thrust
+p_dot_sp = 2.2 # roll acceleration (p is the roll rate)
+q_dot_sp = -0.1 # pitch acceleration
+r_dot_sp = 0.03 # yaw acceleration
+T_sp = 1.0 # vertical thrust
 m_sp = np.matrix([p_dot_sp, q_dot_sp, r_dot_sp, T_sp]).T # Vector of desired "accelerations"
 
 # Airmode type (none/xy/xyz)
