@@ -98,7 +98,9 @@ def normal_mode(m_sp, P, u_min, u_max):
     # Use thrust to unsaturate the outputs if needed
     # by reducing the thrust only
     u_T = P[:, 3]
-    u_prime = minimize_sat(u, -1000, u_max, u_T)
+    u_prime = minimize_sat(u, u_min, u_max, u_T)
+    if (u_prime > (u)).any():
+        u_prime = u
 
     # Reduce roll/pitch acceleration if needed to unsaturate
     u_p_dot = P[:, 0]
