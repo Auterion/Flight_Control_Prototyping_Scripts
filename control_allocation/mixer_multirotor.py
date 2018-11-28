@@ -95,17 +95,16 @@ def normal_mode(m_sp, P, u_min, u_max):
     m_sp_no_yaw[2, 0] = 0.0
     u = P * m_sp_no_yaw
 
-    # Reduce roll/pitch acceleration if needed to unsaturate the lower side.
-    # We must do this before unsaturating the thrust, otherwise a very large
-    # roll/pitch demand would lead to 0 thrust (and thus set roll/pitch to 0 as well)
-    u_p_dot = P[:, 0]
-    u_p2 = minimize_sat(u, u_min, 1000, u_p_dot)
-    u_q_dot = P[:, 1]
-    u_p3 = minimize_sat(u_p2, u_min, 1000, u_q_dot)
-
-    # Only reduce thrust to unsaturate the upper side
+    # Use thrust to unsaturate the outputs if needed
+    # by reducing the thrust only
     u_T = P[:, 3]
-    u_prime = minimize_sat(u_p3, -1000, u_max, u_T)
+    u_prime = minimize_sat(u, -1000, u_max, u_T)
+
+    # Reduce roll/pitch acceleration if needed to unsaturate
+    u_p_dot = P[:, 0]
+    u_p2 = minimize_sat(u_prime, u_min, u_max, u_p_dot)
+    u_q_dot = P[:, 1]
+    u_p3 = minimize_sat(u_p2, u_min, u_max, u_q_dot)
 
     # Mix yaw axis independently
     m_sp_yaw_only = np.matlib.zeros(m_sp.size).T
