@@ -53,8 +53,20 @@ def minimize_sat(u, u_min, u_max, delta_u):
     u_prime = u + k_opt * delta_u
     return u_prime
 
+def mix_yaw(m_sp, u, P, u_min, u_max):
+    m_sp_yaw_only = np.matlib.zeros(m_sp.size).T
+    m_sp_yaw_only[2, 0] = m_sp[2, 0]
+    u_p = u + P * m_sp_yaw_only
 
-def airmode_xy(m_sp, P ,u_min, u_max):
+    # Change yaw acceleration to unsaturate the outputs if needed (do not change roll/pitch),
+    # and allow some yaw response at maximum thrust
+    u_r_dot = P[:,2]
+    u_pp = minimize_sat(u_p, u_min, u_max+0.15, u_r_dot)
+    u_T = P[:, 3]
+    u_ppp = minimize_sat(u_pp, -1000, u_max, u_T)
+    return u_ppp
+
+def airmode_xy(m_sp, P, u_min, u_max):
     # Mix without yaw
     m_sp_no_yaw = m_sp.copy()
     m_sp_no_yaw[2, 0] = 0.0
@@ -65,18 +77,9 @@ def airmode_xy(m_sp, P ,u_min, u_max):
     u_prime = minimize_sat(u, u_min, u_max, u_T)
 
     # Mix yaw axis independently
-    m_sp_yaw_only = np.matlib.zeros(m_sp.size).T
-    m_sp_yaw_only[2, 0] = m_sp[2, 0]
-    u_pp = u_prime + P * m_sp_yaw_only
+    u_final = mix_yaw(m_sp, u_prime, P, u_min, u_max)
 
-    # Change yaw acceleration to unsaturate the outputs if needed (do not change roll/pitch),
-    # and allow some yaw response at maximum thrust
-    u_r_dot = P[:,2]
-    u_ppp = minimize_sat(u_pp, u_min, u_max+0.15, u_r_dot)
-    u_T = P[:, 3]
-    u_ppp2 = minimize_sat(u_ppp, -1000, u_max, u_T)
-
-    return (u, u_ppp2)
+    return (u, u_final)
 
 
 def airmode_xyz(m_sp, P, u_min, u_max):
@@ -109,15 +112,8 @@ def normal_mode(m_sp, P, u_min, u_max):
     u_p3 = minimize_sat(u_p2, u_min, u_max, u_q_dot)
 
     # Mix yaw axis independently
-    m_sp_yaw_only = np.matlib.zeros(m_sp.size).T
-    m_sp_yaw_only[2, 0] = m_sp[2, 0]
-    u_p4 = u_p3 + P * m_sp_yaw_only
-
-    # Change yaw acceleration to unsaturate the outputs if needed (do not change roll/pitch/thrust)
-    u_r_dot = P[:,2]
-    u_p5 = minimize_sat(u_p4, u_min, u_max, u_r_dot)
-    return (u, u_p5)
-
+    u_final = mix_yaw(m_sp, u_p3, P, u_min, u_max)
+    return (u, u_final)
 
 # --------------------------------------------------
 # --------------------------------------------------
