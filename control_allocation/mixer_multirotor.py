@@ -20,6 +20,10 @@ def compute_desaturation_gain(u, u_min, u_max, delta_u):
     d_u_sat_minus = u_min - u
     k = np.zeros(u.size*2)
     for i in range(u.size):
+        if abs(delta_u[i]) < 0.000001:
+            # avoid division by zero
+            continue
+
         if d_u_sat_minus[i] > 0.0:
             k[2*i] = d_u_sat_minus[i] / delta_u[i]
         if d_u_sat_plus[i] < 0.0:
