@@ -39,7 +39,7 @@ import numpy as np
 from numpy import linalg as la
 
 from pyquaternion import Quaternion
-from math import sin, cos, degrees, radians
+from math import sin, cos, asin, acos, degrees, radians, sqrt
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -71,6 +71,41 @@ def qcontrol_full(q = Quaternion(), qd = Quaternion()):
     Returns:
         angular velocity to apply to the body to reach the specified setpoint
     """
+    # quaternion attitude control law, qe is rotation from q to qd
+    qe = q.inverse * qd
+    # using sin(alpha/2) scaled rotation axis as attitude error (see quaternion definition by axis angle)
+    # also taking care of the antipodal unit quaternion ambiguity
+    return 2 * np.sign(qe[0]+1e-10) * np.array([qe[1], qe[2], qe[3]])
+
+def qcontrol_reduced(q = Quaternion(), qd = Quaternion(), yw = 1):
+    """
+    Calculate angular velocity to get from current to desired attitude
+    The body yaw axis has less priority then roll and pitch hence the name "reduced".
+
+    Params:
+        q: [optional] current body attitude quaternion. Defaults to level.
+        qd: [optional] desired body attitude quaternion setpoint. Defaults to level.
+        yw: [optional] desired body attitude quaternion setpoint. Defaults to full yaw priority.
+
+    Returns:
+        angular velocity to apply to the body to reach the specified setpoint
+    """
+    # extract body z-axis and desired body z-axis
+    ez = dcm_z(q)
+    ezd = dcm_z(qd)
+    # reduced rotation that only aligns the body z-axis
+    qd_red = vtoq(ez, ezd)
+    # transform rotation from current to desired z-axis
+    # into a world frame reduced desired attitude
+    qd_red *= q
+
+    # mix full and reduced desired attitude using yaw weight
+    q_mix = qd_red.inverse * qd
+    q_mix *= np.sign(q_mix[0])
+    # catch numerical problems with the domain of acosf and asinf
+    q_mix.q = np.clip(q_mix.q, -1, 1)
+    qd = qd_red * Quaternion(cos(yw * acos(q_mix[0])), 0, 0, sin(yw * asin(q_mix[3])))
+
     # quaternion attitude control law, qe is rotation from q to qd
     qe = q.inverse * qd
     # using sin(alpha/2) scaled rotation axis as attitude error (see quaternion definition by axis angle)
@@ -119,6 +154,47 @@ def dcm_z(q = Quaternion()):
     # take last column vector
     return R[:,2]
 
+def vtoq(src = np.array([0,0,1]), dst = np.array([0,0,1]), eps = 1e-5):
+    """
+    Calculate quaternion representing the shortest rotation
+    from one vector to the other
+
+    Params:
+        src: [optional] Source 3D vector from which to start the rotation. Defaults to upwards direction.
+        dst: [optional] Destination 3D vector to which to rotate. Defaults to upwards direction.
+        eps: [optional] numerical thershold to catch 180 degree rotations. Defaults to 1e-5.
+
+    Returns:
+        quaternion rotationg the shortest way from src to dst
+    """
+    q = Quaternion()
+    cr = np.cross(src, dst)
+    dt = np.dot(src, dst)
+
+    if(la.norm(cr) < eps and dt < 0):
+        # handle corner cases with 180 degree rotations
+        # if the two vectors are parallel, cross product is zero
+        # if they point opposite, the dot product is negative
+        cr = np.abs(src)
+        if(cr[0] < cr[2]):
+            if(cr[0] < cr[2]):
+                cr = np.array([1,0,0])
+            else:
+                cr = np.array([0,0,1])
+        else:
+            if(cr[1] < cr[2]):
+                cr = np.array([0,1,0])
+            else:
+                cr = np.array([0,0,1])
+        q[0] = 0
+    else:
+        # normal case, do half-way quaternion solution
+        q[0] = dt + sqrt(np.dot(src,src) * np.dot(dst,dst))
+    q[1] = cr[0]
+    q[2] = cr[1]
+    q[3] = cr[2]
+    return q.normalised
+
 # setup 3D plot
 fig = plt.figure()
 ay = fig.add_subplot(111, projection='3d')
@@ -153,7 +229,7 @@ while steps < 1000 and (not np.isclose(p, pd).all() or (q.inverse * qd).degrees 
     # run attitude control
     qd = ftoq(fd, yd)
     thrust = np.dot(fd, dcm_z(q))
-    w = 3*qcontrol_full(q, qd)
+    w = 3*qcontrol_reduced(q, qd, 0.4)
 
     # propagate states with minimal, ideal simulation
     q.integrate(w, dt)
