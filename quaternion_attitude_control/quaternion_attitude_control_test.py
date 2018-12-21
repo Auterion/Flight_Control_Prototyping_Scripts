@@ -196,7 +196,7 @@ def vtoq(src = np.array([0,0,1]), dst = np.array([0,0,1]), eps = 1e-5):
     return q.normalised
 
 # setup 3D plot
-fig = plt.figure()
+fig = plt.figure('Quaternion attitude control')
 ay = fig.add_subplot(111, projection='3d')
 ay.set_xlim([-5, 1])
 ay.set_ylim([-5, 1])
