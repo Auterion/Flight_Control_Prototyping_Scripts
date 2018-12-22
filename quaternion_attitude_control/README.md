@@ -4,12 +4,12 @@ The algorithm implements an attitude control strategy for flying vehicles especi
 ## Setup
 To run the script you need Python 3 (tested on 3.7.1) and the following python modules:
 ```
-python -m pip install numpy matplotlib pyquaternion
+sudo python3 -m pip install numpy matplotlib pyquaternion
 ```
 
 Command to run the script:
 ```
-python quaternion_attitude_control_test.py
+python3 quaternion_attitude_control_test.py
 ```
 
 ## Details
