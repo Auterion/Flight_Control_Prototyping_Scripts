@@ -33,6 +33,11 @@ Description:
 
 from numpy import *
 import matplotlib.pylab as plt
+import sys
+import math
+
+FLT_EPSILON = sys.float_info.epsilon
+NAN = float('nan')
 
 
 def integrate_T(j, a_prev, v_prev, x_prev, k, dt, a_max, v_max):
@@ -57,33 +62,85 @@ def integrate_T(j, a_prev, v_prev, x_prev, k, dt, a_max, v_max):
 
     return (a_T, v_T, x_T)
 
+def recomputeMaxJerk(a0, v3, T1, j_max):
 
-def compute_T1(a0, v0, v3, j_max, a_max):
+    # If T1 is smaller than dt, it means that the jerk is too large to reach the
+    # desired acceleration with a bang-bang signal => recompute the maximum jerk
 
-    b = 2*a0/j_max
-    c = v0/j_max + a0*a0/(2.0*j_max*j_max) - v3/j_max
-    delta = b*b - 4.0*c
+    print(a0, v3, T1)
+    delta = 2.0*T1**2*a0**2 - 4.0*T1*a0*v3 + v3**2
     if delta < 0.0:
         return 0.0
-    T1_plus = (-b + sqrt(delta)) / 2.0
-    T1_minus = (-b - sqrt(delta)) / 2.0
+    j_new_minus = -0.5*(2.0*T1*a0 - v3)/T1**2 - 0.5*sqrt(delta)/T1**2
+    j_new_plus = -0.5*(2.0*T1*a0 - v3)/T1**2 + 0.5*sqrt(delta)/T1**2
+    print('j_new_plus = {}, j_new_minus = {}'.format(j_new_plus, j_new_minus))
+    (T1_plus, T3_plus) = compute_T1_T3(a0, v3, j_new_plus)
+    (T1_minus, T3_minus) = compute_T1_T3(a0, v3, j_new_minus)
+    if T1_plus >= 0.0 and T3_plus >= 0.0:
+        j_new = j_new_plus
+        if T1_minus >= 0.0 and T3_minus >= 0.0:
+            print('Both jerks are valid; check for time optimality')
+            if T1_plus + T3_plus > T1_minus + T3_minus:
+                j_new = j_new_minus
+    elif T1_minus >= 0.0 and T3_minus >= 0.0:
+        j_new = j_new_minus
+        if T1_plus >= 0.0 and T3_plus >= 0.0:
+            print('Both jerks are valid; check for optimality')
+            if T1_plus + T3_plus < T1_minus + T3_minus:
+                j_new = j_new_plus
+    else:
+        print('Error in recomputeMaxJerk')
+        j_new = j_max
 
-    T1 = max(max(T1_plus, T1_minus), 0.0)
+    return j_new
 
-    if T1 == 0.0:
-        print("No feasible solution found, set T1 = 0")
-        print("T1_plus = {} T1_minus = {}".format(T1_plus, T1_minus))
+def compute_T1_T3(a0, v3, j_max):
+
+    delta = 2.0*a0**2 + 4.0*j_max*v3
+    if delta < 0.0:
+        print('Complex roots\n')
+        return (0.0, j_max);
+
+    T1_plus = (-a0 + 0.5*sqrt(delta))/j_max
+    T1_minus = (-a0 - 0.5*sqrt(delta))/j_max
+
+    print('T1_plus = {}, T1_minus = {}'.format(T1_plus, T1_minus))
+    # Use the solution that produces T1 >= 0 and T3 >= 0
+    T3_plus = a0/j_max + T1_plus
+    T3_minus = a0/j_max + T1_minus
+
+    if T1_plus >= 0.0 and T3_plus >= 0.0:
+        T1 = T1_plus
+        T3 = T3_plus
+    elif T1_minus >= 0.0 and T3_minus >= 0.0:
+        T1 = T1_minus
+        T3 = T3_minus
+    else:
+        T1 = NAN
+        T3 = NAN
+
+    return (T1, T3)
+
+def compute_T1(a0, v3, j_max, a_max, dt):
+
+    (T1, T3) = compute_T1_T3(a0, v3, j_max)
+    j_max_T1 = j_max
+
+    if T1 < dt or T1 < 0.0:
+        return (0.0, j_max)
 
     # Check maximum acceleration, saturate and recompute T1 if needed
-    a1 = a0 + j_max*T1
+    a1 = a0 + j_max_T1*T1
     if a1 > a_max:
-        T1 = (a_max - a0) / j_max
+        T1 = (a_max - a0) / j_max_T1
     elif a1 < -a_max:
-        T1 = (-a_max - a0) / j_max
+        T1 = (-a_max - a0) / j_max_T1
 
-    T1 = max(T1, 0.0)
+    if j_max_T1 == 0.0:
+        T1 = 0.0
+        j_max_T1 = j_max
 
-    return T1
+    return (T1, j_max_T1)
 
 
 def computeT1_T123(T123, accel_prev, vel_prev, vel_setpoint, max_jerk):
@@ -98,8 +155,8 @@ def computeT1_T123(T123, accel_prev, vel_prev, vel_setpoint, max_jerk):
 	T1_minus = (-b - sqrt_delta) * denominator_inv;
         T1_plus = max(T1_plus, 0.0)
         T1_minus = max(T1_minus, 0.0)
-        T3_plus = compute_T3(T1_plus, accel_prev, max_jerk)
-        T3_minus = compute_T3(T1_minus, accel_prev, max_jerk)
+        (T3_plus, j_max_T3) = compute_T3(T1_plus, accel_prev, vel_prev, vel_setpoint, max_jerk)
+        (T3_minus, j_max_T3) = compute_T3(T1_minus, accel_prev, vel_prev, vel_setpoint, max_jerk)
         if (T1_plus + T3_plus > T123):
             T1 = T1_minus
         elif (T1_minus + T3_minus > T123):
@@ -111,14 +168,36 @@ def computeT1_T123(T123, accel_prev, vel_prev, vel_setpoint, max_jerk):
 
 	return T1
 
-def compute_T3(T1, a0, j_max):
+def compute_T3(T1, a0, v3, j_max, dt):
     T3 = a0/j_max + T1
-    T3 = max(T3, 0.0)
-    return T3
+    j_max_T3 = j_max
 
-def compute_T2(T1, T3, a0, v0, v3, j_max):
-    f = a0*T1 + j_max*T1*T1/2.0 + v0 + a0*T3 + j_max*T1*T3 - j_max*T3*T3/2.0
-    T2 = (v3 - f) / (a0 + j_max*T1)
+    if T1 == 0.0 and T3 < dt and T3 > 0.0:
+        # Adjust T3 to be a multiple of dt
+        print('Exact T3 = {}'.format(T3))
+        T3 = dt
+        print('Rounded T3 = {}'.format(T3))
+
+        # Adjust new max jerk for adjusted T3
+        j_max_T3 = a0/T3
+        print('Full jerk = {}'.format(j_max))
+        if abs(j_max_T3) > abs(j_max):
+            j_max_T3 = j_max
+
+        print('T3 New jerk = {}\n'.format(j_max_T3))
+
+    T3 = max(T3, 0.0)
+    return (T3, j_max_T3)
+
+def compute_T2(T1, T3, a0, v3, j_max, dt):
+    T2 = 0.0
+
+    if abs(T1*j_max + a0) > FLT_EPSILON:
+        T2 = (-0.5*T1**2*j_max - T1*T3*j_max - T1*a0 + 0.5*T3**2*j_max - T3*a0 + v3)/(T1*j_max + a0)
+
+    if T2 < dt:
+        T2 = 0.0
+
     T2 = max(T2, 0.0)
     return T2
 
@@ -138,7 +217,6 @@ x0 = 0.0
 j_max = 22.1
 a_max = 8.0
 v_max = 6.0
-x_err_max = 1.0
 
 # Simulation time parameters
 dt = 1.0/100.0
@@ -160,46 +238,40 @@ v_T[0] = v0
 x_T[0] = x0
 v_d[0] = -2.0
 
+print_T123 = True
+
 # Main loop
-for k in range(1, n-1):
+for k in range(0, n-1):
+    print('k = {}\tt = {}'.format(k, t[k]))
 
     # Change the desired velocity (simulate user RC sticks)
     if t[k] < 3.0:
-        v_d[k] = v_d[k-1]
-    elif t[k] < 4.0:
+        v_d[k] = v_d[0]
+    elif t[k] < 4.5:
         v_d[k] = 4.0
     else:
         v_d[k] = -5.0
 
     # Depending of the direction, start accelerating positively or negatively
-    if sign(v_d[k]-v_T[k-1]) > 0:
+    if sign(v_d[k]-v_T[k]) > 0:
         j_max = abs(j_max)
     else:
         j_max = -abs(j_max)
 
-    T1 = compute_T1(a_T[k], v_T[k], v_d[k], j_max, a_max)
+    (T1, j_max_T1) = compute_T1(a_T[k], v_d[k] - v_T[k], j_max, a_max, dt)
 
-    # Force T1/2/3 to zero if smaller than an epoch to avoid chattering
-    if T1 < dt:
-        T1 = 0.0
+    (T3, j_max_T1) = compute_T3(T1, a_T[k], v_d[k] - v_T[k], j_max_T1, dt)
 
-    T3 = compute_T3(T1, a_T[k], j_max)
+    T2 = compute_T2(T1, T3, a_T[k], v_d[k] - v_T[k], j_max_T1, dt)
 
-    if T3 < dt:
-        T3 = 0.0
-
-    T2 = compute_T2(T1, T3, a_T[k], v_T[k], v_d[k], j_max)
-
-    if T2 < dt:
-        T2 = 0.0
 
     # Apply correct jerk (min, max or zero)
     if T1 > 0.0:
-        j_T[k] = j_max
+        j_T[k] = j_max_T1
     elif T2 > 0.0:
         j_T[k] = 0.0
     elif T3 > 0.0:
-        j_T[k] = -j_max
+        j_T[k] = -j_max_T1
     else:
         j_T[k] = 0.0
 
