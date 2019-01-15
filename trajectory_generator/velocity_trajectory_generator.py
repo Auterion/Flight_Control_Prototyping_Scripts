@@ -40,22 +40,13 @@ FLT_EPSILON = sys.float_info.epsilon
 NAN = float('nan')
 
 
-def integrate_T(j, a_prev, v_prev, x_prev, k, dt, a_max, v_max):
+def integrate_T(j, a_prev, v_prev, x_prev, dt, a_max, v_max):
 
     a_T = j * dt + a_prev
 
-    if a_T > a_max:
-        a_T = a_max
-    elif a_T < -a_max:
-        a_T = -a_max
 
     #v_T = j*dt*dt/2.0 + a_prev*dt + v_prev # Original equation: 3 mult + 1 div + 2 add
     v_T = dt/2.0 * (a_T + a_prev) + v_prev # Simplification using a_T: 1 mult + 1 div + 2 add
-
-    if v_T > v_max:
-        v_T = v_max
-    elif v_T < -v_max:
-        v_T = -v_max
 
     #x_T = j*dt*dt*dt/6.0 + a_prev*dt*dt/2.0 + v_prev*dt + x_prev # Original equation: 6 mult + 2 div + 3 add
     x_T = dt/3.0 * (v_T + a_prev*dt/2.0 + 2*v_prev) + x_prev # Simplification using v_T: 3 mult + 2 div + 3 add
@@ -116,7 +107,7 @@ def compute_T1_T3(a0, v3, j_max):
         T1 = T1_minus
         T3 = T3_minus
     else:
-        T1 = NAN
+        T1 = 0.0
         T3 = NAN
 
     return (T1, T3)
@@ -210,20 +201,20 @@ def compute_T2_T123(T123, T1, T3):
 
 # Initial conditions
 a0 = 0.0
-v0 = 0.0
+v0 = 0.5
 x0 = 0.0
 
 # Constraints
-j_max = 22.1
-a_max = 8.0
+j_max = 9.0
+a_max = 6.0
 v_max = 6.0
 
 # Simulation time parameters
-dt = 1.0/100.0
-t_end = 10.0
+dt_0 = 1.0/50.0
+t_end = 5.2
 
 # Initialize vectors
-t = arange (0.0, t_end+dt, dt)
+t = arange (0.0, t_end+dt_0, dt_0)
 n = len(t)
 
 j_T = zeros(n)
@@ -240,14 +231,20 @@ v_d[0] = -2.0
 
 print_T123 = True
 
-dt_prev = dt
+dt_prev = dt_0
 sigma_jitter = 0.0
-#sigma_jitter = dt/10.0
+sigma_jitter = dt_0/5.0
 
 # Main loop
 for k in range(0, n-1):
-    print('k = {}\tt = {}'.format(k, t[k]))
-    dt = dt + random.randn() * sigma_jitter # Add jitter
+    dt = dt_0 + random.randn() * sigma_jitter # Add jitter
+
+    if k > 0:
+        t[k] = t[k-1] + dt
+        print('k = {}\tt = {}'.format(k, t[k]))
+
+        # Integrate the trajectory
+        (a_T[k], v_T[k], x_T_new) = integrate_T(j_T[k-1], a_T[k-1], v_T[k-1], x_T[k-1], dt, a_max, v_max)
 
     # Change the desired velocity (simulate user RC sticks)
     if t[k] < 3.0:
@@ -255,7 +252,7 @@ for k in range(0, n-1):
     elif t[k] < 4.5:
         v_d[k] = 4.0
     else:
-        v_d[k] = -5.0
+        v_d[k] = 5.0
 
     # Depending of the direction, start accelerating positively or negatively
     if sign(v_d[k]-v_T[k]) > 0:
@@ -282,22 +279,18 @@ for k in range(0, n-1):
         print('T123 = 0, t = {}\n'.format(t[k]))
         print("T1 = {}\tT2 = {}\tT3 = {}\n".format(T1, T2, T3))
 
-    # Integrate the trajectory
-    (a_T[k+1], v_T[k+1], x_T_new) = integrate_T(j_T[k], a_T[k], v_T[k], x_T[k], k, dt, a_max, v_max)
-
-    dt_prev = dt
-
 # end loop
 
 
 print('=========== END ===========')
 # Plot trajectory and desired setpoint
-plt.step(t, v_d)
-plt.step(t, j_T)
-plt.step(t, a_T)
-plt.step(t, v_T)
-plt.step(t, x_T)
-plt.legend(["v_d", "j_T", "a_T", "v_T", "x_T"])
+plt.plot(t, v_d)
+plt.plot(t, j_T)
+plt.plot(t, a_T)
+plt.plot(t, v_T)
+plt.plot(t, x_T)
+plt.step(arange (0.0, t_end+dt_0, dt_0), t)
+plt.legend(["v_d", "j_T", "a_T", "v_T", "x_T", "t"])
 plt.xlabel("time (s)")
 plt.ylabel("metric amplitude")
 plt.show()
