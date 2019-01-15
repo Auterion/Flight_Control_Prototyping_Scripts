@@ -240,9 +240,14 @@ v_d[0] = -2.0
 
 print_T123 = True
 
+dt_prev = dt
+sigma_jitter = 0.0
+#sigma_jitter = dt/10.0
+
 # Main loop
 for k in range(0, n-1):
     print('k = {}\tt = {}'.format(k, t[k]))
+    dt = dt + random.randn() * sigma_jitter # Add jitter
 
     # Change the desired velocity (simulate user RC sticks)
     if t[k] < 3.0:
@@ -274,23 +279,18 @@ for k in range(0, n-1):
         j_T[k] = -j_max_T1
     else:
         j_T[k] = 0.0
+        print('T123 = 0, t = {}\n'.format(t[k]))
+        print("T1 = {}\tT2 = {}\tT3 = {}\n".format(T1, T2, T3))
 
     # Integrate the trajectory
     (a_T[k+1], v_T[k+1], x_T_new) = integrate_T(j_T[k], a_T[k], v_T[k], x_T[k], k, dt, a_max, v_max)
 
-    # Lock the position setpoint if the error is bigger than some value
-    drone_position = 0.0
-    x_err = x_T_new - drone_position
-    if abs(x_err) > x_err_max:
-        x_T[k+1] = x_T[k]
-    else :
-        x_T[k+1] = x_T_new
+    dt_prev = dt
 
-T123 = 5.0
-T1 = computeT1_T123(T123, accel_prev=0.0, vel_prev=0.0, vel_setpoint=2.0, max_jerk=10.0)
-T3 = compute_T3(T1, 0.0, 10.0)
-T2 = compute_T2_T123(T123, T1, T3)
-print("T1 = {}\tT2 = {}\tT3 = {}\n".format(T1, T2, T3))
+# end loop
+
+
+print('=========== END ===========')
 # Plot trajectory and desired setpoint
 plt.step(t, v_d)
 plt.step(t, j_T)
