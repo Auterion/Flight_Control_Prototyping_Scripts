@@ -218,12 +218,14 @@ t = arange (0.0, t_end+dt_0, dt_0)
 n = len(t)
 
 j_T = zeros(n)
+j_T_corrected = zeros(n)
 a_T = zeros(n)
 v_T = zeros(n)
 x_T = zeros(n)
 v_d = zeros(n)
 
 j_T[0] = 0.0
+j_T_corrected[0] = 0.0
 a_T[0] = a0
 v_T[0] = v0
 x_T[0] = x0
@@ -243,8 +245,18 @@ for k in range(0, n-1):
         t[k] = t[k-1] + dt
         print('k = {}\tt = {}'.format(k, t[k]))
 
+        # Correct the jerk if dt is bigger than before and that we only need one step of jerk to complete phase T1 or T3
+        # This helps to avoid overshooting and chattering around zero acceleration due to dt jitter
+        if dt > dt_prev \
+                and ( \
+                        (dt > T1 and T1 > FLT_EPSILON) \
+                        or (dt > T3 and T3 > FLT_EPSILON)):
+            j_T_corrected[k-1] = j_T[k-1] * dt_prev / dt
+        else:
+            j_T_corrected[k-1] = j_T[k-1]
+
         # Integrate the trajectory
-        (a_T[k], v_T[k], x_T_new) = integrate_T(j_T[k-1], a_T[k-1], v_T[k-1], x_T[k-1], dt, a_max, v_max)
+        (a_T[k], v_T[k], x_T[k]) = integrate_T(j_T_corrected[k-1], a_T[k-1], v_T[k-1], x_T[k-1], dt, a_max, v_max)
 
     # Change the desired velocity (simulate user RC sticks)
     if t[k] < 3.0:
