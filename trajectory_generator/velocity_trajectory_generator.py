@@ -134,20 +134,18 @@ def compute_T1(a0, v3, j_max, a_max, dt):
     return (T1, j_max_T1)
 
 
-def computeT1_T123(T123, accel_prev, vel_prev, vel_setpoint, max_jerk):
-	a = -max_jerk;
-	b = max_jerk * T123 - accel_prev;
-        c = vel_prev + accel_prev * T123 - accel_prev**2 / (2.0 * max_jerk) - vel_setpoint
-	delta = b**2 - 4.0 * a * c
-
+def computeT1_T123(T123, a0, v3, j_max, dt):
+        delta = T123**2*j_max**2 + 2.0*T123*a0*j_max - a0**2 - 4.0*j_max*v3
 	sqrt_delta = sqrt(delta);
-	denominator_inv = 1.0 / (2.0 * a);
+	denominator_inv = 1.0 / (2.0 * j_max);
+        b = -T123 * j_max + a0
+
 	T1_plus = (-b + sqrt_delta) * denominator_inv;
 	T1_minus = (-b - sqrt_delta) * denominator_inv;
         T1_plus = max(T1_plus, 0.0)
         T1_minus = max(T1_minus, 0.0)
-        (T3_plus, j_max_T3) = compute_T3(T1_plus, accel_prev, vel_prev, vel_setpoint, max_jerk)
-        (T3_minus, j_max_T3) = compute_T3(T1_minus, accel_prev, vel_prev, vel_setpoint, max_jerk)
+        (T3_plus, j_max_T3) = compute_T3(T1_plus, a0, v3, j_max, dt)
+        (T3_minus, j_max_T3) = compute_T3(T1_minus, a0, v3, j_max, dt)
         if (T1_plus + T3_plus > T123):
             T1 = T1_minus
         elif (T1_minus + T3_minus > T123):
@@ -238,7 +236,7 @@ sigma_jitter = 0.0
 sigma_jitter = dt_0/5.0
 
 # Main loop
-for k in range(0, n-1):
+for k in range(0, n):
     dt = dt_0 + random.randn() * sigma_jitter # Add jitter
 
     if k > 0:
@@ -291,18 +289,33 @@ for k in range(0, n-1):
         print('T123 = 0, t = {}\n'.format(t[k]))
         print("T1 = {}\tT2 = {}\tT3 = {}\n".format(T1, T2, T3))
 
+    T1_prev = T1
+    T3_prev = T3
+    dt_prev = dt
+
 # end loop
 
 
 print('=========== END ===========')
 # Plot trajectory and desired setpoint
 plt.plot(t, v_d)
-plt.plot(t, j_T)
-plt.plot(t, a_T)
+plt.step(t, j_T)
+plt.plot(t, a_T, '*')
 plt.plot(t, v_T)
 plt.plot(t, x_T)
 plt.step(arange (0.0, t_end+dt_0, dt_0), t)
+plt.step(t, j_T_corrected)
 plt.legend(["v_d", "j_T", "a_T", "v_T", "x_T", "t"])
 plt.xlabel("time (s)")
 plt.ylabel("metric amplitude")
 plt.show()
+
+# Time sync tests
+T123 = dt
+a0 = 0.0001
+v3 = 0.0
+j_max = 20.0
+T1 = computeT1_T123(T123, a0, v3, j_max, dt)
+(T3, j_max_T3) = compute_T3(T1, a0, v3, j_max, dt)
+T2 = compute_T2_T123(T123, T1, T3)
+print("T123 = {}\tT1 = {}\tT2 = {}\tT3 = {}".format(T123, T1, T2, T3))
