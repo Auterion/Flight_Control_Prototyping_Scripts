@@ -2,7 +2,9 @@
 The algorithm implements the following idea: the signals going to the actuators are computed by the multiplication of the control vector **m** (desired rotational and linear accelerations/torques) by the control allocation matrix **P**. Then, some constraints (e.g.: vertical thrust or yaw acceleration) are relxed to minimize the saturation of the actuators. 
 In PX4, the actuator effectiveness matrix **B** is defined in the toml files by the geometry of the vehicle and the control allocation matrix **P** is computed in the python script during compilation and is given to the mixer (nothing different so far).
 
-Instead of decreasing the input and re-mixing several times as it is done at the moment, this algorithm makes use of the vectors given by the control allocation matrix P to directly manipulate the output vector. Those vectors are orthogonal (4D space) and give the direct information about how to change the outputs in order to modify an input. In the case of a symmetric quad, the result is the same as before: add the same value to the 4 motors to modify thrust without changing roll/pitch/yaw accelerations.
+<a href="https://www.codecogs.com/eqnedit.php?latex=m&space;=&space;Bu&space;\Leftrightarrow&space;u&space;=&space;Pm" target="_blank"><img src="https://latex.codecogs.com/gif.latex?m&space;=&space;Bu&space;\Leftrightarrow&space;u&space;=&space;Pm" title="m = Bu \Leftrightarrow u = Pm" /></a>
+
+Instead of decreasing the input and re-mixing several times as it is done at the moment, this algorithm makes use of the vectors given by the control allocation matrix **P** to directly manipulate the output vector. Those vectors are orthogonal (4D space) and give the direct information about how to change the outputs in order to modify an input. In the case of a symmetric quad, the result is the same as before: add the same value to the 4 motors to modify thrust without changing roll/pitch/yaw accelerations.
 This strategy gives a more general approach and gives a good base for 6D control allocation of fully actuated vehicles.
 
 ## Saturation minimization
