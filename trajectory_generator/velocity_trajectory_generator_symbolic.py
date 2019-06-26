@@ -23,11 +23,22 @@ T_2 = Symbol("T2", real=True)
 T_3 = Symbol("T3", real=True)
 a_max = Symbol("a_max", real=True)
 
+# Final acceleration (at t3)
 f1 = a_0 + j*T_1 - j*T_3 - a_3
-f1 = f1.subs(a_3, 0)
+f1 = f1.subs(a_3, 0) # Force final acceleration to be null
 res_T3 = solve(f1, T_3)
 res_T3 = res_T3[0]
-f2 = a_0*T_1 + j/2.0*T_1**2 + v_0 + a_0*T_2 + j*T_1*T_2 + a_0*T_3 + j*T_1*T_3 - j/2.0*T_3**2 - v_3
+# Acceleration at t1
+at1 = a_0 + j*T_1
+# Acceleration at t2
+at2 = at1
+# Velocity at t1
+vt1 = v_0 + a_0*T_1 + 0.5*j*T_1**2
+# Velocity at t2
+vt2 = vt1 + at1*T_2
+# Velocity at t3
+vt3 = vt2 + at2*T_3 - 0.5*j*T_3**2
+f2 = vt3 - v_3
 f2 = f2.subs([(v_0, 0)])
 print("Step 1 - Setting T_2 = 0, compute T_1 as follows:")
 res_T1 = solve(f2.subs([(T_2, 0), (T_3, res_T3)]), T_1)
