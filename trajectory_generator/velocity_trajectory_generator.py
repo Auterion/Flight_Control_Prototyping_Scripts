@@ -291,7 +291,19 @@ for k in range(0, n):
         v_d[k] = 5.0
 
     # Depending of the direction, start accelerating positively or negatively
-    if sign(v_d[k]-v_T[k]) > 0:
+    # For this, we need to predict what would be the velocity at zero acceleration
+    # because it could be that the current acceleration is too high and that we need
+    # to start reducing the acceleration directly even if sign(v_d - v_T) < 0
+    if abs(a_T[k]) > FLT_EPSILON:
+        j_zero_acc = -sign(a_T[k]) * abs(j_max);
+        t_zero_acc = -a_T[k] / j_zero_acc;
+        vel_zero_acc = v_T[k] + a_T[k] * t_zero_acc + 0.5 * j_zero_acc * t_zero_acc * t_zero_acc;
+        verboseprint("vel_zero_acc = {}\tt_zero_acc = {}".format(vel_zero_acc, t_zero_acc))
+    else:
+        vel_zero_acc = v_T[k]
+
+    #if v_d[k] > v_T[k]:
+    if v_d[k] > vel_zero_acc :
         j_max = abs(j_max)
     else:
         j_max = -abs(j_max)
@@ -323,12 +335,12 @@ for k in range(0, n):
 verboseprint('=========== END ===========')
 # Plot trajectory and desired setpoint
 plt.plot(t, v_d)
-plt.step(t, j_T)
+plt.plot(t, j_T, '*')
 plt.plot(t, a_T, '*')
 plt.plot(t, v_T)
 plt.plot(t, x_T)
-plt.step(arange (0.0, t_end+dt_0, dt_0), t)
-plt.step(t, j_T_corrected)
+plt.plot(arange (0.0, t_end+dt_0, dt_0), t)
+plt.plot(t, j_T_corrected)
 plt.legend(["v_d", "j_T", "a_T", "v_T", "x_T", "t"])
 plt.xlabel("time (s)")
 plt.ylabel("metric amplitude")
