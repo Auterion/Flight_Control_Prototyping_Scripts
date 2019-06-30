@@ -21,15 +21,15 @@ Description:
     The first fin is located at 'alpha' radians and the numbering is done counter clockwise
     N is the number of fins and are equally spaced
 
-    Example:
-    N = 4, Alpha = 0
-            2
-            |
-            |
+    Examples:
+    N = 4, Alpha = 0          N = 3, Alpha = pi/2
+            2                       1
+            |                       |
+            |                       |
     3 ----     ---- 1
-            |
-            |
-            4
+            |                   /       \
+            |                  /         \
+            4                 2           3
 """
 
 import numpy as np
