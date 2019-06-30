@@ -45,19 +45,24 @@ else:
 
 class VelocitySmoothing(object):
 
-    def __init__(self, a0, v0, x0):
+    def setState(self, a0, v0, x0):
+        self._accel = a0
+        self._vel = v0
+        self._pos = x0
+
+    def __init__(self, dt, a0, v0, x0):
         self._jerk = 0.0
         self._accel = a0
         self._vel = v0
         self._pos = x0
-        self._dt = 0.1
+        self._dt = dt
         self._vel_sp = 0.0
 
         self._max_jerk = 9.0
         self._max_accel = 3.0
         self._max_vel = 5.0
 
-        self._jerk_max_T3 = 0.0
+        self._max_jerk_T3 = 0.0
 
         self._T1 = 0.0
         self._T2 = 0.0
@@ -182,7 +187,7 @@ class VelocitySmoothing(object):
         self._vel_sp = clip(vel_sp, -self._max_vel, self._max_vel)
         self.updateDurations()
 
-    def integrate(self):
+    def integrate(self, dt):
         if self._T1 > FLT_EPSILON:
             self._jerk = self._max_jerk_T3
         elif self._T2 > FLT_EPSILON:
@@ -192,15 +197,28 @@ class VelocitySmoothing(object):
         else:
             self._jerk = 0.0
 
+        # TODO: check new dt and compensate for jitter
+
         # Integrate trajectory
         (self._accel, self._vel, self._pos) = self.integrateT(self._dt, self._jerk, self._accel, self._vel, self._pos)
 
         return (self._accel, self._vel, self._pos)
 
+    def computeEndPosition(self):
+        j = self._max_jerk_T3
+        T1 = self._T1
+        T2 = self._T2
+        T3 = self._T3
+        xt3 = T1**3*j/6 + 0.5*T1**2*a0 + T1*v0 + T2**2*(0.5*T1*j + 0.5*a0) + T2*(0.5*T1**2*j + T1*a0 + v0) - T3**3*j/6 + T3**2*(0.5*T1*j + 0.5*a0) + T3*(0.5*T1**2*j + T1*a0 + T2*(T1*j + a0) + v0) + x0
+        xt3_simp = T1*v0 + T3*(T1*a0 + T2*a0 + v0) + x0
+
+        return (xt3, xt3_simp)
+
+
 if __name__ == '__main__':
     # Initial conditions
     a0 = 3.0
-    v0 = 0.1
+    v0 = 12.0
     x0 = 0.0
 
     # Constraints
@@ -210,7 +228,7 @@ if __name__ == '__main__':
 
     # Simulation time parameters
     dt_0 = 0.014789
-    t_end = 2.40
+    t_end = 3.0
 
     # Initialize vectors
     t = arange (0.0, t_end+dt_0, dt_0)
@@ -228,22 +246,38 @@ if __name__ == '__main__':
     a_T[0] = a0
     v_T[0] = v0
     x_T[0] = x0
-    v_d[0] = 0.398
+    v_d[0] = 0.0
+    x_d = 30.0
 
-    traj = VelocitySmoothing(a0, v0, x0)
+    traj = VelocitySmoothing(dt_0, a0, v0, x0)
     traj._max_jerk = j_max
     traj._max_accel = a_max
     traj._max_vel = v_max
     traj._dt = dt_0
+    braking_distance = VelocitySmoothing(dt_0, a0, v0, x0)
+    braking_distance._max_jerk = j_max
+    braking_distance._max_accel = a_max
+    braking_distance._max_vel = v_max
+    braking_distance._dt = dt_0
+
+    xt3 = 0.0
+    xt3_simp = 0.0
 
     # Main loop
     for k in range(0, n):
         verboseprint('k = {}\tt = {}'.format(k, t[k]))
-        (a_T[k], v_T[k], x_T[k]) = traj.integrate()
+        (a_T[k], v_T[k], x_T[k]) = traj.integrate(dt_0)
         traj.update(dt_0, v_d[k])
+        if k == 0:
+            # Predict the stop position if we decide to brake now
+            braking_distance.setState(traj._accel, traj._vel, traj._pos)
+            braking_distance.update(dt_0, 0.0)
+            (xt3, xt3_simp) = braking_distance.computeEndPosition()
+
         verboseprint("T1 = {}\tT2 = {}\tT3 = {}\n".format(traj._T1, traj._T2, traj._T3))
         j_T[k] = traj._jerk
 
+    print("Predicted final position = {} ; simplified: {}".format(xt3, xt3_simp))
     plt.plot(t, v_d)
     plt.plot(t, j_T, '*')
     plt.plot(t, a_T, '*')
