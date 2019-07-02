@@ -145,6 +145,8 @@ class VelocitySmoothing(object):
         return (a_T, v_T, x_T)
 
     def updateDurations(self):
+        if (abs(self._accel) > self._max_accel):
+            verboseprint("Should be double deceleration profile!")
         # Depending of the direction, start accelerating positively or negatively
         # For this, we need to predict what would be the velocity at zero acceleration
         # because it could be that the current acceleration is too high and that we need
@@ -217,7 +219,7 @@ class VelocitySmoothing(object):
 
 if __name__ == '__main__':
     # Initial conditions
-    a0 = 3.0
+    a0 = -8.0
     v0 = 12.0
     x0 = 0.0
 
