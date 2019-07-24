@@ -18,6 +18,7 @@ a_0 = Symbol("a0", real=True)
 a_3 = Symbol("a3", real=True)
 v_0 = Symbol("v0", real=True)
 v_3 = Symbol("v3", real=True)
+x_0 = Symbol("x0", real=True)
 T_1 = Symbol("T1", real=True)
 T_2 = Symbol("T2", real=True)
 T_3 = Symbol("T3", real=True)
@@ -38,6 +39,13 @@ vt1 = v_0 + a_0*T_1 + 0.5*j*T_1**2
 vt2 = vt1 + at1*T_2
 # Velocity at t3
 vt3 = vt2 + at2*T_3 - 0.5*j*T_3**2
+# Position at t1
+xt1 = x_0 + v_0*T_1 + 0.5*a_0*T_1**2 + 1/6*j*T_1**3
+# Position at t2
+xt2 = xt1 + vt1*T_2 + 0.5*at1*T_2**2
+# Position at t3
+xt3 = xt2 + vt2*T_3 + 0.5*at2*T_3**2 - 1/6*j*T_3**3
+
 f2 = vt3 - v_3
 f2 = f2.subs([(v_0, 0)])
 print("Step 1 - Setting T_2 = 0, compute T_1 as follows:")
