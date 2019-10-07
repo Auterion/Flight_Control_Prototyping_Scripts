@@ -86,7 +86,7 @@ class HoverThrEstimator(object):
         self._mass_coeff -= kalman_gain.item(1) * acc_innov
 
         # Update covariances
-        self._P = maximum((eye(2) - kalman_gain * H) * self._P, self._P)
+        self._P = maximum((eye(2) - kalman_gain * H) * self._P, zeros((2, 2)))
 
     def predictedAccZ(self, thrust):
         return thrust * self._mass_coeff - self._hover_thr * self._mass_coeff
