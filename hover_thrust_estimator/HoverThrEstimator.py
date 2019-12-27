@@ -24,6 +24,7 @@ import sys
 import math
 import matplotlib.pylab as plt
 
+innov_sq_length = 10
 FLT_EPSILON = sys.float_info.epsilon
 NAN = float('nan')
 verbose = True;
@@ -33,8 +34,8 @@ if verbose:
         # Print each argument separately so caller doesn't need to
         # stuff everything to be printed into a single string
         for arg in args:
-           print arg,
-        print
+           print(arg)
+        print()
 else:
     verboseprint = lambda *a: None      # do-nothing function
 
@@ -52,11 +53,17 @@ class HoverThrEstimator(object):
     def setMeasVar(self, accel_var):
         self._R = accel_var
 
+    def resetInnovSq(self):
+        self._innov_sq = 0.0
+        self._C = 0.0
+        self._nb_innov_sq = 0
+
     def __init__(self, hover_thr):
         self.setState(hover_thr)
         self.setStateVar(0.05)
         self.setProcessVar(0.3**2)
         self.setMeasVar(0.02)
+        self.resetInnovSq()
 
     def predict(self, dt):
         # State is constant
@@ -68,8 +75,11 @@ class HoverThrEstimator(object):
         acc_innov_var = H * self._P * H + self._R
         acc_innov_var = max(acc_innov_var, self._R)
         acc_innov = self.predictedAccZ(thrust) - acc_z
+        self.addInnov(acc_innov)
 
         kalman_gain = self._P * H / acc_innov_var
+
+        self.updateQR(kalman_gain, H)
 
         # Update state
         self._hover_thr -= kalman_gain * acc_innov
@@ -78,8 +88,24 @@ class HoverThrEstimator(object):
         # Update covariances
         self._P = max((1.0 - kalman_gain * H) * self._P, 0.0)
 
+    def addInnov(self, new_innov):
+        self._innov_sq += new_innov**2
+
+        self._nb_innov_sq += 1
+
     def predictedAccZ(self, thrust):
         return 9.81 * thrust / self._hover_thr - 9.81
+
+    def updateQR(self, kalman_gain, H):
+        if self._nb_innov_sq >= innov_sq_length:
+            C = self._innov_sq / innov_sq_length
+            self._Q = clip(kalman_gain * C * kalman_gain, 1e-8, 0.1)
+            self._R = clip(C + H * self._P * H, 1e-8, 10.0)
+            self._C = C
+            print("C = ", C)
+
+            self._nb_innov_sq = 0
+            self._innov_sq = 0.0
 
 
 if __name__ == '__main__':

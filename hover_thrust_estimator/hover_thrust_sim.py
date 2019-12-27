@@ -39,6 +39,8 @@ def getThrFromTime(t):
     elif t < 4.0:
         thrust = 0.5 - (t - 2.5) * 0.25
 
+    elif t < 6.0:
+        thrust = 0.42
     else:
         thrust = 0.0
 
@@ -48,7 +50,7 @@ def getThrFromTime(t):
 if __name__ == '__main__':
     # Simulation parameters
     dt = 0.03
-    t_end = 4.0
+    t_end = 8.0
     t = arange (0.0, t_end+dt, dt)
     n = len(t)
 
@@ -63,7 +65,7 @@ if __name__ == '__main__':
     hover_ekf = HoverThrEstimator(hover_thr_0)
     hover_ekf.setStateVar(hover_thr_noise_0**2)
     hover_ekf.setProcessVar(hover_thr_process_noise**2)
-    hover_ekf.setMeasVar(accel_noise**2)
+    hover_ekf.setMeasVar((10.0 * accel_noise)**2)
 
     # Create data buckets
     accel = zeros(n)
@@ -79,11 +81,14 @@ if __name__ == '__main__':
         # Generate measurement
         thrust[k] = getThrFromTime(t[k])
         noise = random.randn() * accel_noise
+        if t[k] > 1.5:
+            hover_thr_true = 0.6
         accel[k] = getAccelFromThrTime(thrust[k], t[k]) + noise
 
         # Update the EKF
         hover_ekf.predict(dt)
         hover_ekf.fuseAccZ(accel[k], thrust[k])
+        print("P = ", hover_ekf._P, "\tQ = ", hover_ekf._Q, "\tR = ", hover_ekf._R)
 
     # Plot results
     ax1 = plt.subplot(2, 1, 1)
