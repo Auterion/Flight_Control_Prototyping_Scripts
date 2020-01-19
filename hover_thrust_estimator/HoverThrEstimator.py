@@ -58,54 +58,59 @@ class HoverThrEstimator(object):
         self._C = 0.0
         self._nb_innov_sq = 0
 
+    def setInnovGateSize(self, gate_size):
+        self._innov_gate_size = gate_size
+
     def __init__(self, hover_thr):
         self.setState(hover_thr)
         self.setStateVar(0.05)
         self.setProcessVar(0.3**2)
         self.setMeasVar(0.02)
         self.resetInnovSq()
+        self.setInnovGateSize(3.0)
+        self._predicted_acc_z = 0.0
+        self._dt = 1e-3
 
     def predict(self, dt):
         # State is constant
         # Predict error covariance only
         self._P += self._Q * dt
+        self._dt = dt
 
     def fuseAccZ(self, acc_z, thrust):
-        H = -9.81 * thrust / (self._hover_thr**2)
+        H = self.computeH(thrust)
         acc_innov_var = H * self._P * H + self._R
         acc_innov_var = max(acc_innov_var, self._R)
-        acc_innov = self.predictedAccZ(thrust) - acc_z
-        self.addInnov(acc_innov)
+        self._predicted_acc_z = self.predictedAccZ(thrust)
+        acc_innov =  acc_z - self._predicted_acc_z
 
         kalman_gain = self._P * H / acc_innov_var
 
-        self.updateQR(kalman_gain, H)
+        # Compute test ratio for innovation filtering
+        innov_test_ratio = acc_innov**2 / (self._innov_gate_size**2 * acc_innov_var)
+        # TODO: use test ratio to filter the innovation and to bump the state covariance
 
         # Update state
-        self._hover_thr -= kalman_gain * acc_innov
+        self._hover_thr += kalman_gain * acc_innov
         self._hover_thr = clip(self._hover_thr, 0.1, 0.8)
+
+        residual =  acc_z - self.predictedAccZ(thrust)
+        self.updateQR(residual, acc_innov, kalman_gain, H)
 
         # Update covariances
         self._P = max((1.0 - kalman_gain * H) * self._P, 0.0)
 
-    def addInnov(self, new_innov):
-        self._innov_sq += new_innov**2
-
-        self._nb_innov_sq += 1
+    def computeH(self, thrust):
+        return -9.81 * thrust / (self._hover_thr**2)
 
     def predictedAccZ(self, thrust):
         return 9.81 * thrust / self._hover_thr - 9.81
 
-    def updateQR(self, kalman_gain, H):
-        if self._nb_innov_sq >= innov_sq_length:
-            C = self._innov_sq / innov_sq_length
-            self._Q = clip(kalman_gain * C * kalman_gain, 1e-8, 0.1)
-            self._R = clip(C + H * self._P * H, 1e-8, 10.0)
-            self._C = C
-            print("C = ", C)
-
-            self._nb_innov_sq = 0
-            self._innov_sq = 0.0
+    def updateQR(self, residual, innov, kalman_gain, H):
+        tau = 0.5
+        alpha = self._dt / (tau + self._dt)
+        # self._Q = clip(self._Q * (1.0 - alpha) + alpha * (kalman_gain * innov**2 * kalman_gain), 1e-8, 0.1)
+        self._R = clip(self._R * (1.0 - alpha) + alpha * (residual**2 + H * self._P * H), 1e-8, 10.0)
 
 
 if __name__ == '__main__':

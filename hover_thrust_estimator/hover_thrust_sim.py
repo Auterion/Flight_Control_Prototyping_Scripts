@@ -21,8 +21,8 @@ from numpy import *
 import matplotlib.pylab as plt
 from HoverThrEstimator import HoverThrEstimator
 
-def getAccelFromThrTime(thrust, t):
-    accel = 9.81 * thrust / hover_thr_true - 9.81
+def getAccelFromThrTime(thrust, t, ht):
+    accel = 9.81 * thrust / ht - 9.81
 
     return accel
 
@@ -42,7 +42,7 @@ def getThrFromTime(t):
     elif t < 6.0:
         thrust = 0.42
     else:
-        thrust = 0.0
+        thrust = 0.8
 
     return thrust
 
@@ -50,55 +50,67 @@ def getThrFromTime(t):
 if __name__ == '__main__':
     # Simulation parameters
     dt = 0.03
-    t_end = 8.0
+    t_end = 60.0
     t = arange (0.0, t_end+dt, dt)
     n = len(t)
 
-    hover_thr_true = 0.42
 
     # Estimator initial conditions
     hover_thr_0 = 0.5
     hover_thr_noise_0 = 0.2
-    hover_thr_process_noise = 0.01
-    accel_noise = 3.5e-1
+    P0 = hover_thr_noise_0**2
+    hover_thr_process_noise = 0.01 # hover thrust change / s
+    Q = hover_thr_process_noise**2
+    Qk = Q * dt
+    accel_noise = 3.5e-1 # in m/s2
+    R = accel_noise**2 # Rk = R
 
     hover_ekf = HoverThrEstimator(hover_thr_0)
-    hover_ekf.setStateVar(hover_thr_noise_0**2)
-    hover_ekf.setProcessVar(hover_thr_process_noise**2)
-    hover_ekf.setMeasVar((10.0 * accel_noise)**2)
+    hover_ekf.setStateVar(P0)
+    hover_ekf.setProcessVar(Qk)
+    hover_ekf.setMeasVar(R)
 
     # Create data buckets
     accel = zeros(n)
     thrust = ones(n)
     hover_thr = zeros(n)
     hover_thr_std = zeros(n)
+    hover_thr_true = zeros(n)
+    predicted_acc_z = zeros(n)
 
     for k in range(0, n):
         # Save data
         hover_thr[k] = hover_ekf._hover_thr
         hover_thr_std[k] = sqrt(hover_ekf._P)
+        predicted_acc_z[k] = hover_ekf._predicted_acc_z
 
         # Generate measurement
         thrust[k] = getThrFromTime(t[k])
         noise = random.randn() * accel_noise
-        if t[k] > 1.5:
-            hover_thr_true = 0.6
-        accel[k] = getAccelFromThrTime(thrust[k], t[k]) + noise
+        hover_thr_true[k] = 0.42 + 0.2 * (t[k]/t_end)
+        accel[k] = getAccelFromThrTime(thrust[k], t[k], hover_thr_true[k]) + noise
+
+        # Accel noise change
+        if t[k] > 40.0:
+            accel_noise = 0.4
+        elif t[k] > 30.0:
+            accel_noise = 2.5
 
         # Update the EKF
         hover_ekf.predict(dt)
         hover_ekf.fuseAccZ(accel[k], thrust[k])
-        print("P = ", hover_ekf._P, "\tQ = ", hover_ekf._Q, "\tR = ", hover_ekf._R)
+        # print("P = ", hover_ekf._P, "\tQ = ", hover_ekf._Q, "\tsqrt(R) = ", sqrt(hover_ekf._R))
 
     # Plot results
     ax1 = plt.subplot(2, 1, 1)
     ax1.plot(t, thrust * 10.0, '.')
     ax1.plot(t, accel, '.')
-    ax1.legend(["Thrust (10x)", "AccZ"])
+    ax1.plot(t, predicted_acc_z, '.')
+    ax1.legend(["Thrust (10x)", "AccZ", "Predicted"])
 
     ax2 = plt.subplot(2, 1, 2, sharex=ax1)
     ax2.plot(t, hover_thr, 'b')
-    ax2.plot(t, hover_thr_true * ones(n), 'k:')
+    ax2.plot(t, hover_thr_true, 'k:')
     ax2.plot(t, hover_thr + hover_thr_std, 'g--')
     ax2.plot(t, hover_thr - hover_thr_std, 'g--')
     plt.legend(["Ht_Est", "Ht_True"])
