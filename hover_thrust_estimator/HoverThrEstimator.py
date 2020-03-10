@@ -68,7 +68,6 @@ class HoverThrEstimator(object):
         self.setMeasVar(0.02)
         self.resetInnovSq()
         self.setInnovGateSize(3.0)
-        self._predicted_acc_z = 0.0
         self._dt = 1e-3
 
     def predict(self, dt):
@@ -79,38 +78,54 @@ class HoverThrEstimator(object):
 
     def fuseAccZ(self, acc_z, thrust):
         H = self.computeH(thrust)
-        acc_innov_var = H * self._P * H + self._R
-        acc_innov_var = max(acc_innov_var, self._R)
-        self._predicted_acc_z = self.predictedAccZ(thrust)
-        acc_innov =  acc_z - self._predicted_acc_z
+        innov_var = self.computeInnovVar(H)
+        K = self.computeKalmanGain(H, innov_var)
+        innov = self.computeInnov(acc_z, thrust)
+        innov_test_ratio = self.computeInnovTestRatio(innov, innov_var)
 
-        kalman_gain = self._P * H / acc_innov_var
+        residual = innov
 
-        # Compute test ratio for innovation filtering
-        innov_test_ratio = acc_innov**2 / (self._innov_gate_size**2 * acc_innov_var)
-        # TODO: use test ratio to filter the innovation and to bump the state covariance
+        if self.isTestRatioPassing(innov_test_ratio):
+            self.updateState(K, innov)
+            self.updateStateCovariance(K, H)
 
-        # Update state
-        self._hover_thr += kalman_gain * acc_innov
-        self._hover_thr = clip(self._hover_thr, 0.1, 0.8)
+            residual =  self.computeInnov(acc_z, thrust)
+            self.updateMeasurementNoise(residual, H)
 
-        residual =  acc_z - self.predictedAccZ(thrust)
-        self.updateQR(residual, acc_innov, kalman_gain, H)
-
-        # Update covariances
-        self._P = max((1.0 - kalman_gain * H) * self._P, 0.0)
 
     def computeH(self, thrust):
         return -9.81 * thrust / (self._hover_thr**2)
 
+    def computeInnovVar(self, H):
+        innov_var = H * self._P * H + self._R
+        return max(innov_var, self._R)
+
+    def computeKalmanGain(self, H, innov_var):
+        return self._P * H / innov_var
+
+    def computeInnov(self, acc_z, thrust):
+        return  acc_z - self.predictedAccZ(thrust)
+
     def predictedAccZ(self, thrust):
         return 9.81 * thrust / self._hover_thr - 9.81
 
-    def updateQR(self, residual, innov, kalman_gain, H):
+    def computeInnovTestRatio(self, innov, innov_var):
+        return innov**2 / (self._innov_gate_size**2 * innov_var)
+
+    def isTestRatioPassing(self, innov_test_ratio):
+        return (innov_test_ratio < 1.0)
+
+    def updateState(self, K, innov):
+        self._hover_thr += K * innov
+        self._hover_thr = clip(self._hover_thr, 0.1, 0.9)
+
+    def updateStateCovariance(self, K, H):
+        self._P = clip((1.0 - K * H) * self._P, 1e-10, 1.0)
+
+    def updateMeasurementNoise(self, residual, H):
         tau = 0.5
         alpha = self._dt / (tau + self._dt)
-        # self._Q = clip(self._Q * (1.0 - alpha) + alpha * (kalman_gain * innov**2 * kalman_gain), 1e-8, 0.1)
-        self._R = clip(self._R * (1.0 - alpha) + alpha * (residual**2 + H * self._P * H), 1e-8, 10.0)
+        self._R = clip(self._R * (1.0 - alpha) + alpha * (residual**2 + H * self._P * H), 1.0, 400.0)
 
 
 if __name__ == '__main__':
