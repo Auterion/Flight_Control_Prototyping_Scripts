@@ -72,7 +72,7 @@ class HoverThrEstimator(object):
         self._noise_learning_time_constant = 2.0
         self._lpf_time_constant = 1.0
         self._residual_lpf = 0.0
-        self._innov_test_ratio_lpf = 0.0
+        self._innov_test_ratio_signed_lpf = 0.0
 
     def predict(self, dt):
         # State is constant
@@ -94,13 +94,12 @@ class HoverThrEstimator(object):
             self.updateStateCovariance(K, H)
 
             residual =  self.computeInnov(acc_z, thrust)
-            self.updateMeasurementNoise(residual, H)
 
-        elif self._innov_test_ratio_lpf > 0.5:
+        elif not abs(self._innov_test_ratio_signed_lpf) < 0.2:
             self.bumpStateVariance()
-            self.resetAccelNoise()
 
-        self.updateLpf(residual, innov_test_ratio)
+        self.updateLpf(residual, sign(innov)*innov_test_ratio)
+        self.updateMeasurementNoise(residual, H)
         return (innov, innov_var, innov_test_ratio)
 
 
@@ -139,15 +138,15 @@ class HoverThrEstimator(object):
         self._R = clip(self._R * (1.0 - alpha) + alpha * (res_no_bias**2 + H * self._P * H), 1.0, 400.0)
 
     def bumpStateVariance(self):
-        self._P += 10000.0 * self._Q * self._dt
+        self._P += 1000.0 * self._Q * self._dt
 
     def resetAccelNoise(self):
         self._R = 5.0
 
-    def updateLpf(self, residual, innov_test_ratio):
+    def updateLpf(self, residual, innov_test_ratio_signed):
         alpha = self._dt / (self._lpf_time_constant + self._dt)
         self._residual_lpf = (1.0 - alpha) * self._residual_lpf + alpha * residual
-        self._innov_test_ratio_lpf = (1.0 - alpha) * self._innov_test_ratio_lpf + alpha * min(innov_test_ratio, 2.0)
+        self._innov_test_ratio_signed_lpf = (1.0 - alpha) * self._innov_test_ratio_signed_lpf + alpha * clip(innov_test_ratio_signed, -1.0, 1.0)
 
 
 if __name__ == '__main__':

@@ -77,7 +77,7 @@ if __name__ == '__main__':
     hover_thrust_std = zeros(n)
     hover_thrust_true = zeros(n)
     accel_noise_std = zeros(n)
-    innov_test_ratio_lpf = zeros(n)
+    innov_test_ratio_signed_lpf = zeros(n)
     innov = zeros(n)
     innov_std = zeros(n)
     innov_test_ratio = zeros(n)
@@ -106,7 +106,7 @@ if __name__ == '__main__':
         (innov[k], innov_var, innov_test_ratio[k]) = hover_ekf.fuseAccZ(accel[k], thrust[k])
         innov_std[k] = sqrt(innov_var)
         accel_noise_std[k] = sqrt(hover_ekf._R)
-        innov_test_ratio_lpf[k] = hover_ekf._innov_test_ratio_lpf
+        innov_test_ratio_signed_lpf[k] = hover_ekf._innov_test_ratio_signed_lpf
         residual_lpf[k] = hover_ekf._residual_lpf
         # print("P = ", hover_ekf._P, "\tQ = ", hover_ekf._Q, "\tsqrt(R) = ", sqrt(hover_ekf._R))
 
@@ -132,14 +132,13 @@ if __name__ == '__main__':
 
     ax4 = plt.subplot(n_plots, 1, 4, sharex=ax1)
     ax4.plot(t, innov_test_ratio)
-    ax4.plot(t, innov_test_ratio_lpf)
+    ax4.plot(t, innov_test_ratio_signed_lpf)
     ax4.plot(t, residual_lpf)
     ax4.legend(["Test ratio", "Test ratio lpf", "Residual lpf"])
 
     ax5 = plt.subplot(n_plots, 1, 5, sharex=ax1)
     ax5.plot(t, innov)
-    ax5.plot(t, innov + innov_std, 'g--')
-    ax5.plot(t, innov - innov_std, 'g--')
     ax5.legend(["Innov"])
+    ax5.grid()
 
     plt.show()
