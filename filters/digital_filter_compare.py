@@ -196,6 +196,30 @@ def create1stOrderLpf(fc, fs):
     b = [b0]
     a = [a0, a1]
     name = createName("1st order", fc)
+
+def create1stOrderHpf(fc, fs):
+    dt = 1.0 / fs
+    tau = 1 / (2.0 * np.pi * fc)
+    alpha = fs / (2.0 * np.pi * fc + fs)
+    b0 = 1.0
+    b1 = -1.0
+    a0 = 1.0 / alpha
+    a1 = -1.0
+    b = [b0, b1]
+    a = [a0, a1]
+    name = createName("Hpf-1-alpha", fc)
+    return b, a, name
+
+def create1stOrderButterworthHpf(fc, fs):
+    dt = 1.0 / fs
+    gamma = np.tan(np.pi * fc / fs)
+    b0 = 1.0
+    b1 = -1.0
+    a0 = gamma + 1.0
+    a1 = gamma - 1.0
+    b = [b0, b1]
+    a = [a0, a1]
+    name = createName("Hpf-1-Butter", fc)
     return b, a, name
 
 def createName(prefix, fc, bw=0.0):
@@ -225,6 +249,10 @@ if __name__ == '__main__':
     b, a, name = create2ndOrderCriticallyDamped(cutoff, fs=fs)
     addFilter(b, a, fs, name)
     b, a, name = create1stOrderLpf(cutoff, fs=fs)
+    addFilter(b, a, fs, name)
+    b, a, name = create1stOrderHpf(1.0, fs=fs)
+    addFilter(b, a, fs, name)
+    b, a, name = create1stOrderButterworthHpf(1.0, fs=fs)
     addFilter(b, a, fs, name)
 
     plotFilters()
