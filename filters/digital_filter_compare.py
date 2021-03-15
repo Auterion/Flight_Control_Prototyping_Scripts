@@ -188,7 +188,7 @@ def create2ndOrderCriticallyDamped(fc, fs):
 
 def create1stOrderLpf(fc, fs):
     dt = 1.0 / fs
-    tau = 1/fc
+    tau = 1 / (2.0 * np.pi * fc)
     alpha = dt / (tau + dt)
     b0 = alpha
     a0 = 1.0
