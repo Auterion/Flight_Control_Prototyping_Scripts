@@ -76,7 +76,7 @@ def create1stOrderButterworthLpf(fc, fs):
     D = gamma + 1.0
     b = [gamma / D, gamma / D]
     a = [1.0, (gamma - 1.0) / D]
-    name = createName("1st Butter lpf", fc)
+    name = createName("Lpf-1-Butter", fc)
     return b, a, name
 
 def create2ndOrderButterworthLpf(fc, fs):
@@ -92,7 +92,7 @@ def create2ndOrderButterworthLpf(fc, fs):
 
     b = [b0_prime, b1_prime, b2_prime] / D
     a = [a0_prime, a1_prime, a2_prime] / D
-    name = createName("2nd Butter lpf", fc)
+    name = createName("Lpf-2-Butter", fc)
     return b, a, name
 
 def createLpf2p(fc, fs):
@@ -109,7 +109,7 @@ def createLpf2p(fc, fs):
 
     b = [b0, b1, b2]
     a = [a0, a1, a2]
-    name = createName("PX4 2p lpf", fc)
+    name = createName("Lpf-2-PX4", fc)
     return b, a, name
 
 def create2ndOrderNotch(fc, bw, fs):
@@ -125,7 +125,7 @@ def create2ndOrderNotch(fc, bw, fs):
 
     b = [b0_prime / D, b1_prime / D, b2_prime / D]
     a = [a0_prime / D, a1_prime / D, a2_prime / D]
-    name = createName("2nd Notch", fc, bw)
+    name = createName("Notch-2", fc, bw)
     return b, a, name
 
 def create2ndOrderButterworthBandStop(fc, bw, fs):
@@ -141,7 +141,7 @@ def create2ndOrderButterworthBandStop(fc, bw, fs):
 
     b = [b0_prime, b1_prime, b2_prime] / D
     a = [a0_prime, a1_prime, a2_prime] / D
-    name = createName("2nd Butter BStop", fc, bw)
+    name = createName("BStop-2-Butter", fc, bw)
     return b, a, name
 
 def create2ndOrderLpf(fc, zeta, fs):
@@ -163,7 +163,7 @@ def create2ndOrderLpf(fc, zeta, fs):
 
     b = [b0_prime / D, b1_prime / D, b2_prime / D]
     a = [a0_prime / D, a1_prime / D, a2_prime / D]
-    name = createName("2nd", fc)
+    name = createName("Lpf-2-damp", fc)
     return b, a, name
 
 def create2ndOrderCriticallyDamped(fc, fs):
@@ -183,7 +183,7 @@ def create2ndOrderCriticallyDamped(fc, fs):
 
     b = [b0_prime / D, b1_prime / D, b2_prime / D]
     a = [a0_prime / D, a1_prime / D, a2_prime / D]
-    name = createName("2nd crit damp", fc)
+    name = createName("Lpf-2-crit-damp", fc)
     return b, a, name
 
 def create1stOrderLpf(fc, fs):
@@ -195,7 +195,8 @@ def create1stOrderLpf(fc, fs):
     a1 = alpha - 1.0
     b = [b0]
     a = [a0, a1]
-    name = createName("1st order", fc)
+    name = createName("Lpf-1-alpha", fc)
+    return b, a, name
 
 def create1stOrderHpf(fc, fs):
     dt = 1.0 / fs
