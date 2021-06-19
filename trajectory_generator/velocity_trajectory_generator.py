@@ -31,6 +31,8 @@ Description:
     where the trajectory is recomputed a each iteration.
 """
 
+from __future__ import print_function
+
 from numpy import *
 import matplotlib.pylab as plt
 import sys
@@ -38,15 +40,15 @@ import math
 
 FLT_EPSILON = sys.float_info.epsilon
 NAN = float('nan')
-verbose = False;
+verbose = False
 
 if verbose:
     def verboseprint(*args):
         # Print each argument separately so caller doesn't need to
         # stuff everything to be printed into a single string
         for arg in args:
-           print arg,
-        print
+            print(arg, end=" ")
+        print("")
 else:
     verboseprint = lambda *a: None      # do-nothing function
 
@@ -142,50 +144,50 @@ def compute_T1(a0, v3, j_max, a_max, dt):
 
 
 def computeT1_T123(T123, a0, v3, j_max, dt):
+    delta = T123**2*j_max**2 + 2.0*T123*a0*j_max - a0**2 - 4.0*j_max*v3
+
+    if delta < 0.0:
+        verboseprint("WARNING delta = {}".format(delta))
+        j_max = -j_max
         delta = T123**2*j_max**2 + 2.0*T123*a0*j_max - a0**2 - 4.0*j_max*v3
 
-        if delta < 0.0:
-            verboseprint("WARNING delta = {}".format(delta))
-            j_max = -j_max
-            delta = T123**2*j_max**2 + 2.0*T123*a0*j_max - a0**2 - 4.0*j_max*v3
+    sqrt_delta = sqrt(delta);
 
-        sqrt_delta = sqrt(delta);
+    if abs(j_max) > FLT_EPSILON:
+        denominator_inv = 1.0 / (2.0 * j_max);
+    else:
+        verboseprint("WARNING : j_max = {}".format(j_max))
+        return 0.0
 
-        if abs(j_max) > FLT_EPSILON:
-            denominator_inv = 1.0 / (2.0 * j_max);
-        else:
-            verboseprint("WARNING : j_max = {}".format(j_max))
-            return 0.0
+    b = -T123 * j_max + a0
 
-        b = -T123 * j_max + a0
+    T1_plus = (-b + sqrt_delta) * denominator_inv;
+    T1_minus = (-b - sqrt_delta) * denominator_inv;
+    verboseprint("plus = {}, minus = {}".format(T1_plus, T1_minus))
+    T1_plus = max(T1_plus, 0.0)
+    T1_minus = max(T1_minus, 0.0)
+    (T3_plus, j_max_T3) = compute_T3(T1_plus, a0, v3, j_max, dt)
+    (T3_minus, j_max_T3) = compute_T3(T1_minus, a0, v3, j_max, dt)
+    if (T1_plus + T3_plus > T123):
+        T1 = T1_minus
+    elif (T1_minus + T3_minus > T123):
+        T1 = T1_plus
+    else:
+        T1 = 0.0
 
-	T1_plus = (-b + sqrt_delta) * denominator_inv;
-	T1_minus = (-b - sqrt_delta) * denominator_inv;
-        verboseprint("plus = {}, minus = {}".format(T1_plus, T1_minus))
-        T1_plus = max(T1_plus, 0.0)
-        T1_minus = max(T1_minus, 0.0)
-        (T3_plus, j_max_T3) = compute_T3(T1_plus, a0, v3, j_max, dt)
-        (T3_minus, j_max_T3) = compute_T3(T1_minus, a0, v3, j_max, dt)
-        if (T1_plus + T3_plus > T123):
-            T1 = T1_minus
-        elif (T1_minus + T3_minus > T123):
-            T1 = T1_plus
-        else:
-            T1 = 0.0
+    verboseprint("plus = {}, minus = {}".format(T1_plus, T1_minus))
 
-        verboseprint("plus = {}, minus = {}".format(T1_plus, T1_minus))
+    if T1 < dt:
+        T1 = 0.0
 
-        if T1 < dt:
-            T1 = 0.0
-
-	return (T1, j_max)
+    return (T1, j_max)
 
 def compute_T3(T1, a0, v3, j_max, dt):
     T3 = a0/j_max + T1
     j_max_T3 = j_max
 
     if T1 < FLT_EPSILON and T3 < dt and T3 > FLT_EPSILON:
-        # Force T3 to be the size of dt
+    # Force T3 to be the size of dt
         verboseprint('Exact T3 = {}'.format(T3))
         T3 = dt
         verboseprint('New T3 = {}'.format(T3))
