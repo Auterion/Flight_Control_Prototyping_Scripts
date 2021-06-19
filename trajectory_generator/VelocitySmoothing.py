@@ -24,6 +24,8 @@ Description:
     3) Decreasing acceleration during T3 seconds
 """
 
+from __future__ import print_function
+
 from numpy import *
 import sys
 import math
@@ -31,15 +33,15 @@ import matplotlib.pylab as plt
 
 FLT_EPSILON = sys.float_info.epsilon
 NAN = float('nan')
-verbose = True;
+verbose = True
 
 if verbose:
     def verboseprint(*args):
         # Print each argument separately so caller doesn't need to
         # stuff everything to be printed into a single string
         for arg in args:
-           print arg,
-        print
+            print(arg, end=" ")
+        print("")
 else:
     verboseprint = lambda *a: None      # do-nothing function
 
@@ -155,7 +157,7 @@ class VelocitySmoothing(object):
         # Compute increasing acceleration time
         (T1, trapezoidal) = self.computeT1(self._accel, delta_v, jerk, self._max_accel)
         # Compute decreasing acceleration time
-	T3 = self.computeT3(T1, self._accel, jerk);
+        T3 = self.computeT3(T1, self._accel, jerk);
         # Compute constant acceleration time
         if trapezoidal:
             T2 = self.computeT2(T1, T3, self._accel, delta_v, jerk)
