@@ -33,26 +33,35 @@ def run(log_name, showplots):
     # Select msgs and copy into arrays
     thrust = -get_data(log, 'vehicle_local_position_setpoint', 'thrust[2]')
     az = -get_data(log, 'vehicle_local_position', 'az')
+    vx = get_data(log, 'vehicle_local_position', 'vx')
+    vy = get_data(log, 'vehicle_local_position', 'vy')
+    vz = -get_data(log, 'vehicle_local_position', 'vz')
     dist_bottom = get_data(log, 'vehicle_local_position', 'dist_bottom')
     t = ms2s_list(get_data(log, 'vehicle_local_position_setpoint', 'timestamp'))
     t_ekf = ms2s_list(get_data(log, 'vehicle_local_position', 'timestamp'))
 
     # Downsample ekf estimate to setpoint sample rate
     accel = array(interp(t, t_ekf, az))
+    vel_x = array(interp(t, t_ekf, vx))
+    vel_y = array(interp(t, t_ekf, vy))
+    vel_z = array(interp(t, t_ekf, vz))
 
     # Estimator initial conditions
     hover_thrust_0 = 0.5
     hover_thrust_noise_0 = 0.1
     P0 = hover_thrust_noise_0**2
-    hover_thrust_process_noise = sqrt(0.25e-6) # hover thrust change / s
+    hover_thrust_process_noise = 0.0036 # hover thrust change / s
     Q = hover_thrust_process_noise**2
-    Qk = Q
     accel_noise_0 = sqrt(5.0)
     R = accel_noise_0**2 # Rk = R
 
+    # Speed sensitivity reduction
+    vz_thr = 2.0
+    vxy_thr = 10.0
+
     hover_ekf = HoverThrEstimator(hover_thrust_0)
     hover_ekf.setStateVar(P0)
-    hover_ekf.setProcessVar(Qk)
+    hover_ekf.setProcessVar(Q)
     hover_ekf.setMeasVar(R)
 
     # Initialize arrays
@@ -68,7 +77,11 @@ def run(log_name, showplots):
     innov_test_ratio_signed_lpf = zeros(n)
     residual_lpf = zeros(n)
 
-    for k in range(1, n-100):
+    for k in range(1, n):
+        meas_noise_coeff_z = max((abs(vel_z[k]) - vz_thr) + 1.0, 1.0)
+        meas_noise_coeff_xy = max((sqrt(vel_x[k]**2 + vel_y[k]**2) - vxy_thr) + 1.0, 1.0)
+        hover_ekf.setMeasVarCoeff(max(meas_noise_coeff_xy**2, meas_noise_coeff_z**2))
+
         # Save data
         hover_thrust[k] = hover_ekf._hover_thr
         hover_thrust_std[k] = sqrt(hover_ekf._P)
@@ -97,6 +110,7 @@ def plotData(t, thrust, accel, accel_noise_std, hover_thrust, hover_thrust_std, 
     ax1.plot(t, -3*accel_noise_std, 'g--')
     ax1.legend(["Thrust (10x)", "AccZ", "Acc noise est"])
     plt.title(log_name)
+    ax1.grid()
 
     ax2 = plt.subplot(n_plots, 1, 2, sharex=ax1)
     ax2.plot(t, hover_thrust, 'b')
@@ -119,6 +133,7 @@ def plotData(t, thrust, accel, accel_noise_std, hover_thrust, hover_thrust_std, 
     ax5.plot(t, innov + innov_std, 'g--')
     ax5.plot(t, innov - innov_std, 'g--')
     ax5.legend(["Innov"])
+    ax5.grid()
 
     plt.show()
 

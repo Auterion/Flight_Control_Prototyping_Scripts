@@ -53,6 +53,9 @@ class HoverThrEstimator(object):
     def setMeasVar(self, accel_var):
         self._R = accel_var
 
+    def setMeasVarCoeff(self, coeff):
+        self._R_gain = coeff
+
     def resetInnovSq(self):
         self._innov_sq = 0.0
         self._C = 0.0
@@ -66,6 +69,7 @@ class HoverThrEstimator(object):
         self.setStateVar(0.05)
         self.setProcessVar(0.3**2)
         self.setMeasVar(0.02)
+        self.setMeasVarCoeff(1.0)
         self.resetInnovSq()
         self.setInnovGateSize(3.0)
         self._dt = 1e-3
@@ -107,7 +111,7 @@ class HoverThrEstimator(object):
         return -9.81 * thrust / (self._hover_thr**2)
 
     def computeInnovVar(self, H):
-        innov_var = H * self._P * H + self._R
+        innov_var = H * self._P * H + (self._R * self._R_gain)
         return max(innov_var, self._R)
 
     def computeKalmanGain(self, H, innov_var):
