@@ -81,7 +81,7 @@ class HoverThrEstimator(object):
     def predict(self, dt):
         # State is constant
         # Predict error covariance only
-        self._P += self._Q * dt
+        self._P += self._Q * dt * dt
         self._dt = dt
 
     def fuseAccZ(self, acc_z, thrust):
