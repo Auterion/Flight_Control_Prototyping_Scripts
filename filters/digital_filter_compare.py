@@ -223,6 +223,24 @@ def create1stOrderButterworthHpf(fc, fs):
     name = createName("Hpf-1-Butter", fc)
     return b, a, name
 
+def create2ndOrderButterworthHpf(fc, fs):
+    # Butterworth
+    dt = 1.0 / fs
+    gamma = np.tan(np.pi * fc / fs)
+    gamma2 = gamma**2
+    D = gamma2 + np.sqrt(2) * gamma + 1.0
+    b0_prime = 1.0
+    b1_prime = -2.0
+    b2_prime = 1.0
+    a0_prime = D
+    a1_prime = 2.0 * (gamma2 - 1.0)
+    a2_prime = gamma2 - np.sqrt(2) * gamma + 1.0
+
+    b = [b0_prime, b1_prime, b2_prime] / D
+    a = [a0_prime, a1_prime, a2_prime] / D
+    name = createName("Hpf-2-Butter", fc)
+    return b, a, name
+
 def createName(prefix, fc, bw=0.0):
     name = prefix + " (fc = {}".format(fc)
     if bw > 0.1:
@@ -251,9 +269,11 @@ if __name__ == '__main__':
     addFilter(b, a, fs, name)
     b, a, name = create1stOrderLpf(cutoff, fs=fs)
     addFilter(b, a, fs, name)
-    b, a, name = create1stOrderHpf(1.0, fs=fs)
+    b, a, name = create1stOrderHpf(5.0, fs=fs)
     addFilter(b, a, fs, name)
-    b, a, name = create1stOrderButterworthHpf(1.0, fs=fs)
+    b, a, name = create1stOrderButterworthHpf(5.0, fs=fs)
+    addFilter(b, a, fs, name)
+    b, a, name = create2ndOrderButterworthHpf(5.0, fs=fs)
     addFilter(b, a, fs, name)
 
     plotFilters()
