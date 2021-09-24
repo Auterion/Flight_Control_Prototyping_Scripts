@@ -35,13 +35,13 @@ def runExperiment(total_time, samples, axis):
     filtered[0] = 0.0
     for n in range(1, samples):
         filtered[n] = alpha * filtered[n-1] + (1 - alpha) * noisy[n]
-    
+
     axis.plot(t, noisy, label = "noisy")
     axis.plot(t, signal, label = "signal")
     axis.plot(t, filtered, label = "filtered")
 
 
-# ploting
+# plotting
 fig, axs = plt.subplots(4, 1)
 
 runExperiment(10, 100, axs[0])

@@ -39,7 +39,7 @@ def compute_desaturation_gain(u, u_min, u_max, delta_u):
 
 def minimize_sat(u, u_min, u_max, delta_u):
     # Minimize the saturation of the actuators by
-    # adding or substracting a fraction of delta_u.
+    # adding or subtracting a fraction of delta_u.
     # Delta_u is the vector that added to the output u,
     # modifies the thrust or angular acceleration on a
     # specific axis.
@@ -122,15 +122,15 @@ def normal_mode(m_sp, P, u_min, u_max):
 def mix_forward_thrust_and_yaw(m_sp, P, u_min, u_max):
     # mix everything
     u = P * m_sp
- 
+
     # use yaw to unsaturate
     u_T = P[:, 0]
-    
+
     u_prime = minimize_sat(u, u_min, u_max, u_T)
-    
+
     # use forward thrust to desaturate
     u_T = P[:, 1]
- 
+
     u_final = minimize_sat(u_prime, u_min, u_max, u_T)
-        
+
     return u,u_final
