@@ -15,20 +15,20 @@ class Arrow3D(FancyArrowPatch):
         xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, renderer.M)
         self.set_positions((xs[0],ys[0]),(xs[1],ys[1]))
         FancyArrowPatch.draw(self, renderer)
-        
+
 def plot_arrow(start,end,figure_handle, axis_handle=None):
     style="Simple,head_length=15,head_width=15,tail_width=10"
     vec = Arrow3D([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], arrowstyle=style)
-    
+
     if axis_handle == None:
         axis_handle = figure_handle.add_subplot(111, projection='3d')
-        
+
     axis_handle.add_artist(vec)
-    
+
     return axis_handle
 
 def mix_hover_prio(controls, P):
-    
+
     # extract roll, pitch and thrust Z setpoints
     m_sp = np.matrix([controls[0,0] ,controls[0,1],0, controls[0,4]]).T
     u, u_opt = normal_mode(m_sp, P, np.matrix([0,0,0]).T, np.matrix([1,1,1]).T)
@@ -37,11 +37,11 @@ def mix_hover_prio(controls, P):
 def calculate_forward_thrust_limits(u_z):
     u_min = np.zeros(2)
     u_max = np.zeros(2)
-    
+
     for index in range(2):
         # total thrust needs to be smaller than one in magnitude
         u_max[index] = np.sqrt(1.0 - u_z[index]**2)
-        
+
 
     return np.matrix(u_min),np.matrix(u_max)
 
@@ -51,13 +51,13 @@ torque_demanded = np.array([0, 0, 0])
 thrust_demanded = np.array([1, -0.5])
 
 torque_thurst_demanded = np.matrix(np.concatenate((torque_demanded, thrust_demanded), axis=None))
-    
-    
+
+
 # vehicle configuration for convergence VTOL
 # Motor 1 -> front right motor
 # Motor 2 -> front left motor
 # Motor 3 -> back motor (non-tilting)
-    
+
 # Actuator definition
 # Actuator 1 -> Force in X direction of motor 1
 # Actuator 2 -> Force in X direction of motor 2
@@ -69,7 +69,7 @@ motor1_pos = np.array([0.1, 0.3,0])
 motor2_pos = np.array([0.1, -0.3,0])
 motor3_pos = np.array([-0.3, 0, 0])
 
-# torque vector that one unit of the respecive actuator would generate
+# torque vector that one unit of the respective actuator would generate
 actuator1_torque = np.cross(motor1_pos, np.array([1, 0, 0]))
 actuator2_torque = np.cross(motor2_pos, np.array([1, 0, 0]))
 actuator3_torque = np.cross(motor1_pos, np.array([0, 0, -1]))

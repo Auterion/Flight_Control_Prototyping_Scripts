@@ -11,7 +11,7 @@ Description:
     state: hover thrust (Th)
     The measurement is the vertical acceleration and the current
     thrust (T[k]) is used in the measurement model.
-    The sate is noise driven: Transition matrix A = 1
+    The state is noise driven: Transition matrix A = 1
     x[k+1] = Ax[k] + v with v ~ N(0, Q)
     y[k] = h(u, x) + w with w ~ N(0, R)
     Where the measurement model and corresponding Jocobian are:
