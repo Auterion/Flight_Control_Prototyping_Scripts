@@ -99,7 +99,21 @@ def computePidGmvc(num, den, dt, sigma=0.1, delta=0.0, lbda=0.5):
     return (kc, ki, kd)
 
 def gainsToNumDen(kc, ki, kd, dt):
-    num = [kc*(1+ki*dt+kd/dt), -kc*(1+2*kd/dt), kc*kd/dt]
+    # use backwards Euler approximation for the derivative: s -> (z-1)/dt
+    # and trapezoidal approximation for the integral: s -> 2/dt * (z-1)/(z+1)
+
+    # Standard -> parallel form
+    kI = kc * ki
+    kD = kc * kd
+
+    kIp = dt * kI / 2
+    kDp = kD / dt
+
+    b0 = kc + kIp + kDp
+    b1 = -kc + kIp - 2*kDp
+    b2 = kDp
+
+    num = [b0, b1, b2]
     den = [1, -1, 0]
     return (num, den)
 
