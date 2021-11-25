@@ -59,11 +59,11 @@ e2 = Symbol("e2", real=True)
 p1 = Symbol("p1", real=True)
 p2 = Symbol("p2", real=True)
 
-km = 2
+km = 1
 
 P = 1 + p1 * z**-1 + p2 * z**-2
 delta = 1 - z**-1
-E = 1 + e1 * z**-1 + e2 * z**-2
+E = 1 + e1 * z**-1
 F = f0 + f1 * z**-1 + f2 * z**-2
 A = 1 + a1 * z**-1 + a2 * z**-2
 
