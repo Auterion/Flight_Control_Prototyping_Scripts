@@ -45,32 +45,37 @@ from pid_design import computePidGmvc, gainsToNumDen
 # num = [0.167, -0.578, 0.651]
 # den = [ 1.        , -1.689,  0.689]
 # Gazebo standard vtol
-num = [0.086, -0.255, 0.231]
-den = [ 1.        , -1.864,  0.864]
-dt = 0.0036
+# num = [0.086, -0.255, 0.231]
+# den = [ 1.        , -1.864,  0.864]
+# dt = 0.0036
 
-# 2nd order model
-# zeta = 1
-# f_n = 2.0
+# # 2nd order model
+# dt = 0.0036
+# zeta = 0.5
+# f_n = 1.0
 # w_n = 2*np.pi*f_n
-# pa1 = -zeta*w_n+w_n*np.sqrt((zeta**2-1)+0j)
-# pa2 = -zeta*w_n-w_n*np.sqrt((zeta**2-1)+0j)
+# pa1 = -zeta*w_n+w_n*np.sqrt((1-zeta**2))*1j
+# pa2 = -zeta*w_n-w_n*np.sqrt((1-zeta**2))*1j
 # p1 = np.exp(pa1*dt)
 # p2 = np.exp(pa2*dt)
-# num = [1, 2, 1]
+# num = [1]
 # den = [1, -(p1+p2), p1*p2]
-# K = sum(den)/sum(num)*0.5
-# num = [K, 2*K, K]
+# K = sum(den)/sum(num)
+# num = [K]
 
-tau_ol = dt / (1.0 - den[2])
-print("Tau open-loop = {}\n".format(tau_ol))
+# 1st order model + integrator
+dt = 0.001
+f_n = 2.0
+w_n = 2*np.pi*f_n
+pz1 = np.exp(-w_n*dt)
+pz2 = 1 # integrator
+den = np.convolve([1, -pz1], [1, -pz2])
+num = [100*(1-pz1)*dt]
 
-# sigma = 0.1 # rise time
-sigma = 3 * tau_ol # rise time
-delta = 0.0 # damping property, set between 0 and 2 (1 for Butterworth)
-lbda = 0.5
+sigma = 0.05 # rise time
+delta = 0.5 # damping property, set between 0 and 2 (1 for Butterworth)
+lbda = 0
 (kc, ki, kd) = computePidGmvc(num, den, dt, sigma, delta, lbda)
-ki = ki / 5
 print("Standard: kc = {}, ki = {}, kd = {}\n".format(kc, ki, kd))
 print("Parallel: kp = {}, ki = {}, kd = {}\n".format(kc, kc*ki, kc*kd))
 
