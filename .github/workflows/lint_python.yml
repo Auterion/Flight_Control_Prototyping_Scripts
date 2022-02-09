@@ -6,6 +6,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
+        with:
+          python-version: '3.10.1'
       - run: pip install bandit black codespell flake8 isort mypy pytest pyupgrade safety
       - run: bandit --recursive --skip B101 .
       - run: black --check . || true
