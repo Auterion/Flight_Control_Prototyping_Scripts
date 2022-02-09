@@ -7,7 +7,7 @@ source virtualenv-test/bin/activate
 
 ## Install the dependencies
 ```
-pip3 install scipy, pyulog, control, pyqt5
+pip3 install scipy pyulog control pyqt5
 ```
 
 ## Start the GUI
