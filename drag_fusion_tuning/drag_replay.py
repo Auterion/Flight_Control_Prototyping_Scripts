@@ -45,7 +45,7 @@ import numpy as np
 import quaternion
 from scipy import optimize
 
-def getAllData(logfile, instance=1):
+def getAllData(logfile):
     log = ULog(logfile)
 
     v_local = np.matrix([getData(log, 'vehicle_local_position', 'vx'),
@@ -132,17 +132,14 @@ def run(logfile):
     rho = 1.15 # air densitiy
     rho15 = 1.225 # air density at 15 degC
 
-    # Concatenate X and Y axes if the body is symmetric or if the bluff body drag is negligible (ballistic coefficient -> inf)
-    U = np.append(v_body[0], v_body[1])
-    Y = np.append(a_body[0], a_body[1])
-
     # x[0]: momentum drag, scales with v
     # x[1]: ballistic coefficient, scales with v^2
-    computed_output = lambda x: -U * x[0] - 0.5 * rho * U**2 * np.sign(U) / x[1]
-    J = lambda x: np.sum(np.power(abs(Y-computed_output(x)), 2.0))
-    x0 = [0.1, 10]
+    predict_acc_x = lambda x: -v_body[0] * x[0] - 0.5 * rho * v_body[0]**2 * np.sign(v_body[0]) / x[1]
+    predict_acc_y = lambda x: -v_body[1] * x[0] - 0.5 * rho * v_body[1]**2 * np.sign(v_body[1]) / x[2]
+    J = lambda x: np.sum(np.power(abs(a_body[0]-predict_acc_x(x)), 2.0) + np.power(abs(a_body[1]-predict_acc_y(x)), 2.0))
+    x0 = [0.1, 10, 10]
     res = optimize.minimize(J, x0, method='nelder-mead', options={'disp': True})
-    print(f"BCoef = {res.x[1]}, MCoef = {res.x[0] / np.sqrt(rho / rho15)}")
+    print(f"BCoef_x = {res.x[1]}, BCoef_y = {res.x[2]}, MCoef = {res.x[0] / np.sqrt(rho / rho15)}")
 
     # Plot data
     plt.figure(1)
@@ -154,7 +151,8 @@ def run(logfile):
     ax2 = plt.subplot(2, 1, 2, sharex=ax1)
     ax2.plot(t, a_body[0])
     ax2.plot(t, a_body[1])
-    ax2.plot(np.append(t, t), computed_output(res.x))
+    ax2.plot(t, predict_acc_x(res.x))
+    ax2.plot(t, predict_acc_y(res.x))
     ax2.legend(["a_forward", "a_right", "a_predicted"])
     plt.show()
 
