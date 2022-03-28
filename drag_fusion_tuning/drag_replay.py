@@ -139,21 +139,26 @@ def run(logfile):
     J = lambda x: np.sum(np.power(abs(a_body[0]-predict_acc_x(x)), 2.0) + np.power(abs(a_body[1]-predict_acc_y(x)), 2.0))
     x0 = [0.1, 10, 10]
     res = optimize.minimize(J, x0, method='nelder-mead', options={'disp': True})
-    print(f"BCoef_x = {res.x[1]}, BCoef_y = {res.x[2]}, MCoef = {res.x[0] / np.sqrt(rho / rho15)}")
 
     # Plot data
     plt.figure(1)
+    plt.suptitle(logfile.split('/')[-1])
     ax1 = plt.subplot(2, 1, 1)
     ax1.plot(t, v_body[0])
     ax1.plot(t, v_body[1])
-    ax1.legend(["v_forward", "v_right"])
+    ax1.set_xlabel("time (s)")
+    ax1.set_ylabel("velocity (m/s)")
+    ax1.legend(["forward", "right"])
 
     ax2 = plt.subplot(2, 1, 2, sharex=ax1)
+    ax2.set_title(f"BCoef_x = {res.x[1]:.1f}, BCoef_y = {res.x[2]:.1f}, MCoef = {res.x[0] / np.sqrt(rho / rho15):.4f}", loc="right")
     ax2.plot(t, a_body[0])
     ax2.plot(t, a_body[1])
     ax2.plot(t, predict_acc_x(res.x))
     ax2.plot(t, predict_acc_y(res.x))
-    ax2.legend(["a_forward", "a_right", "a_predicted"])
+    ax2.set_xlabel("time (s)")
+    ax2.set_ylabel("acceleration (m/s^2)")
+    ax2.legend(["meas_forward", "meas_right", "predicted_forward", "predicted_right"])
     plt.show()
 
 if __name__ == '__main__':
