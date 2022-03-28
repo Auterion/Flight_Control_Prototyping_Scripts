@@ -140,6 +140,24 @@ def run(logfile):
     x0 = [0.1, 10, 10]
     res = optimize.minimize(J, x0, method='nelder-mead', options={'disp': True})
 
+    innov_var = J(res.x) / (len(v_body[0]) + len(v_body[1]))
+    mcoef = res.x[0] / np.sqrt(rho / rho15)
+    bcoef_x = res.x[1]
+    bcoef_y = res.x[2]
+
+    if bcoef_x > 200:
+        print(f"BCOEF_X too large, disabling parameter")
+        bcoef_x = 0.0
+
+    if bcoef_y > 200:
+        print(f"BCOEF_Y too large, disabling parameter")
+        bcoef_y = 0.0
+
+    print(f"param set EKF2_BCOEF_X {bcoef_x:.1f}")
+    print(f"param set EKF2_BCOEF_Y {bcoef_y:.1f}")
+    print(f"param set EKF2_MCOEF {mcoef:.2f}")
+    print(f"/!\EXPERIMENTAL param set EKF2_DRAG_NOISE {innov_var:.2f}")
+
     # Plot data
     plt.figure(1)
     plt.suptitle(logfile.split('/')[-1])
@@ -151,7 +169,7 @@ def run(logfile):
     ax1.legend(["forward", "right"])
 
     ax2 = plt.subplot(2, 1, 2, sharex=ax1)
-    ax2.set_title(f"BCoef_x = {res.x[1]:.1f}, BCoef_y = {res.x[2]:.1f}, MCoef = {res.x[0] / np.sqrt(rho / rho15):.4f}", loc="right")
+    ax2.set_title(f"BCoef_x = {bcoef_x:.1f}, BCoef_y = {bcoef_y:.1f}, MCoef = {mcoef:.4f}", loc="right")
     ax2.plot(t, a_body[0])
     ax2.plot(t, a_body[1])
     ax2.plot(t, predict_acc_x(res.x))
