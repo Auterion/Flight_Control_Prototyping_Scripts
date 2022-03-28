@@ -108,11 +108,13 @@ def run(logfile):
     ax1 = plt.subplot(2, 1, 1)
     ax1.plot(t, v_body[0])
     ax1.plot(t, v_body[1])
+    ax1.legend(["v_forward", "v_right"])
 
     ax2 = plt.subplot(2, 1, 2, sharex=ax1)
     ax2.plot(t, a_body[0])
     ax2.plot(t, a_body[1])
     ax2.plot(np.append(t, t), computed_output(res.x))
+    ax2.legend(["a_forward", "a_right", "a_predicted"])
     plt.show()
 
 if __name__ == '__main__':
