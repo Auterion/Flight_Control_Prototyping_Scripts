@@ -47,7 +47,11 @@ def alignData(t_v, v_local, t_accel, accel, t_q, q, t_dist_bottom, dist_bottom):
 
     for i_v in range(len(t_v)):
         t = t_v[i_v]
+        accel_sum = np.zeros((3,1))
+        accel_count = 0
         while t_accel[i_a] <= t and i_a < len_accel-1:
+            accel_sum += accel[:, i_a] # Integrate accel samples between 2 velocity samples
+            accel_count += 1
             i_a += 1
         while t_q[i_q] <= t and i_q < len_q-1:
             i_q += 1
@@ -63,7 +67,7 @@ def alignData(t_v, v_local, t_accel, accel, t_q, q, t_dist_bottom, dist_bottom):
         vb = quaternion.as_float_array(q_vb)[1:4]
 
         v_body_aligned = np.append(v_body_aligned, [[vb[0]], [vb[1]], [vb[2]]], axis=1)
-        accel_aligned = np.append(accel_aligned, accel[:, i_a-1], axis=1)
+        accel_aligned = np.append(accel_aligned, accel_sum / accel_count, axis=1)
         t_aligned.append(t)
 
     return (t_aligned, v_body_aligned, np.asarray(accel_aligned))
@@ -82,9 +86,6 @@ def ms2s(time_ms):
     return time_ms * 1e-6
 
 def run(logfile):
-    # TODO:
-    # - accumulate accel instead of smaple picking
-    # - use in air data only
     (t, v_body, a_body) = getAllData(logfile)
 
     rho = 1.15 # air densitiy
