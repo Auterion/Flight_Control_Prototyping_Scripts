@@ -133,25 +133,28 @@ def run(logfile):
     rho15 = 1.225 # air density at 15 degC
 
     # x[0]: momentum drag, scales with v
-    # x[1]: ballistic coefficient, scales with v^2
-    predict_acc_x = lambda x: -v_body[0] * x[0] - 0.5 * rho * v_body[0]**2 * np.sign(v_body[0]) / x[1]
-    predict_acc_y = lambda x: -v_body[1] * x[0] - 0.5 * rho * v_body[1]**2 * np.sign(v_body[1]) / x[2]
-    J = lambda x: np.sum(np.power(abs(a_body[0]-predict_acc_x(x)), 2.0) + np.power(abs(a_body[1]-predict_acc_y(x)), 2.0))
-    x0 = [0.1, 10, 10]
-    res = optimize.minimize(J, x0, method='nelder-mead', options={'disp': True})
+    # x[1]: inverse of ballistic coefficient (X body axis), scales with v^2
+    # x[1]: inverse of ballistic coefficient (Y body axis), scales with v^2
+    predict_acc_x = lambda x: -v_body[0] * x[0] - 0.5 * rho * v_body[0]**2 * np.sign(v_body[0]) * x[1]
+    predict_acc_y = lambda x: -v_body[1] * x[0] - 0.5 * rho * v_body[1]**2 * np.sign(v_body[1]) * x[2]
 
+    J = lambda x: np.sum(np.power(abs(a_body[0]-predict_acc_x(x)), 2.0) + np.power(abs(a_body[1]-predict_acc_y(x)), 2.0)) # cost function
+
+    x0 = [0.15, 1/100, 1/100] # initial conditions
+    res = optimize.minimize(J, x0, method='nelder-mead', bounds=[(0,1),(0,10),(0,10)], options={'disp': True})
+
+    # Convert results to parameters
     innov_var = J(res.x) / (len(v_body[0]) + len(v_body[1]))
     mcoef = res.x[0] / np.sqrt(rho / rho15)
-    bcoef_x = res.x[1]
-    bcoef_y = res.x[2]
 
-    if bcoef_x > 200:
-        print(f"BCOEF_X too large, disabling parameter")
-        bcoef_x = 0.0
+    bcoef_x = 0.0
+    bcoef_y = 0.0
 
-    if bcoef_y > 200:
-        print(f"BCOEF_Y too large, disabling parameter")
-        bcoef_y = 0.0
+    if res.x[1] > 1/200:
+        bcoef_x = 1/res.x[1]
+
+    if res.x[2] > 1/200:
+        bcoef_y = 1/res.x[2]
 
     print(f"param set EKF2_BCOEF_X {bcoef_x:.1f}")
     print(f"param set EKF2_BCOEF_Y {bcoef_y:.1f}")
