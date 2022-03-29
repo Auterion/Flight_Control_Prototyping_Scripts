@@ -89,17 +89,17 @@ def alignData(t_v, v_local, t_accel, accel, t_q, q, t_dist_bottom, dist_bottom):
         t = t_v[i_v]
         accel_sum = np.zeros((3,1))
         accel_count = 0
-        while t_accel[i_a] <= t and i_a < len_accel-1:
+        while t_accel[i_a] < t and i_a < len_accel-1:
             accel_sum += accel[:, i_a] # Integrate accel samples between 2 velocity samples
             accel_count += 1
             i_a += 1
-        while t_q[i_q] <= t and i_q < len_q-1:
+        while t_q[i_q] < t and i_q < len_q-1:
             i_q += 1
-        while t_dist_bottom[i_db] <= t and i_db < len_db-1:
+        while t_dist_bottom[i_db] < t and i_db < len_db-1:
             i_db += 1
 
         # Only use in air data
-        if dist_bottom[i_db] < 1.0:
+        if dist_bottom[i_db] < 1.0 or accel_count == 0:
             continue
 
         qk = np.quaternion(q[0, i_q],q[1, i_q],q[2, i_q],q[3, i_q])
