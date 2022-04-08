@@ -13,7 +13,11 @@ Repeat the same maneuver in all directions and several times to obtain a good da
 
 /!\ NOTE: the current state of this script assumes no wind. Some modifications are required to estimate both the wind and the parameters at the same time.
 
-Then, run the script and give it the log file as an argument:
+Then, install the required python packages:
+```
+pip install -r requirements.txt
+```
+and run the script and give it the log file as an argument:
 ```
 python drag_replay.py <logfilename.ulg>
 ```
