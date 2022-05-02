@@ -46,11 +46,9 @@ else:
     verboseprint = lambda *a: None      # do-nothing function
 
 class VelocitySmoothing(object):
-
-    def setState(self, a0, v0, x0):
-        self._accel = a0
-        self._vel = v0
-        self._pos = x0
+    '''
+    Public Functions
+    '''
 
     def __init__(self, a0, v0, x0):
         self._jerk = 0.0
@@ -59,7 +57,6 @@ class VelocitySmoothing(object):
         self._pos = self._xt0 = x0
         self._vel_sp = 0.0
         self._d = 0
-        self._t0 = 0.0
 
         self._max_jerk = 9.0
         self._max_accel = 3.0
@@ -68,65 +65,28 @@ class VelocitySmoothing(object):
         self._T1 = 0.0
         self._T2 = 0.0
         self._T3 = 0.0
+        self._local_time = 0.0
 
-    def computeT1(self, a0, v3, j_max, a_max):
-        delta = 2.0*a0**2 + 4.0*j_max*v3
+    def setState(self, a0, v0, x0, t0):
+        self._accel = a0
+        self._vel = v0
+        self._pos = x0
+        self._local_time = t0
 
-        if delta < 0.0:
-            verboseprint('Complex roots\n')
-            return (0.0, True);
-
-        T1_plus = (-a0 + 0.5*sqrt(delta))/j_max
-        T1_minus = (-a0 - 0.5*sqrt(delta))/j_max
-
-        verboseprint('T1_plus = {}, T1_minus = {}'.format(T1_plus, T1_minus))
-        # Use the solution that produces T1 >= 0 and T3 >= 0
-        T3_plus = a0/j_max + T1_plus
-        T3_minus = a0/j_max + T1_minus
-
-        if T1_plus >= 0.0 and T3_plus >= 0.0:
-            T1 = T1_plus
-        elif T1_minus >= 0.0 and T3_minus >= 0.0:
-            T1 = T1_minus
-        else:
-            verboseprint("Warning")
-            T1 = 0.0
-
-        (T1, trapezoidal) = self.saturateT1ForAccel(a0, j_max, T1)
-
-        return (T1, trapezoidal)
-
-    def saturateT1ForAccel(self, a0, j_max, T1):
-        trapezoidal = False
-        # Check maximum acceleration, saturate and recompute T1 if needed
-        a1 = a0 + j_max*T1
-        if a1 > a_max:
-            T1 = (a_max - a0) / j_max
-            trapezoidal = True
-        elif a1 < -a_max:
-            T1 = (-a_max - a0) / j_max
-            trapezoidal = True
-
-        return (T1, trapezoidal)
-
-    def computeT3(self, T1, a0, j_max):
-        T3 = a0/j_max + T1
-
-        return T3
-
-    def computeT2(self, T1, T3, a0, v3, j_max):
-        T2 = 0.0
-
-        den = T1*j_max + a0
-        if abs(den) > FLT_EPSILON:
-            T2 = (-0.5*T1**2*j_max - T1*T3*j_max - T1*a0 + 0.5*T3**2*j_max - T3*a0 + v3)/den
-
-        return T2
-
-    def updateDurations(self, t):
+    '''
+        Compute T1, T2, T3 depending on the current state and velocity setpoint.
+        
+        This should be called on every cycle and before updateTrajectory().
+        
+        @param vel_setpoint velocity setpoint input
+    '''
+    def updateDurations(self, vel_sp):
+        self._vel_sp = clip(vel_sp, -self._max_vel, self._max_vel)
+        self._local_time = 0.0
 
         if (abs(self._accel) > self._max_accel):
             verboseprint("Should be double deceleration profile!")
+        
         # Depending of the direction, start accelerating positively or negatively
         # For this, we need to predict what would be the velocity at zero acceleration
         # because it could be that the current acceleration is too high and that we need
@@ -146,7 +106,6 @@ class VelocitySmoothing(object):
 
         if abs(jerk) < 0.5 * self._max_jerk:
             self._T1 = self._T2 = self._T3 = 0.0
-            print("Return")
             return
 
         self._at0 = self._accel
@@ -168,26 +127,17 @@ class VelocitySmoothing(object):
         self._T1 = T1
         self._T2 = T2
         self._T3 = T3
-        self._t0 = t
 
-    def update(self, vel_sp, t):
-        self._vel_sp = clip(vel_sp, -self._max_vel, self._max_vel)
-        self.updateDurations(t)
-
-    def evaluatePoly(self, j, a0, v0, x0, t, d):
-        jt = d*j
-        at = a0 + jt*t
-        vt = v0 + a0*t + 0.5*jt*t**2
-        xt = x0 + v0*t + 0.5*a0*t**2 + 1.0/6.0*jt*t**3
-
-        return (jt, at, vt, xt)
-
-    def evaluateTraj(self, t_now):
-        """evaluate trajectory for the given time
-        """
+    '''
+        Generate the trajectory (acceleration, velocity and position) by integrating the current jerk
+        
+        @param dt integration period
+	'''
+    def updateTrajectory(self, dt):
+        self._local_time += dt
+        t = self._local_time
         j = self._max_jerk
         d = self._d
-        t = t_now - self._t0
 
         if t <= self._T1:
             t1 = t
@@ -221,6 +171,72 @@ class VelocitySmoothing(object):
             (self._jerk, self._accel, self._vel, self._pos) = self.evaluatePoly(0.0, 0.0, self._vel_sp, self._pos, t - self._T1 - self._T2 - self._T3, 0.0)
 
         return (self._jerk, self._accel, self._vel, self._pos)
+
+    '''
+    Private Functions
+    '''
+
+    def computeT1(self, a0, v3, j_max, a_max):
+        delta = 2.0*a0**2 + 4.0*j_max*v3
+
+        if delta < 0.0:
+            verboseprint('Complex roots\n')
+            return (0.0, True);
+
+        T1_plus = (-a0 + 0.5*sqrt(delta))/j_max
+        T1_minus = (-a0 - 0.5*sqrt(delta))/j_max
+
+        verboseprint('T1_plus = {}, T1_minus = {}'.format(T1_plus, T1_minus))
+        # Use the solution that produces T1 >= 0 and T3 >= 0
+        T3_plus = a0/j_max + T1_plus
+        T3_minus = a0/j_max + T1_minus
+
+        if T1_plus >= 0.0 and T3_plus >= 0.0:
+            T1 = T1_plus
+        elif T1_minus >= 0.0 and T3_minus >= 0.0:
+            T1 = T1_minus
+        else:
+            verboseprint("Warning")
+            T1 = 0.0
+
+        (T1, trapezoidal) = self.saturateT1ForAccel(a0, a_max, j_max, T1)
+
+        return (T1, trapezoidal)
+
+    def saturateT1ForAccel(self, a0, a_max, j_max, T1):
+        trapezoidal = False
+        # Check maximum acceleration, saturate and recompute T1 if needed
+        a1 = a0 + j_max*T1
+        if a1 > a_max:
+            T1 = (a_max - a0) / j_max
+            trapezoidal = True
+        elif a1 < -a_max:
+            T1 = (-a_max - a0) / j_max
+            trapezoidal = True
+
+        return (T1, trapezoidal)
+
+    def computeT3(self, T1, a0, j_max):
+        T3 = a0/j_max + T1
+
+        return T3
+
+    def computeT2(self, T1, T3, a0, v3, j_max):
+        T2 = 0.0
+
+        den = T1*j_max + a0
+        if abs(den) > FLT_EPSILON:
+            T2 = (-0.5*T1**2*j_max - T1*T3*j_max - T1*a0 + 0.5*T3**2*j_max - T3*a0 + v3)/den
+
+        return T2
+
+    def evaluatePoly(self, j, a0, v0, x0, t, d):
+        jt = d*j
+        at = a0 + jt*t
+        vt = v0 + a0*t + 0.5*jt*t**2
+        xt = x0 + v0*t + 0.5*a0*t**2 + 1.0/6.0*jt*t**3
+
+        return (jt, at, vt, xt)
 
 
 if __name__ == '__main__':
@@ -258,7 +274,6 @@ if __name__ == '__main__':
     traj._max_jerk = j_max
     traj._max_accel = a_max
     traj._max_vel = v_max
-    traj._dt = dt_0
 
     # Main loop
     for k in range(0, n):
@@ -272,8 +287,9 @@ if __name__ == '__main__':
             else:
                 v_d[k] = -3.0
         verboseprint('k = {}\tt = {}'.format(k, t[k]))
-        (j_T[k], a_T[k], v_T[k], x_T[k]) = traj.evaluateTraj(t[k])
-        traj.update(v_d[k], t[k])
+        # Set Velocity setpoint
+        traj.updateDurations(v_d[k])
+        (j_T[k], a_T[k], v_T[k], x_T[k]) = traj.updateTrajectory(dt_0)
 
         verboseprint("T1 = {}\tT2 = {}\tT3 = {}\n".format(traj._T1, traj._T2, traj._T3))
 
