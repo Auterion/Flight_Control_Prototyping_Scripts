@@ -258,22 +258,28 @@ if __name__ == '__main__':
     t = arange (0.0, t_end+dt_0, dt_0)
     n = len(t)
 
+    # List for saving the generated Jerk, Accel, Vel and Position values
     j_T = zeros(n)
     a_T = zeros(n)
     v_T = zeros(n)
     x_T = zeros(n)
-    v_d = zeros(n)
-
+    
     j_T[0] = 0.0
     a_T[0] = a0
     v_T[0] = v0
     x_T[0] = x0
+
+    # Velocity setpoints
+    v_d = zeros(n)
     v_d[0] = 2.34
 
     traj = VelocitySmoothing(a0, v0, x0)
     traj._max_jerk = j_max
     traj._max_accel = a_max
     traj._max_vel = v_max
+
+    # Initialize Velocity Setpoint
+    traj.updateDurations(v_d[0])
 
     # Main loop
     for k in range(0, n):
@@ -286,11 +292,13 @@ if __name__ == '__main__':
                 v_d[k] = 1.5
             else:
                 v_d[k] = -3.0
-        verboseprint('k = {}\tt = {}'.format(k, t[k]))
-        # Set Velocity setpoint
-        traj.updateDurations(v_d[k])
+            
+            # Update Velocity setpoint when the target value changes
+            if v_d[k] is not v_d[k-1]:
+                traj.updateDurations(v_d[k])
+        
         (j_T[k], a_T[k], v_T[k], x_T[k]) = traj.updateTrajectory(dt_0)
-
+        verboseprint('k = {}\tt = {}'.format(k, t[k]))
         verboseprint("T1 = {}\tT2 = {}\tT3 = {}\n".format(traj._T1, traj._T2, traj._T3))
 
     plt.plot(t, v_d)
