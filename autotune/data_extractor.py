@@ -96,11 +96,19 @@ def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis):
             t_u = t_u_data[i_u]
             while t_y_data[i_y] <= t_u and i_y < len_y-1:
                 i_y += 1
-            while t_status[i_s] <= t_u and i_s < len_s-1:
-                i_s += 1
 
-            status_aligned = status_data[i_s-1]
-            if status_aligned == axis_to_state[axis]:
+            if len_s > 0:
+                while t_status[i_s] <= t_u and i_s < len_s-1:
+                    i_s += 1
+
+                status_aligned = status_data[i_s-1]
+
+                if status_aligned == axis_to_state[axis]:
+                    u_aligned.append(u_data[i_u])
+                    y_aligned.append(y_data[i_y-1])
+                    t_aligned.append(t_u)
+
+            else:
                 u_aligned.append(u_data[i_u])
                 y_aligned.append(y_data[i_y-1])
                 t_aligned.append(t_u)
