@@ -45,11 +45,11 @@ def getInputOutputData(logfile, axis, instance=0):
     log = ULog(logfile)
 
     y_data = get_data(log, 'vehicle_angular_velocity', 'xyz[{}]'.format(axis))
-    t_y_data = ms2s(get_data(log, 'vehicle_angular_velocity', 'timestamp'))
+    t_y_data = us2s(get_data(log, 'vehicle_angular_velocity', 'timestamp'))
 
     actuator_controls_n = 'actuator_controls_{}'.format(instance)
     u_data = get_data(log, actuator_controls_n, 'control[{}]'.format(axis))
-    t_u_data = ms2s(get_data(log, actuator_controls_n, 'timestamp'))
+    t_u_data = us2s(get_data(log, actuator_controls_n, 'timestamp'))
 
     (t_aligned, u_aligned, y_aligned) = extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis)
 
@@ -67,7 +67,7 @@ def get_data(log, topic_name, variable_name, instance=0):
 
     return variable_data
 
-def ms2s(time_ms):
+def us2s(time_ms):
     return time_ms * 1e-6
 
 def get_delta_mean(data_list):
@@ -81,7 +81,7 @@ def get_delta_mean(data_list):
 
 def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis):
     status_data = get_data(log, 'autotune_attitude_control_status', 'state')
-    t_status = ms2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
+    t_status = us2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
 
     len_y = len(t_y_data)
     len_s = len(t_status)
