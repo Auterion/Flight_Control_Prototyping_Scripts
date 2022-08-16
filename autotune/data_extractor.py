@@ -41,7 +41,7 @@ from scipy import signal
 from pyulog import ULog
 from scipy.signal import resample
 
-def getInputOutputData(logfile, axis, instance=0):
+def getInputOutputData(logfile, axis, t_start=0.0, t_stop=0.0, instance=0):
     log = ULog(logfile)
 
     y_data = get_data(log, 'vehicle_angular_velocity', 'xyz[{}]'.format(axis))
@@ -51,9 +51,7 @@ def getInputOutputData(logfile, axis, instance=0):
     u_data = get_data(log, actuator_controls_n, 'control[{}]'.format(axis))
     t_u_data = us2s(get_data(log, actuator_controls_n, 'timestamp'))
 
-    (t_aligned, u_aligned, y_aligned) = extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis)
-
-    t_aligned -= t_aligned[0]
+    (t_aligned, u_aligned, y_aligned) = extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_start, t_stop)
 
     return (t_aligned, u_aligned, y_aligned)
 
@@ -79,7 +77,7 @@ def get_delta_mean(data_list):
     dx = dx/(length-1)
     return dx
 
-def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis):
+def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_start, t_stop):
     status_data = get_data(log, 'autotune_attitude_control_status', 'state')
     t_status = us2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
 
@@ -92,6 +90,12 @@ def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis):
     t_aligned = []
     axis_to_state = [2, 4, 6] # roll, pitch, yaw states
 
+    if t_start == 0.0:
+        t_start = t_u_data[0]
+
+    if t_stop == 0.0:
+        t_stop = t_u_data[-1]
+
     for i_u in range(len(t_u_data)):
             t_u = t_u_data[i_u]
             while t_y_data[i_y] <= t_u and i_y < len_y-1:
@@ -103,12 +107,12 @@ def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis):
 
                 status_aligned = status_data[i_s-1]
 
-                if status_aligned == axis_to_state[axis]:
+                if status_aligned == axis_to_state[axis] and t_u >= t_start and t_u <= t_stop:
                     u_aligned.append(u_data[i_u])
                     y_aligned.append(y_data[i_y-1])
                     t_aligned.append(t_u)
 
-            else:
+            elif t_u >= t_start and t_u <= t_stop:
                 u_aligned.append(u_data[i_u])
                 y_aligned.append(y_data[i_y-1])
                 t_aligned.append(t_u)

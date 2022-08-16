@@ -51,6 +51,8 @@ from system_identification import SystemIdentification
 import control as ctrl
 from scipy.signal import resample, detrend
 
+from data_selection_window import DataSelectionWindow
+
 class Window(QDialog):
     def __init__(self, parent=None):
         super(Window, self).__init__(parent)
@@ -94,21 +96,6 @@ class Window(QDialog):
         layout_h = QHBoxLayout()
         left_menu = QVBoxLayout()
         left_menu.addWidget(self.btn_open_log)
-
-        xyz_group = QHBoxLayout()
-        r_x = QRadioButton("x")
-        r_x.setChecked(True)
-        r_y = QRadioButton("y")
-        r_z = QRadioButton("z")
-        xyz_group.addWidget(QLabel("Axis"))
-        xyz_group.addWidget(r_x)
-        xyz_group.addWidget(r_y)
-        xyz_group.addWidget(r_z)
-        r_x.clicked.connect(self.loadXData)
-        r_y.clicked.connect(self.loadYData)
-        r_z.clicked.connect(self.loadZData)
-
-        left_menu.addLayout(xyz_group)
 
         pz_group = QFormLayout()
         self.line_edit_zeros = QSpinBox()
@@ -601,37 +588,22 @@ class Window(QDialog):
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
         self.file_name, _ = QFileDialog.getOpenFileName(self,"QFileDialog.getOpenFileName()", "","ULog (*.ulg)", options=options)
-        if self.file_name:
-            self.reset()
-            self.refreshInputOutputData()
-            self.runIdentification()
-            self.computeController()
 
-    def loadXData(self):
-        self.axis = 0
         if self.file_name:
-            self.refreshInputOutputData()
-            self.runIdentification()
-            self.computeController()
+            select = DataSelectionWindow(self.file_name)
 
-    def loadYData(self):
-        self.axis = 1
-        if self.file_name:
-            self.refreshInputOutputData()
-            self.runIdentification()
-            self.computeController()
-
-    def loadZData(self):
-        self.axis = 2
-        if self.file_name:
-            self.refreshInputOutputData()
-            self.runIdentification()
-            self.computeController()
+            if select.exec_():
+                    self.reset()
+                    self.t = select.t - select.t[0]
+                    self.u = select.u
+                    self.y = select.y
+                    self.refreshInputOutputData()
+                    self.runIdentification()
+                    self.computeController()
 
     def refreshInputOutputData(self):
         self.reset()
         if self.file_name:
-            (self.t, self.u, self.y) = getInputOutputData(self.file_name, self.axis)
             dt = max(get_delta_mean(self.t), 0.008)
             self.resampleData(dt)
             self.plotInputOutput(redraw=True)
