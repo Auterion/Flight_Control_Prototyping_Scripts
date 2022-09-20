@@ -514,10 +514,11 @@ class Window(QDialog):
         kc = self.kc
         ki = self.ki
         kd = self.kd
+        Gd = ctrl.TransferFunction([1], np.append([1], np.zeros(self.sys_id_delays)), dt)
         Gz2 = ctrl.TransferFunction(num, den, dt)
         (pid_num, pid_den) = gainsToNumDen(kc, ki, kd, dt)
         PID = ctrl.TransferFunction(pid_num, pid_den, dt)
-        Gcl = ctrl.feedback(PID * Gz2, 1)
+        Gcl = ctrl.feedback(PID * Gd * Gz2, 1)
         t_out,y_out = ctrl.step_response(Gcl, T=np.arange(0,1,dt))
         self.plotClosedLoop(t_out, y_out)
         w = np.logspace(-1, 3, 40).tolist()
