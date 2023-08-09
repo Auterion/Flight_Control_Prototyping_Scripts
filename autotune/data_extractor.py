@@ -47,9 +47,14 @@ def getInputOutputData(logfile, axis, t_start=0.0, t_stop=0.0, instance=0):
     y_data = get_data(log, 'vehicle_angular_velocity', 'xyz[{}]'.format(axis))
     t_y_data = us2s(get_data(log, 'vehicle_angular_velocity', 'timestamp'))
 
-    actuator_controls_n = 'actuator_controls_{}'.format(instance)
-    u_data = get_data(log, actuator_controls_n, 'control[{}]'.format(axis))
-    t_u_data = us2s(get_data(log, actuator_controls_n, 'timestamp'))
+    u_data = get_data(log, 'vehicle_torque_setpoint', 'xyz[{}]'.format(axis))
+    t_u_data = us2s(get_data(log, 'vehicle_torque_setpoint', 'timestamp'))
+
+    if not np.any(u_data):
+        # Check for legacy topics
+        actuator_controls_n = 'actuator_controls_{}'.format(instance)
+        u_data = get_data(log, actuator_controls_n, 'control[{}]'.format(axis))
+        t_u_data = us2s(get_data(log, actuator_controls_n, 'timestamp'))
 
     (t_aligned, u_aligned, y_aligned) = extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_start, t_stop)
 
