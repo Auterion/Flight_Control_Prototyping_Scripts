@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-    Copyright (c) 2021 PX4 Development Team
+    Copyright (c) 2021-2024 PX4 Development Team
     Redistribution and use in source and binary forms, with or without
     modification, are permitted provided that the following conditions
     are met:
@@ -72,6 +72,7 @@ class Window(QDialog):
         self.kc = 0.0
         self.ki = 0.0
         self.kd = 0.0
+        self.kff = 0.0
         self.figure = plt.figure(1)
         self.figure.subplots_adjust(hspace=0.5, wspace=1.0)
         self.num = []
@@ -110,7 +111,7 @@ class Window(QDialog):
         pz_group.addRow(QLabel("Poles"), self.line_edit_poles)
         self.line_edit_delays = QSpinBox()
         self.line_edit_delays.setValue(self.sys_id_delays)
-        self.line_edit_delays.setRange(1, 1000)
+        self.line_edit_delays.setRange(0, 1000)
         self.line_edit_delays.valueChanged.connect(self.onDelaysChanged)
         pz_group.addRow(QLabel("Delays"), self.line_edit_delays)
         self.btn_run_sys_id = QPushButton("Run identification")
@@ -270,13 +271,24 @@ class Window(QDialog):
         layout_d = QHBoxLayout()
         self.slider_d = DoubleSlider(Qt.Horizontal)
         self.slider_d.setMinimum(0.0)
-        self.slider_d.setMaximum(0.05)
+        self.slider_d.setMaximum(0.2)
         self.slider_d.setInterval(0.001)
         self.lbl_d = QLabel("{:.3f}".format(self.kd))
         layout_d.addWidget(self.slider_d)
         layout_d.addWidget(self.lbl_d)
         self.slider_d.valueChanged.connect(self.updateLabelD)
         layout_pid.addRow(QLabel("D"), layout_d)
+
+        layout_ff = QHBoxLayout()
+        self.slider_ff = DoubleSlider(Qt.Horizontal)
+        self.slider_ff.setMinimum(0.0)
+        self.slider_ff.setMaximum(1.0)
+        self.slider_ff.setInterval(0.01)
+        self.lbl_ff = QLabel("{:.3f}".format(self.kff))
+        layout_ff.addWidget(self.slider_ff)
+        layout_ff.addWidget(self.lbl_ff)
+        self.slider_ff.valueChanged.connect(self.updateLabelFF)
+        layout_pid.addRow(QLabel("FF"), layout_ff)
 
         return layout_pid
 
@@ -296,6 +308,12 @@ class Window(QDialog):
         self.kd = self.slider_d.value()
         self.lbl_d.setText("{:.3f}".format(self.kd))
         if self.slider_d.isSliderDown():
+            self.updateClosedLoop()
+
+    def updateLabelFF(self):
+        self.kff = self.slider_ff.value()
+        self.lbl_ff.setText("{:.3f}".format(self.kff))
+        if self.slider_ff.isSliderDown():
             self.updateClosedLoop()
 
     def createGmvcLayout(self):
@@ -412,7 +430,7 @@ class Window(QDialog):
             return
         d = self.sysid.d
         u_detrended = detrend(self.u)
-        u_delayed = np.concatenate(([0 for k in range(d)], u_detrended[0:-d]))
+        u_delayed = np.concatenate(([0 for k in range(d)], u_detrended[0:(len(u_detrended)-d)]))
         self.t_est, self.y_est = ctrl.forced_response(self.Gz, T=self.t, U=u_delayed)
         if len(self.t_est) > len(self.y_est):
             self.t_est = self.t_est[0:len(self.y_est - 1)]
@@ -494,6 +512,8 @@ class Window(QDialog):
         (self.kc, self.ki, self.kd) = computePidGmvc(self.num, self.den, self.dt, sigma, delta, lbda)
         #TODO:find a better solution
         self.ki /= 5.0
+        static_gain = sum(self.num) / sum(self.den)
+        self.kff = 1 / static_gain
         # (self.kc, self.ki, self.kd) = computePidDahlin(self.num, self.den, self.dt, sigma)
 
         self.updateKIDSliders()
@@ -503,6 +523,7 @@ class Window(QDialog):
         self.slider_k.setValue(self.kc)
         self.slider_i.setValue(self.ki)
         self.slider_d.setValue(self.kd)
+        self.slider_ff.setValue(self.kff)
 
     def updateClosedLoop(self):
         if not self.is_system_identified:
@@ -514,11 +535,12 @@ class Window(QDialog):
         kc = self.kc
         ki = self.ki
         kd = self.kd
+        kff = self.kff
         Gd = ctrl.TransferFunction([1], np.append([1], np.zeros(self.sys_id_delays)), dt)
         Gz2 = ctrl.TransferFunction(num, den, dt)
         (pid_num, pid_den) = gainsToNumDen(kc, ki, kd, dt)
         PID = ctrl.TransferFunction(pid_num, pid_den, dt)
-        Gcl = ctrl.feedback(PID * Gd * Gz2, 1)
+        Gcl = (kff * Gd * Gz2 + PID * Gd * Gz2) / (1 + PID * Gd * Gz2)
         t_out,y_out = ctrl.step_response(Gcl, T=np.arange(0,1,dt))
         self.plotClosedLoop(t_out, y_out)
         w = np.logspace(-1, 3, 40).tolist()
