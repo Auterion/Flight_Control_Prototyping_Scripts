@@ -1,7 +1,7 @@
 # Installation using a virtual environment
 ## Create a new venv
 ```
-python3.9 -m venv virtualenv-test
+python3.10 -m venv virtualenv-test
 source virtualenv-test/bin/activate
 ```
 
