@@ -451,8 +451,8 @@ class Window(QDialog):
     def plotPolesZeros(self):
         if not self.is_system_identified:
             return
-        poles = self.Gz.pole()
-        zeros = self.Gz.zero()
+        poles = self.Gz.poles()
+        zeros = self.Gz.zeros()
         if not self.pz_plot_refs:
             ax = self.figure.add_subplot(3,3,6)
             plot_ref = ax.plot(poles.real, poles.imag, 'rx', markersize=10)
