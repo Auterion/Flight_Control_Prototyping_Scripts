@@ -246,12 +246,14 @@ class Window(QDialog):
     def createPidLayout(self):
         layout_pid = QFormLayout()
 
+        layout_pid.addRow(QLabel("Ideal/Standard: Kp * [1 + Ki + Kd]\t(Parallel: Kp + Ki + Kd)"))
+
         layout_k = QHBoxLayout()
         self.slider_k = DoubleSlider(Qt.Horizontal)
         self.slider_k.setMinimum(0.01)
-        self.slider_k.setMaximum(0.5)
+        self.slider_k.setMaximum(4.0)
         self.slider_k.setInterval(0.01)
-        self.lbl_k = QLabel("{:.2f}".format(self.kc))
+        self.lbl_k = QLabel("{:.2f} ({:.2f})".format(self.kc, self.kc))
         layout_k.addWidget(self.slider_k)
         layout_k.addWidget(self.lbl_k)
         self.slider_k.valueChanged.connect(self.updateLabelK)
@@ -262,7 +264,7 @@ class Window(QDialog):
         self.slider_i.setMinimum(0.0)
         self.slider_i.setMaximum(20.0)
         self.slider_i.setInterval(0.1)
-        self.lbl_i = QLabel("{:.2f}".format(self.ki))
+        self.lbl_i = QLabel("{:.2f} ({:.2f})".format(self.ki, self.kc * self.ki))
         layout_i.addWidget(self.slider_i)
         layout_i.addWidget(self.lbl_i)
         self.slider_i.valueChanged.connect(self.updateLabelI)
@@ -273,7 +275,7 @@ class Window(QDialog):
         self.slider_d.setMinimum(0.0)
         self.slider_d.setMaximum(0.2)
         self.slider_d.setInterval(0.001)
-        self.lbl_d = QLabel("{:.3f}".format(self.kd))
+        self.lbl_d = QLabel("{:.3f} ({:.4f})".format(self.kd, self.kc * self.kd))
         layout_d.addWidget(self.slider_d)
         layout_d.addWidget(self.lbl_d)
         self.slider_d.valueChanged.connect(self.updateLabelD)
@@ -282,9 +284,9 @@ class Window(QDialog):
         layout_ff = QHBoxLayout()
         self.slider_ff = DoubleSlider(Qt.Horizontal)
         self.slider_ff.setMinimum(0.0)
-        self.slider_ff.setMaximum(1.0)
+        self.slider_ff.setMaximum(5.0)
         self.slider_ff.setInterval(0.01)
-        self.lbl_ff = QLabel("{:.3f}".format(self.kff))
+        self.lbl_ff = QLabel("{:.3f} ({:.3f})".format(self.kff, self.kff))
         layout_ff.addWidget(self.slider_ff)
         layout_ff.addWidget(self.lbl_ff)
         self.slider_ff.valueChanged.connect(self.updateLabelFF)
@@ -294,25 +296,29 @@ class Window(QDialog):
 
     def updateLabelK(self):
         self.kc = self.slider_k.value()
-        self.lbl_k.setText("{:.2f}".format(self.kc))
+        self.lbl_k.setText("{:.2f} ({:.2f})".format(self.kc, self.kc))
+
+        # Kc also modifies the Ki and Kd gains of the parallel form
+        self.lbl_i.setText("{:.2f} ({:.2f})".format(self.ki, self.kc * self.ki))
+        self.lbl_d.setText("{:.3f} ({:.4f})".format(self.kd, self.kc * self.kd))
         if self.slider_k.isSliderDown():
             self.updateClosedLoop()
 
     def updateLabelI(self):
         self.ki = self.slider_i.value()
-        self.lbl_i.setText("{:.2f}".format(self.ki))
+        self.lbl_i.setText("{:.2f} ({:.2f})".format(self.ki, self.kc * self.ki))
         if self.slider_i.isSliderDown():
             self.updateClosedLoop()
 
     def updateLabelD(self):
         self.kd = self.slider_d.value()
-        self.lbl_d.setText("{:.3f}".format(self.kd))
+        self.lbl_d.setText("{:.3f} ({:.4f})".format(self.kd, self.kc * self.kd))
         if self.slider_d.isSliderDown():
             self.updateClosedLoop()
 
     def updateLabelFF(self):
         self.kff = self.slider_ff.value()
-        self.lbl_ff.setText("{:.3f}".format(self.kff))
+        self.lbl_ff.setText("{:.3f} ({:.3f})".format(self.kff, self.kff))
         if self.slider_ff.isSliderDown():
             self.updateClosedLoop()
 
