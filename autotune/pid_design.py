@@ -109,9 +109,9 @@ def gainsToNumDen(kc, ki, kd, dt):
     kIp = dt * kI / 2
     kDp = kD / dt
 
-    b0 = kc + kIp + kDp
-    b1 = -kc + kIp - 2*kDp
-    b2 = kDp
+    b0 = kDp
+    b1 = kc + kIp - 2*kDp
+    b2 = -kc + kIp + kDp
 
     num = [b0, b1, b2]
     den = [1, -1, 0]
