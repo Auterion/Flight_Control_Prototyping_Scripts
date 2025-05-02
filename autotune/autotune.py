@@ -46,7 +46,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 from data_extractor import *
-from pid_design import computePidGmvc, gainsToNumDen, computePidDahlin
+from pid_design import computePidGmvc
 from system_identification import SystemIdentification
 import control as ctrl
 from scipy.signal import resample, detrend
@@ -520,7 +520,6 @@ class Window(QDialog):
         self.ki /= 5.0
         static_gain = sum(self.num) / sum(self.den)
         self.kff = 1 / static_gain
-        # (self.kc, self.ki, self.kd) = computePidDahlin(self.num, self.den, self.dt, sigma)
 
         self.updateKIDSliders()
         self.updateClosedLoop()
@@ -542,24 +541,37 @@ class Window(QDialog):
         ki = self.ki
         kd = self.kd
         kff = self.kff
-        Gd = ctrl.TransferFunction([1], np.append([1], np.zeros(self.sys_id_delays)), dt)
-        Gz2 = ctrl.TransferFunction(num, den, dt)
-        Gi = ctrl.TransferFunction([ki * dt, ki * dt], [2, -2], dt)
 
-        if True:
-            # PI controller without zero
-            Gcp = ctrl.feedback(kc * Gz2, [1])
-            Gcl = ctrl.feedback(ctrl.series(Gi, Gcp), [1])
-        else:
-            # Standard PI controller
-            pi = ctrl.series(kc, ctrl.parallel([1], Gi))
-            Gcl = ctrl.feedback(ctrl.series(pi, Gz2), [1])
+        delays = ctrl.TransferFunction([1], np.append([1], np.zeros(self.sys_id_delays)), dt, inputs='r', outputs='rd')
+        plant = ctrl.TransferFunction(num, den, dt, inputs='u', outputs='plant_out')
+        sampler = ctrl.TransferFunction([1], [1, 0], dt, inputs='plant_out', outputs='y')
+        sum_feedback = ctrl.summing_junction(inputs=['rd', '-y'], output='e')
 
-        t_out,y_out = ctrl.step_response(Gcl, T=np.arange(0,1,dt))
+        # Default is standard PID
+        feedforward = ctrl.TransferFunction([kff], [1], dt, inputs='rd', outputs='ff_out')
+        p_control = ctrl.TransferFunction([kc], [1], dt, inputs='e', outputs='p_out')
+        i_control = ctrl.TransferFunction([kc * ki * dt, kc * ki * dt], [2, -2], dt, inputs='e', outputs='i_out') # Integrator discretized using bilinear transform
+        d_control = ctrl.TransferFunction([2 * kc * kd , -2 * kc * kd], [dt, dt], dt, inputs='e', outputs='d_out')
+        sum_control = ctrl.summing_junction(inputs=['ff_out', 'p_out', 'i_out', 'd_out'], output='u')
+
+        remove_zero = False
+        no_derivative_kick = True
+
+        if remove_zero:
+            # P on feedback only to remove zero (3-loop autopilot style)
+            p_control = ctrl.TransferFunction([-kc], [1], dt, inputs='y', outputs='p_out')
+
+        if no_derivative_kick:
+            # Derivative on feedback only to remove the "derivative kick"
+            d_control = ctrl.TransferFunction([-2 * kc * kd , 2 * kc * kd], [dt, dt], dt, inputs='y', outputs='d_out')
+
+        closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, plant], inputs='r', outputs='y')
+
+        t_out,y_out = ctrl.step_response(closed_loop, T=np.arange(0,1,dt))
         self.plotClosedLoop(t_out, y_out)
         w = np.logspace(-1, 3, 40).tolist()
-        mag, phase, omega = ctrl.bode(Gz2, omega=np.asarray(w), plot=False)
-        mag_cl, phase_cl, omega_cl = ctrl.bode(Gcl, omega=np.asarray(w), plot=False)
+        mag, phase, omega = ctrl.bode(plant, omega=np.asarray(w), plot=False)
+        mag_cl, phase_cl, omega_cl = ctrl.bode(closed_loop, omega=np.asarray(w), plot=False)
         self.plotBode(omega, mag, omega_cl, mag_cl)
 
     def plotClosedLoop(self, t, y):
