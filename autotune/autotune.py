@@ -544,9 +544,17 @@ class Window(QDialog):
         kff = self.kff
         Gd = ctrl.TransferFunction([1], np.append([1], np.zeros(self.sys_id_delays)), dt)
         Gz2 = ctrl.TransferFunction(num, den, dt)
-        (pid_num, pid_den) = gainsToNumDen(kc, ki, kd, dt)
-        PID = ctrl.TransferFunction(pid_num, pid_den, dt)
-        Gcl = (kff * Gd * Gz2 + PID * Gd * Gz2) / (1 + PID * Gd * Gz2)
+        Gi = ctrl.TransferFunction([ki * dt, ki * dt], [2, -2], dt)
+
+        if True:
+            # PI controller without zero
+            Gcp = ctrl.feedback(kc * Gz2, [1])
+            Gcl = ctrl.feedback(ctrl.series(Gi, Gcp), [1])
+        else:
+            # Standard PI controller
+            pi = ctrl.series(kc, ctrl.parallel([1], Gi))
+            Gcl = ctrl.feedback(ctrl.series(pi, Gz2), [1])
+
         t_out,y_out = ctrl.step_response(Gcl, T=np.arange(0,1,dt))
         self.plotClosedLoop(t_out, y_out)
         w = np.logspace(-1, 3, 40).tolist()
