@@ -59,6 +59,7 @@ class Window(QDialog):
 
         self._plot_ref = None
         self.closed_loop_ref = None
+        self.closed_loop_ax = None
         self.bode_plot_ref = None
         self.state_plot_refs= []
         self.pz_plot_refs= []
@@ -588,12 +589,14 @@ class Window(QDialog):
             ax.step(t, [1 if i>0 else 0 for i in t], 'k--')
             plot_ref = ax.plot(t, y)
             self.closed_loop_ref = plot_ref[0]
+            self.closed_loop_ax = ax
             ax.set_title("Closed-loop step response")
             ax.set_xlabel("Time (s)")
             ax.set_ylabel("Amplitude (rad/s)")
         else:
             self.closed_loop_ref.set_xdata(t)
             self.closed_loop_ref.set_ydata(y)
+            self.closed_loop_ax.set_ylim(np.min(y),np.max([1.5, np.max(y)]))
 
         self.canvas.draw()
 
