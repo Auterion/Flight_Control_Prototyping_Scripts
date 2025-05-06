@@ -550,8 +550,14 @@ class Window(QDialog):
         # Default is standard PID
         feedforward = ctrl.TransferFunction([kff], [1], dt, inputs='rd', outputs='ff_out')
         p_control = ctrl.TransferFunction([kc], [1], dt, inputs='e', outputs='p_out')
-        i_control = ctrl.TransferFunction([kc * ki * dt, kc * ki * dt], [2, -2], dt, inputs='e', outputs='i_out') # Integrator discretized using bilinear transform
-        d_control = ctrl.TransferFunction([2 * kc * kd , -2 * kc * kd], [dt, dt], dt, inputs='e', outputs='d_out')
+        i_control = ctrl.TransferFunction([kc * ki * dt, kc * ki * dt], [2, -2], dt, inputs='e', outputs='i_out') # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
+
+        # Derivative with 1st order LPF (discretized using Euler method: s = (z-1)/dt)
+        derivative_cutoff_freq = 10.0 # Hz
+        tau = 1 / (2 * np.pi * derivative_cutoff_freq)
+        derivative_num = np.array([kc * kd , -kc * kd])
+        derivative_den = np.array([tau, -tau + dt])
+        d_control = ctrl.TransferFunction(derivative_num, derivative_den, dt, inputs='e', outputs='d_out')
         sum_control = ctrl.summing_junction(inputs=['ff_out', 'p_out', 'i_out', 'd_out'], output='u')
 
         remove_zero = False
@@ -563,7 +569,7 @@ class Window(QDialog):
 
         if no_derivative_kick:
             # Derivative on feedback only to remove the "derivative kick"
-            d_control = ctrl.TransferFunction([-2 * kc * kd , 2 * kc * kd], [dt, dt], dt, inputs='y', outputs='d_out')
+            d_control = ctrl.TransferFunction(-derivative_num, derivative_den, dt, inputs='y', outputs='d_out')
 
         closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, plant], inputs='r', outputs='y')
 
