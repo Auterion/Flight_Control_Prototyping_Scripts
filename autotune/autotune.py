@@ -543,6 +543,9 @@ class Window(QDialog):
         kd = self.kd
         kff = self.kff
 
+        airspeed = 40.0
+        airspeed_trim = 38.0
+        airspeed_scale = airspeed_trim / airspeed
         delays = ctrl.TransferFunction([1], np.append([1], np.zeros(self.sys_id_delays)), dt, inputs='r', outputs='rd')
         plant = ctrl.TransferFunction(num, den, dt, inputs='u', outputs='plant_out')
         sampler = ctrl.TransferFunction([1], [1, 0], dt, inputs='plant_out', outputs='y')
@@ -550,6 +553,7 @@ class Window(QDialog):
 
         # Default is standard PID
         feedforward = ctrl.TransferFunction([kff], [1], dt, inputs='rd', outputs='ff_out')
+        ff_scale = ctrl.TransferFunction([airspeed_scale], [1], inputs='ff_out', outputs='ff_out_scaled')
         i_control = ctrl.TransferFunction([ki * dt, ki * dt], [2, -2], dt, inputs='e', outputs='i_out') # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
 
         # Derivative with 1st order LPF (discretized using Euler method: s = (z-1)/dt)
@@ -561,7 +565,8 @@ class Window(QDialog):
 
         id_control = ctrl.summing_junction(inputs=['e', 'i_out', 'd_out'], output='id_out')
         p_control = ctrl.TransferFunction([kc], [1], dt, inputs='id_out', outputs='pid_out')
-        sum_control = ctrl.summing_junction(inputs=['pid_out', 'ff_out'], output='u')
+        pid_scale = ctrl.TransferFunction([airspeed_scale**2], [1], inputs='pid_out', outputs='pid_out_scaled')
+        sum_control = ctrl.summing_junction(inputs=['pid_out_scaled', 'ff_out_scaled'], output='u')
 
         remove_zero = False
         no_derivative_kick = True
@@ -574,7 +579,7 @@ class Window(QDialog):
             # Derivative on feedback only to remove the "derivative kick"
             d_control = ctrl.TransferFunction(-derivative_num, derivative_den, dt, inputs='y', outputs='d_out')
 
-        closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, id_control, plant], inputs='r', outputs='y')
+        closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, id_control, pid_scale, ff_scale, plant], inputs='r', outputs='y')
 
         t_out,y_out = ctrl.step_response(closed_loop, T=np.arange(0,1,dt))
         self.plotClosedLoop(t_out, y_out)
