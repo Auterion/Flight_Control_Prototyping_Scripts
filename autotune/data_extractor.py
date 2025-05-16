@@ -50,15 +50,18 @@ def getInputOutputData(logfile, axis, t_start=0.0, t_stop=0.0, instance=0):
     u_data = get_data(log, 'vehicle_torque_setpoint', 'xyz[{}]'.format(axis))
     t_u_data = us2s(get_data(log, 'vehicle_torque_setpoint', 'timestamp'))
 
+    v_data = get_data(log, 'airspeed_validated', 'true_airspeed_m_s')
+    t_v_data = us2s(get_data(log, 'airspeed_validated', 'timestamp'))
+
     if not np.any(u_data):
         # Check for legacy topics
         actuator_controls_n = 'actuator_controls_{}'.format(instance)
         u_data = get_data(log, actuator_controls_n, 'control[{}]'.format(axis))
         t_u_data = us2s(get_data(log, actuator_controls_n, 'timestamp'))
 
-    (t_aligned, u_aligned, y_aligned) = extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_start, t_stop)
+    (t_aligned, u_aligned, y_aligned, v_aligned) = extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_v_data, v_data, t_start, t_stop)
 
-    return (t_aligned, u_aligned, y_aligned)
+    return (t_aligned, u_aligned, y_aligned, v_aligned)
 
 def get_data(log, topic_name, variable_name, instance=0):
     variable_data = np.array([])
@@ -82,16 +85,19 @@ def get_delta_mean(data_list):
     dx = dx/(length-1)
     return dx
 
-def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_start, t_stop):
+def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_v_data, v_data, t_start, t_stop):
     status_data = get_data(log, 'autotune_attitude_control_status', 'state')
     t_status = us2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
 
     len_y = len(t_y_data)
     len_s = len(t_status)
+    len_v = len(t_v_data)
     i_y = 0
     i_s = 0
+    i_v = 0
     u_aligned = []
     y_aligned = []
+    v_aligned = []
     t_aligned = []
     axis_to_state = [2, 4, 6] # roll, pitch, yaw states
 
@@ -106,6 +112,9 @@ def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t
             while t_y_data[i_y] <= t_u and i_y < len_y-1:
                 i_y += 1
 
+            while i_v < len_v-1 and t_v_data[i_v] <= t_u:
+                i_v += 1
+
             if len_s > 0:
                 while t_status[i_s] <= t_u and i_s < len_s-1:
                     i_s += 1
@@ -117,12 +126,18 @@ def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t
                     y_aligned.append(y_data[i_y-1])
                     t_aligned.append(t_u)
 
+                    if i_v > 0:
+                        v_aligned.append(v_data[i_v-1])
+
             elif t_u >= t_start and t_u <= t_stop:
                 u_aligned.append(u_data[i_u])
                 y_aligned.append(y_data[i_y-1])
                 t_aligned.append(t_u)
 
-    return (t_aligned, u_aligned, y_aligned)
+                if i_v > 0:
+                    v_aligned.append(v_data[i_v-1])
+
+    return (t_aligned, u_aligned, y_aligned, v_aligned)
 
 def printCppArrays(t_aligned, u_aligned, y_aligned):
     # Print data in c++ arrays
@@ -166,5 +181,5 @@ if __name__ == '__main__':
     logfile = os.path.abspath(args.logfile) # Convert to absolute path
     axis = {'x':0, 'y':1, 'z':2}[args.axis]
 
-    (t_aligned, u_aligned, y_aligned) = getInputOutputData(logfile, axis, instance=0)
+    (t_aligned, u_aligned, y_aligned, v_aligned) = getInputOutputData(logfile, axis, instance=0)
     printCppArrays(t_aligned, u_aligned, y_aligned)
