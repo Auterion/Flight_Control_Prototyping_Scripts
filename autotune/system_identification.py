@@ -39,8 +39,10 @@ Description:
 """
 
 import numpy as np
+import control as ctrl
+
 from arx_rls import ArxRls
-from scipy.optimize import lsq_linear
+from scipy.optimize import lsq_linear, minimize
 
 class SystemIdentification(object):
     def __init__(self, n=2, m=2, d=1):
@@ -123,6 +125,12 @@ class SystemIdentification(object):
             res = lsq_linear(A, B, lsmr_tol='auto', verbose=1)
             theta_hat = res.x
 
+            # Refine model using output-error optimization
+            J = lambda x: np.sum(np.power(abs(np.array(B)-self.simulateModel(x, u_lp, dt)), 2.0)) # cost function
+            x0 = np.append(res.x, 0) # initial conditions
+            res = minimize(J, x0, method='nelder-mead', options={'disp': True})
+            theta_hat = res.x
+
             for i in range(self.n):
                 a_coeffs[i,-1] = theta_hat[i]
             for i in range(self.m+1):
@@ -131,6 +139,23 @@ class SystemIdentification(object):
         self.theta_hat = theta_hat
 
         return (theta_hat, a_coeffs, b_coeffs)
+
+    def simulateModel(self, x, u, dt):
+        a_coeffs = np.ones(self.n+1)
+        b_coeffs = np.zeros(self.m+1)
+
+        for i in range(self.n):
+            a_coeffs[i+1] = x[i]
+        for i in range(self.m+1):
+            b_coeffs[i] = x[i+self.n]
+
+        delays = ctrl.TransferFunction([1], np.append([1], np.zeros(self.d)), dt, inputs='r', outputs='rd')
+        plant = ctrl.TransferFunction(b_coeffs, a_coeffs, dt, inputs='rd', outputs='y')
+
+        system = ctrl.interconnect([delays, plant], inputs='r', outputs='y')
+
+        _, y = ctrl.forced_response(system, U=u)
+        return y
 
     def getNum(self):
         num = [self.theta_hat.item(i) for i in range(self.n, self.n+self.m+1)] # b0 .. bm
