@@ -46,7 +46,7 @@ class DataSelectionWindow(QDialog):
 
     def loadLog(self):
         if self.t_stop > self.t_start:
-            (self.t, self.u, self.y) = getInputOutputData(self.file_name, self.axis, self.t_start, self.t_stop)
+            (self.t, self.u, self.y, self.v) = getInputOutputData(self.file_name, self.axis, self.t_start, self.t_stop)
             self.accept()
         else:
             self.printRangeError()
@@ -73,7 +73,7 @@ class DataSelectionWindow(QDialog):
     def refreshInputOutputData(self, axis=0):
         if self.file_name:
             self.axis = axis
-            (self.t, self.u, self.y) = getInputOutputData(self.file_name, axis)
+            (self.t, self.u, self.y, self.v) = getInputOutputData(self.file_name, axis)
             self.plotInputOutput(redraw=True)
 
     def plotInputOutput(self, redraw=False):

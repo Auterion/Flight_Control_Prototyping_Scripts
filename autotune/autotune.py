@@ -57,7 +57,8 @@ class Window(QDialog):
     def __init__(self, parent=None):
         super(Window, self).__init__(parent)
 
-        self._plot_ref = None
+        self.model_ref = None
+        self.input_ref = None
         self.closed_loop_ref = None
         self.closed_loop_ax = None
         self.bode_plot_ref = None
@@ -124,6 +125,17 @@ class Window(QDialog):
         layout_tf = self.createTfLayout()
         left_menu.addLayout(layout_tf)
 
+
+        trim_group = QFormLayout()
+        self.line_edit_trim = QDoubleSpinBox()
+        self.trim_airspeed = 20.0
+        self.line_edit_trim.setValue(self.trim_airspeed)
+        self.line_edit_trim.setRange(0.0, 100.0)
+        self.line_edit_trim.textChanged.connect(self.onTrimChanged)
+        self.line_edit_trim.setEnabled(False)
+        trim_group.addRow(QLabel("Trim airspeed"), self.line_edit_trim)
+        left_menu.addLayout(trim_group)
+
         offset_group = QFormLayout()
         self.line_edit_offset = QDoubleSpinBox()
         self.line_edit_offset.setValue(0.0)
@@ -151,7 +163,8 @@ class Window(QDialog):
         self.setLayout(layout_v)
 
     def reset(self):
-        self._plot_ref = None
+        self.model_ref = None
+        self.input_ref = None
         self.closed_loop_ref = None
         self.bode_plot_ref = None
         self.state_plot_refs= []
@@ -205,6 +218,16 @@ class Window(QDialog):
 
     def onModelChanged(self):
         self.btn_update_model.setEnabled(True)
+
+    def onTrimChanged(self):
+        try:
+            self.trim_airspeed = float(self.line_edit_trim.text())
+        except ValueError:
+            self.trim_airspeed = 0
+            self.line_edit_trim.setValue(self.trim_airspeed)
+
+        self.btn_run_sys_id.setEnabled(True)
+        self.plotInputOutput()
 
     def onOffsetChanged(self):
         self.plotInputOutput()
@@ -543,9 +566,6 @@ class Window(QDialog):
         kd = self.kd
         kff = self.kff
 
-        airspeed = 40.0
-        airspeed_trim = 38.0
-        airspeed_scale = airspeed_trim / airspeed
         delays = ctrl.TransferFunction([1], np.append([1], np.zeros(self.sys_id_delays)), dt, inputs='r', outputs='rd')
         plant = ctrl.TransferFunction(num, den, dt, inputs='u', outputs='plant_out')
         sampler = ctrl.TransferFunction([1], [1, 0], dt, inputs='plant_out', outputs='y')
@@ -553,7 +573,6 @@ class Window(QDialog):
 
         # Default is standard PID
         feedforward = ctrl.TransferFunction([kff], [1], dt, inputs='rd', outputs='ff_out')
-        ff_scale = ctrl.TransferFunction([airspeed_scale], [1], inputs='ff_out', outputs='ff_out_scaled')
         i_control = ctrl.TransferFunction([ki * dt, ki * dt], [2, -2], dt, inputs='e', outputs='i_out') # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
 
         # Derivative with 1st order LPF (discretized using Euler method: s = (z-1)/dt)
@@ -565,8 +584,7 @@ class Window(QDialog):
 
         id_control = ctrl.summing_junction(inputs=['e', 'i_out', 'd_out'], output='id_out')
         p_control = ctrl.TransferFunction([kc], [1], dt, inputs='id_out', outputs='pid_out')
-        pid_scale = ctrl.TransferFunction([airspeed_scale**2], [1], inputs='pid_out', outputs='pid_out_scaled')
-        sum_control = ctrl.summing_junction(inputs=['pid_out_scaled', 'ff_out_scaled'], output='u')
+        sum_control = ctrl.summing_junction(inputs=['pid_out', 'ff_out'], output='u')
 
         remove_zero = False
         no_derivative_kick = True
@@ -579,7 +597,7 @@ class Window(QDialog):
             # Derivative on feedback only to remove the "derivative kick"
             d_control = ctrl.TransferFunction(-derivative_num, derivative_den, dt, inputs='y', outputs='d_out')
 
-        closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, id_control, pid_scale, ff_scale, plant], inputs='r', outputs='y')
+        closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, id_control, plant], inputs='r', outputs='y')
 
         t_out,y_out = ctrl.step_response(closed_loop, T=np.arange(0,1,dt))
         self.plotClosedLoop(t_out, y_out)
@@ -624,28 +642,36 @@ class Window(QDialog):
         self.canvas.draw()
 
     def plotInputOutput(self, redraw=False):
-        if self._plot_ref is None or redraw:
+        if len(self.true_airspeed) == len(self.input):
+            scale = np.array(self.true_airspeed) / self.trim_airspeed
+            self.u = self.input * scale**2
+            self.line_edit_trim.setEnabled(True)
+
+        if self.model_ref is None or redraw:
             # First time we have no plot reference, so do a normal plot.
             # .plot returns a list of line <reference>s, as we're
             # only getting one we can take the first element.
             self.figure.clear()
             ax = self.figure.add_subplot(3,3,(1,3))
-            ax.plot(self.t, self.u, self.t, self.y)
+            input_ref = ax.plot(self.t, self.u)
+            self.input_ref = input_ref[0]
+            ax.plot(self.t, self.y)
             plot_refs = ax.plot(0, 0)
-            self._plot_ref = plot_refs[0]
+            self.model_ref = plot_refs[0]
             ax.set_title("Logged data")
             ax.set_xlabel("Time (s)")
             ax.set_ylabel("Amplitude")
             ax.legend(["Input", "Output", "Model"])
         else:
             # We have a reference, we can use it to update the data for that line.
-            self._plot_ref.set_xdata(self.t_est)
+            self.model_ref.set_xdata(self.t_est)
             try:
                 offset = float(self.line_edit_offset.text())
             except ValueError:
                 offset = 0
 
-            self._plot_ref.set_ydata(self.y_est + offset)
+            self.model_ref.set_ydata(self.y_est + offset)
+            self.input_ref.set_ydata(self.u)
 
         self.canvas.draw()
 
@@ -660,8 +686,10 @@ class Window(QDialog):
             if select.exec_():
                     self.reset()
                     self.t = select.t - select.t[0]
-                    self.u = select.u
+                    self.input = select.u
+                    self.u = self.input
                     self.y = select.y
+                    self.true_airspeed = select.v
                     self.refreshInputOutputData()
                     self.runIdentification()
                     self.computeController()
@@ -674,10 +702,14 @@ class Window(QDialog):
             self.plotInputOutput(redraw=True)
 
     def resampleData(self, dt):
-            self.dt = dt
-            self.t = np.arange(0, self.t[-1]+self.dt, self.dt)
-            self.u = resample(self.u, len(self.t))
-            self.y = resample(self.y, len(self.t))
+        self.dt = dt
+        self.t = np.arange(0, self.t[-1]+self.dt, self.dt)
+        self.u = resample(self.u, len(self.t))
+        self.y = resample(self.y, len(self.t))
+        self.input = resample(self.input, len(self.t))
+
+        if len(self.true_airspeed) > 0:
+            self.true_airspeed = resample(self.true_airspeed, len(self.t))
 
 class DoubleSlider(QSlider):
 
