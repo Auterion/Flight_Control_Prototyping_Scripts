@@ -605,7 +605,17 @@ class Window(QDialog):
 
         closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, id_control, plant], inputs='r', outputs='y')
 
-        t_out,y_out = ctrl.step_response(closed_loop, T=np.arange(0,1,dt))
+        t_out,y_out = ctrl.step_response(closed_loop, T=np.arange(0,2,dt))
+
+        # Add disturbance
+        sum_feedback_no_ref = ctrl.summing_junction(inputs=['-y'], output='e')
+        sum_control_with_disturbance = ctrl.summing_junction(inputs=['pid_out', 'disturbance'], output='u')
+        disturbance_loop = ctrl.interconnect([sampler, sum_feedback_no_ref, sum_control_with_disturbance, p_control, i_control, d_control, id_control, plant], inputs='disturbance', outputs='y')
+        d = np.zeros_like(t_out)
+        d[t_out >= 1.0] = -0.05 #TODO: parameterize
+        _, y_d = ctrl.forced_response(disturbance_loop, t_out, d)
+        y_out += y_d
+
         self.plotClosedLoop(t_out, y_out)
         w = np.logspace(-1, 3, 40).tolist()
         mag, phase, omega = ctrl.bode(plant, omega=np.asarray(w), plot=False)
