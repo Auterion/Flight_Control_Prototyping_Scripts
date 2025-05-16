@@ -37,7 +37,7 @@ Description:
 """
 
 import sys
-from PyQt5.QtWidgets import QDialog, QApplication, QLabel, QRadioButton, QSlider, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView
+from PyQt5.QtWidgets import QDialog, QApplication, QLabel, QRadioButton, QSlider, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView
 from PyQt5.QtCore import Qt
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -270,7 +270,13 @@ class Window(QDialog):
     def createPidLayout(self):
         layout_pid = QFormLayout()
 
-        layout_pid.addRow(QLabel("Ideal/Standard: Kp * [1 + Ki + Kd]\t(Parallel: Kp + Ki + Kd)"))
+        layout_structure = QHBoxLayout()
+        layout_structure.addWidget(QLabel("Ideal/Standard: Kp * [1 + Ki + Kd]\t(Parallel: Kp + Ki + Kd)"))
+        self.pid_no_zero_box = QCheckBox("PI no-zero", self)
+        self.pid_no_zero_box.setChecked(False)
+        self.pid_no_zero_box.stateChanged.connect(self.updateClosedLoop)
+        layout_structure.addWidget(self.pid_no_zero_box)
+        layout_pid.addRow(layout_structure)
 
         layout_k = QHBoxLayout()
         self.slider_k = DoubleSlider(Qt.Horizontal)
@@ -586,7 +592,7 @@ class Window(QDialog):
         p_control = ctrl.TransferFunction([kc], [1], dt, inputs='id_out', outputs='pid_out')
         sum_control = ctrl.summing_junction(inputs=['pid_out', 'ff_out'], output='u')
 
-        remove_zero = False
+        remove_zero = self.pid_no_zero_box.isChecked()
         no_derivative_kick = True
 
         if remove_zero:
