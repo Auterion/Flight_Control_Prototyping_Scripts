@@ -15,4 +15,5 @@ pip3 install scipy pyulog control pyqt5
 python3 autotune.py
 ```
 
-![autotune](https://user-images.githubusercontent.com/14822839/153227985-d7aff352-4799-4daf-bcda-f69649bcba61.png)
+![image](https://github.com/user-attachments/assets/fcdf5c25-d92d-4487-9736-e77f6576d180)
+
