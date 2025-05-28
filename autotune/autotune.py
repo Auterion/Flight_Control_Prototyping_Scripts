@@ -49,7 +49,7 @@ from data_extractor import *
 from pid_design import computePidGmvc
 from system_identification import SystemIdentification
 import control as ctrl
-from scipy.signal import resample, detrend
+from scipy.signal import detrend
 
 from data_selection_window import DataSelectionWindow
 
@@ -715,13 +715,15 @@ class Window(QDialog):
 
     def resampleData(self, dt):
         self.dt = dt
-        self.t = np.arange(0, self.t[-1]+self.dt, self.dt)
-        self.u = resample(self.u, len(self.t))
-        self.y = resample(self.y, len(self.t))
-        self.input = resample(self.input, len(self.t))
+        t_new = np.arange(0, self.t[-1]+self.dt, self.dt)
+        self.u = resample_interp(self.t, self.u, t_new)
+        self.y = resample_interp(self.t, self.y, t_new)
+        self.input = resample_interp(self.t, self.input, t_new)
 
         if len(self.true_airspeed) > 0:
-            self.true_airspeed = resample(self.true_airspeed, len(self.t))
+            self.true_airspeed = resample_interp(self.t, self.true_airspeed, t_new)
+
+        self.t = t_new
 
 class DoubleSlider(QSlider):
 
