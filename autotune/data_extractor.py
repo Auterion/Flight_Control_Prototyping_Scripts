@@ -39,7 +39,7 @@ Description:
 import numpy as np
 from scipy import signal
 from pyulog import ULog
-from scipy.signal import resample
+from scipy.interpolate import make_interp_spline
 
 def getInputOutputData(logfile, axis, t_start=0.0, t_stop=0.0, instance=0):
     log = ULog(logfile)
@@ -85,21 +85,30 @@ def get_delta_mean(data_list):
     dx = dx/(length-1)
     return dx
 
-def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_v_data, v_data, t_start, t_stop):
-    status_data = get_data(log, 'autotune_attitude_control_status', 'state')
-    t_status = us2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
+def resample_interp(t, u, t_new):
+    interp = make_interp_spline(t, u, k=1)
+    return interp(t_new)
 
-    len_y = len(t_y_data)
-    len_s = len(t_status)
-    len_v = len(t_v_data)
-    i_y = 0
-    i_s = 0
-    i_v = 0
-    u_aligned = []
-    y_aligned = []
-    v_aligned = []
-    t_aligned = []
-    axis_to_state = [2, 4, 6] # roll, pitch, yaw states
+def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_v_data, v_data, t_start, t_stop):
+    if t_start == 0.0 and t_stop == 0.0:
+        # Find autotune sequence
+        status_data = get_data(log, 'autotune_attitude_control_status', 'state')
+        t_status = us2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
+        axis_to_state = [2, 4, 6] # roll, pitch, yaw states
+
+        status_prev = 0
+
+        for i_s in range(len(t_status)):
+            if status_data[i_s] == axis_to_state[axis]:
+                if status_prev != axis_to_state[axis]:
+                    t_start = t_status[i_s]
+
+            else:
+                if status_prev == axis_to_state[axis]:
+                    t_stop = t_status[i_s]
+                    break
+
+            status_prev = status_data[i_s]
 
     if t_start == 0.0:
         t_start = t_u_data[0]
@@ -107,35 +116,17 @@ def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t
     if t_stop == 0.0:
         t_stop = t_u_data[-1]
 
-    for i_u in range(len(t_u_data)):
-            t_u = t_u_data[i_u]
-            while t_y_data[i_y] <= t_u and i_y < len_y-1:
-                i_y += 1
+    dt = get_delta_mean(t_y_data)
+    t_aligned = np.arange(t_start, t_stop, dt)
 
-            while i_v < len_v-1 and t_v_data[i_v] <= t_u:
-                i_v += 1
+    # Resample series to the common index
+    u_aligned = resample_interp(t_u_data, u_data, t_aligned)
+    y_aligned = resample_interp(t_y_data, y_data, t_aligned)
 
-            if len_s > 0:
-                while t_status[i_s] <= t_u and i_s < len_s-1:
-                    i_s += 1
+    v_aligned = []
 
-                status_aligned = status_data[i_s-1]
-
-                if status_aligned == axis_to_state[axis] and t_u >= t_start and t_u <= t_stop:
-                    u_aligned.append(u_data[i_u])
-                    y_aligned.append(y_data[i_y-1])
-                    t_aligned.append(t_u)
-
-                    if i_v > 0:
-                        v_aligned.append(v_data[i_v-1])
-
-            elif t_u >= t_start and t_u <= t_stop:
-                u_aligned.append(u_data[i_u])
-                y_aligned.append(y_data[i_y-1])
-                t_aligned.append(t_u)
-
-                if i_v > 0:
-                    v_aligned.append(v_data[i_v-1])
+    if len(v_data) > 0:
+        v_aligned = resample_interp(t_v_data, v_data, t_aligned)
 
     return (t_aligned, u_aligned, y_aligned, v_aligned)
 
