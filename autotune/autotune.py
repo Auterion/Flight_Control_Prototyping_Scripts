@@ -688,23 +688,19 @@ class Window(QDialog):
         self.canvas.draw()
 
     def loadLog(self):
-        options = QFileDialog.Options()
-        options |= QFileDialog.DontUseNativeDialog
-        self.file_name, _ = QFileDialog.getOpenFileName(self,"QFileDialog.getOpenFileName()", "","ULog (*.ulg)", options=options)
+        select = DataSelectionWindow(self.file_name)
 
-        if self.file_name:
-            select = DataSelectionWindow(self.file_name)
-
-            if select.exec_():
-                    self.reset()
-                    self.t = select.t - select.t[0]
-                    self.input = select.u
-                    self.u = self.input
-                    self.y = select.y
-                    self.true_airspeed = select.v
-                    self.refreshInputOutputData()
-                    self.runIdentification()
-                    self.computeController()
+        if select.exec_():
+                self.reset()
+                self.file_name = select.file_name
+                self.t = select.t - select.t[0]
+                self.input = select.u
+                self.u = self.input
+                self.y = select.y
+                self.true_airspeed = select.v
+                self.refreshInputOutputData()
+                self.runIdentification()
+                self.computeController()
 
     def refreshInputOutputData(self):
         self.reset()

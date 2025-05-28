@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFormLayout, QRadioButton, QMessageBox
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFormLayout, QRadioButton, QMessageBox, QFileDialog
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -12,13 +12,17 @@ class DataSelectionWindow(QDialog):
     def __init__(self, filename):
         QDialog.__init__(self)
 
-        self.file_name = filename
-
         self.figure = plt.figure(1)
         self.canvas = FigureCanvas(self.figure)
 
         layout_v = QVBoxLayout()
 
+        top_group = QHBoxLayout()
+        btn_browse = QPushButton("Browse files")
+        btn_browse.clicked.connect(self.browseFiles)
+        top_group.addWidget(btn_browse)
+
+        layout_v.addLayout(top_group)
         layout_v.addWidget(self.canvas)
 
         xyz_group = QHBoxLayout()
@@ -42,7 +46,12 @@ class DataSelectionWindow(QDialog):
 
         self.setLayout(layout_v)
 
-        self.refreshInputOutputData()
+        if filename:
+            self.file_name = filename
+            self.refreshInputOutputData()
+
+        else:
+            self.browseFiles()
 
     def loadLog(self):
         if self.t_stop > self.t_start:
@@ -50,6 +59,14 @@ class DataSelectionWindow(QDialog):
             self.accept()
         else:
             self.printRangeError()
+
+    def browseFiles(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        self.file_name, _ = QFileDialog.getOpenFileName(self,"QFileDialog.getOpenFileName()", "","ULog (*.ulg)", options=options)
+
+        if self.file_name:
+            self.refreshInputOutputData()
 
     def printRangeError(self):
         msg = QMessageBox()
