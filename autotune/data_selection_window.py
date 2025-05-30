@@ -32,6 +32,13 @@ class DataSelectionWindow(QDialog):
         top_group.addWidget(btn_browse)
 
         in_out_group = QFormLayout()
+        self.combo_preset = QComboBox()
+        self.combo_preset.setEditable(False)
+        self.presets = ['Rollrate', 'Pitchrate', 'Yawrate']
+        self.combo_preset.addItems(self.presets)
+        self.combo_preset.currentIndexChanged.connect(self.selectPreset)
+        in_out_group.addRow(QLabel("Preset:"), self.combo_preset)
+
         self.combo_u = QComboBox()
         self.combo_u.setEditable(True)
         self.combo_u.setInsertPolicy(QComboBox.NoInsert)
@@ -85,12 +92,47 @@ class DataSelectionWindow(QDialog):
             self.combo_y.clear()
             self.combo_y.addItems(list_names)
 
+            # Trigger preset selection
+            self.combo_preset.setCurrentIndex(0)
+            self.selectPreset(0)
+
     def printRangeError(self):
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
         msg.setWindowTitle("Error")
         msg.setText("Range is invalid")
         msg.exec_()
+
+    def selectPreset(self, index):
+        preset = self.presets[index]
+        if preset == 'Rollrate':
+            index_u = self.combo_u.findText("vehicle_torque_setpoint/xyz[0].0")
+            index_y = self.combo_u.findText("vehicle_angular_velocity/xyz[0].0")
+
+            if index_u < 0:
+                # Look for legacy topic
+                index_u = self.combo_u.findText("actuator_controls_0/control[0].0")
+
+        elif preset == 'Pitchrate':
+            index_u = self.combo_u.findText("vehicle_torque_setpoint/xyz[1].0")
+            index_y = self.combo_u.findText("vehicle_angular_velocity/xyz[1].0")
+
+            if index_u < 0:
+                # Look for legacy topic
+                index_u = self.combo_u.findText("actuator_controls_0/control[1].0")
+
+        elif preset == 'Yawrate':
+            index_u = self.combo_u.findText("vehicle_torque_setpoint/xyz[2].0")
+            index_y = self.combo_u.findText("vehicle_angular_velocity/xyz[2].0")
+
+            if index_u < 0:
+                # Look for legacy topic
+                index_u = self.combo_u.findText("actuator_controls_0/control[2].0")
+
+        if index_u > -1:
+            self.combo_u.setCurrentIndex(index_u)
+        if index_y > -1:
+            self.combo_y.setCurrentIndex(index_y)
 
     def selectUData(self, index):
         self.index_u = index
