@@ -41,27 +41,51 @@ from scipy import signal
 from pyulog import ULog
 from scipy.interpolate import make_interp_spline
 
-def getInputOutputData(logfile, axis, t_start=0.0, t_stop=0.0, instance=0):
-    log = ULog(logfile)
+class FieldDefinition():
+    def __init__(self, topic, var, inst):
+        self.topic_name = topic
+        self.variable_name = var
+        self.instance = inst
 
-    y_data = get_data(log, 'vehicle_angular_velocity', 'xyz[{}]'.format(axis))
-    t_y_data = us2s(get_data(log, 'vehicle_angular_velocity', 'timestamp'))
+class DataExtractor():
+    def __init__(self, logfile_name):
+        self.log = ULog(logfile_name)
 
-    u_data = get_data(log, 'vehicle_torque_setpoint', 'xyz[{}]'.format(axis))
-    t_u_data = us2s(get_data(log, 'vehicle_torque_setpoint', 'timestamp'))
+    def get_topics_list(self):
+        fields = []
+        for elem in self.log.data_list:
+            for var_name in elem.data.keys():
+                fields.append(FieldDefinition(elem.name, var_name, elem.multi_id))
 
-    v_data = get_data(log, 'airspeed_validated', 'true_airspeed_m_s')
-    t_v_data = us2s(get_data(log, 'airspeed_validated', 'timestamp'))
+        return fields
 
-    if not np.any(u_data):
-        # Check for legacy topics
-        actuator_controls_n = 'actuator_controls_{}'.format(instance)
-        u_data = get_data(log, actuator_controls_n, 'control[{}]'.format(axis))
-        t_u_data = us2s(get_data(log, actuator_controls_n, 'timestamp'))
+    def getPreview(self, field_def):
+        (t_data, data) = self.getData(field_def)
 
-    (t_aligned, u_aligned, y_aligned, v_aligned) = extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_v_data, v_data, t_start, t_stop)
+        if(len(t_data) > 10e3):
+            # Downsample to speed up plotting preview
+            downsampling_factor = int(len(t_data)/10e3)+1
+            t_data = t_data[:-downsampling_factor+1:downsampling_factor]
+            data = data[:-downsampling_factor+1:downsampling_factor]
 
-    return (t_aligned, u_aligned, y_aligned, v_aligned)
+        return (t_data, data)
+
+    def getData(self, field_def):
+        data = get_data(self.log, field_def.topic_name, field_def.variable_name, field_def.instance)
+        t_data = us2s(get_data(self.log, field_def.topic_name, 'timestamp', field_def.instance))
+
+        return (t_data, data)
+
+    def getInputOutputData(self, field_def_u, field_def_y, t_start=0.0, t_stop=0.0):
+        (t_u_data, u_data) = self.getData(field_def_u)
+        (t_y_data, y_data) = self.getData(field_def_y)
+
+        v_data = get_data(self.log, 'airspeed_validated', 'true_airspeed_m_s')
+        t_v_data = us2s(get_data(self.log, 'airspeed_validated', 'timestamp'))
+
+        (t_aligned, u_aligned, y_aligned, v_aligned) = resampleIdentificationData(t_u_data, u_data, t_y_data, y_data, t_v_data, v_data, t_start, t_stop)
+
+        return (t_aligned, u_aligned, y_aligned, v_aligned)
 
 def get_data(log, topic_name, variable_name, instance=0):
     variable_data = np.array([])
@@ -89,31 +113,34 @@ def resample_interp(t, u, t_new):
     interp = make_interp_spline(t, u, k=1)
     return interp(t_new)
 
-def extract_identification_data(log, t_u_data, u_data, t_y_data, y_data, axis, t_v_data, v_data, t_start, t_stop):
-    if t_start == 0.0 and t_stop == 0.0:
-        # Find autotune sequence
-        status_data = get_data(log, 'autotune_attitude_control_status', 'state')
-        t_status = us2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
-        axis_to_state = [2, 4, 6] # roll, pitch, yaw states
+def find_autotune_sequence(log, axis):
+    t_start = None
+    t_stop = None
+    status_data = get_data(log, 'autotune_attitude_control_status', 'state')
+    t_status = us2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
+    axis_to_state = [2, 4, 6] # roll, pitch, yaw states
 
-        status_prev = 0
+    status_prev = 0
 
-        for i_s in range(len(t_status)):
-            if status_data[i_s] == axis_to_state[axis]:
-                if status_prev != axis_to_state[axis]:
-                    t_start = t_status[i_s]
+    for i_s in range(len(t_status)):
+        if status_data[i_s] == axis_to_state[axis]:
+            if status_prev != axis_to_state[axis]:
+                t_start = t_status[i_s]
 
-            else:
-                if status_prev == axis_to_state[axis]:
-                    t_stop = t_status[i_s]
-                    break
+        else:
+            if status_prev == axis_to_state[axis]:
+                t_stop = t_status[i_s]
+                break
 
-            status_prev = status_data[i_s]
+        status_prev = status_data[i_s]
 
-    if t_start == 0.0:
+    return (t_start, t_stop)
+
+def resampleIdentificationData(t_u_data, u_data, t_y_data, y_data, t_v_data, v_data, t_start, t_stop):
+    if not t_start:
         t_start = t_u_data[0]
 
-    if t_stop == 0.0:
+    if not t_stop:
         t_stop = t_u_data[-1]
 
     dt = get_delta_mean(t_y_data)
