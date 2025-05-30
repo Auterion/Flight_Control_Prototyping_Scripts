@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFormLayout, QRadioButton, QMessageBox, QFileDialog
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QPushButton, QLabel, QFormLayout, QRadioButton, QMessageBox, QFileDialog, QComboBox
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -6,14 +6,23 @@ from matplotlib.widgets import SpanSelector
 
 import numpy as np
 
-from data_extractor import getInputOutputData
+from data_extractor import DataExtractor
 
 class DataSelectionWindow(QDialog):
     def __init__(self, filename):
         QDialog.__init__(self)
 
+        self.t = []
+        self.u = []
+        self.y = []
+        self.t_start = None
+        self.t_stop = None
+
+        self.input_ref = None
+        self.output_ref = None
         self.figure = plt.figure(1)
         self.canvas = FigureCanvas(self.figure)
+        self.initPlot()
 
         layout_v = QVBoxLayout()
 
@@ -22,40 +31,39 @@ class DataSelectionWindow(QDialog):
         btn_browse.clicked.connect(self.browseFiles)
         top_group.addWidget(btn_browse)
 
+        in_out_group = QFormLayout()
+        self.combo_u = QComboBox()
+        self.combo_u.setEditable(True)
+        self.combo_u.setInsertPolicy(QComboBox.NoInsert)
+        self.combo_u.currentIndexChanged.connect(self.selectUData)
+        in_out_group.addRow(QLabel("Input:"), self.combo_u)
+
+        self.combo_y = QComboBox()
+        self.combo_y.setEditable(True)
+        self.combo_y.setInsertPolicy(QComboBox.NoInsert)
+        self.combo_y.currentIndexChanged.connect(self.selectYData)
+        in_out_group.addRow(QLabel("Output:"), self.combo_y)
+        top_group.addLayout(in_out_group)
+
         layout_v.addLayout(top_group)
         layout_v.addWidget(self.canvas)
 
-        xyz_group = QHBoxLayout()
-        r_x = QRadioButton("x")
-        r_x.setChecked(True)
-        r_y = QRadioButton("y")
-        r_z = QRadioButton("z")
-        xyz_group.addWidget(QLabel("Axis"))
-        xyz_group.addWidget(r_x)
-        xyz_group.addWidget(r_y)
-        xyz_group.addWidget(r_z)
-        r_x.clicked.connect(self.loadXData)
-        r_y.clicked.connect(self.loadYData)
-        r_z.clicked.connect(self.loadZData)
-
-        layout_v.addLayout(xyz_group)
-
         btn_ok = QPushButton("Load selection")
-        btn_ok.clicked.connect(self.loadLog)
+        btn_ok.clicked.connect(self.loadSelection)
         layout_v.addWidget(btn_ok)
 
         self.setLayout(layout_v)
 
         if filename:
             self.file_name = filename
-            self.refreshInputOutputData()
+            self.openFile()
 
         else:
             self.browseFiles()
 
-    def loadLog(self):
-        if self.t_stop > self.t_start:
-            (self.t, self.u, self.y, self.v) = getInputOutputData(self.file_name, self.axis, self.t_start, self.t_stop)
+    def loadSelection(self):
+        if (self.t_start is None and self.t_start is None) or (self.t_stop > self.t_start):
+            (self.t, self.u, self.y, self.v) = self.data_extractor.getInputOutputData(self.topics[self.index_u], self.topics[self.index_y], self.t_start, self.t_stop)
             self.accept()
         else:
             self.printRangeError()
@@ -63,10 +71,19 @@ class DataSelectionWindow(QDialog):
     def browseFiles(self):
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
-        self.file_name, _ = QFileDialog.getOpenFileName(self,"QFileDialog.getOpenFileName()", "","ULog (*.ulg)", options=options)
+        file_name, _ = QFileDialog.getOpenFileName(self,"Select ULog file", "","ULog (*.ulg)", options=options)
+        self.file_name = file_name
+        self.openFile()
 
+    def openFile(self):
         if self.file_name:
-            self.refreshInputOutputData()
+            self.data_extractor = DataExtractor(self.file_name)
+            self.topics = self.data_extractor.get_topics_list()
+            list_names = [f"{topic.topic_name}/{topic.variable_name}.{topic.instance}" for topic in self.topics]
+            self.combo_u.clear()
+            self.combo_u.addItems(list_names)
+            self.combo_y.clear()
+            self.combo_y.addItems(list_names)
 
     def printRangeError(self):
         msg = QMessageBox()
@@ -75,55 +92,59 @@ class DataSelectionWindow(QDialog):
         msg.setText("Range is invalid")
         msg.exec_()
 
-    def loadXData(self):
-        if self.file_name:
-            self.refreshInputOutputData(0)
+    def selectUData(self, index):
+        self.index_u = index
+        (self.t, self.u) = self.data_extractor.getPreview(self.topics[index])
+        self.plotU()
 
-    def loadYData(self):
-        if self.file_name:
-            self.refreshInputOutputData(1)
+    def selectYData(self, index):
+        self.index_y = index
+        (self.t, self.y) = self.data_extractor.getPreview(self.topics[index])
+        self.plotY()
 
-    def loadZData(self):
-        if self.file_name:
-            self.refreshInputOutputData(2)
+    def initPlot(self):
+        if self.input_ref is None:
+            self.figure.clear()
+            self.ax = self.figure.add_subplot(1,1,1)
+            plot_refs = self.ax.plot([], [])
+            self.input_ref = plot_refs[0]
 
-    def refreshInputOutputData(self, axis=0):
-        if self.file_name:
-            self.axis = axis
-            (t, u, y, _) = getInputOutputData(self.file_name, axis)
+            plot_refs = self.ax.plot([], [])
+            self.output_ref = plot_refs[0]
+            self.ax.autoscale(False)
 
-            if(len(t) > 10e3):
-                # Downsample to speed up plotting preview
-                downsampling_factor = int(len(t)/10e3)+1
-                self.t = t[:-downsampling_factor+1:downsampling_factor]
-                self.u = u[:-downsampling_factor+1:downsampling_factor]
-                self.y = y[:-downsampling_factor+1:downsampling_factor]
+            self.ax.set_title("Click and drag to select data range")
+            self.ax.set_xlabel("Time (s)")
+            self.ax.set_ylabel("Amplitude")
+            self.ax.legend(["Input", "Output"])
 
-            else:
-                self.t = t
-                self.u = u
-                self.y = y
+            self.span = SpanSelector(self.ax, self.onselect, 'horizontal', useblit=False,
+                                props=dict(alpha=0.2, facecolor='green'), interactive=True)
 
-            self.plotInputOutput(redraw=True)
+            self.canvas.mpl_connect('scroll_event', self.zoom_fun)
+            self.canvas.draw()
 
-    def plotInputOutput(self, redraw=False):
-        self.figure.clear()
-        self.ax = self.figure.add_subplot(1,1,1)
-        self.ax.plot(self.t, self.u, self.t, self.y)
-        self.ax.set_title("Click and drag to select data range")
-        self.ax.set_xlabel("Time (s)")
-        self.ax.set_ylabel("Amplitude")
-        self.ax.legend(["Input", "Output"])
-
-        self.span = SpanSelector(self.ax, self.onselect, 'horizontal', useblit=False,
-                            props=dict(alpha=0.2, facecolor='green'), interactive=True)
-
-        self.t_start = self.t[0]
-        self.t_stop = self.t[-1]
-
-        self.canvas.mpl_connect('scroll_event', self.zoom_fun)
-
+    def plotU(self):
+        self.input_ref.set_xdata(self.t)
+        self.input_ref.set_ydata(self.u)
+        self.resetXYLim()
         self.canvas.draw()
+
+    def plotY(self):
+        self.output_ref.set_xdata(self.t)
+        self.output_ref.set_ydata(self.y)
+        self.resetXYLim()
+        self.canvas.draw()
+
+    def resetXYLim(self):
+        self.ax.set_xlim([self.t[0], self.t[-1]])
+
+        if len(self.u) > 0 and len(self.y) > 0:
+            self.ax.set_ylim([min([min(self.u), min(self.y)]), max([max(self.u), max(self.y)])])
+        elif len(self.u) > 0:
+            self.ax.set_ylim([min(self.u), max(self.u)])
+        elif len(self.y) > 0:
+            self.ax.set_ylim([min(self.y), max(self.y)])
 
     def onselect(self, xmin, xmax):
         indmin, indmax = np.searchsorted(self.t, (xmin, xmax))
