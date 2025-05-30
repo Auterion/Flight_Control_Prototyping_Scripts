@@ -145,19 +145,25 @@ class DataSelectionWindow(QDialog):
         if self.input_ref is None:
             self.figure.clear()
             self.ax = self.figure.add_subplot(1,1,1)
-            plot_refs = self.ax.plot([], [])
+            color_in = 'tab:blue'
+            plot_refs = self.ax.plot([], [], color=color_in)
             self.input_ref = plot_refs[0]
 
-            plot_refs = self.ax.plot([], [])
-            self.output_ref = plot_refs[0]
             self.ax.autoscale(False)
 
             self.ax.set_title("Click and drag to select data range")
             self.ax.set_xlabel("Time (s)")
-            self.ax.set_ylabel("Amplitude")
-            self.ax.legend(["Input", "Output"])
+            self.ax.set_ylabel("Input", color=color_in)
+            self.ax.tick_params(axis='y', labelcolor=color_in)
 
-            self.span = SpanSelector(self.ax, self.onselect, 'horizontal', useblit=False,
+            color_out = 'tab:orange'
+            self.ax_out = self.ax.twinx()
+            plot_refs = self.ax_out.plot([], [], color=color_out)
+            self.output_ref = plot_refs[0]
+            self.ax_out.set_ylabel("Output", color=color_out)
+            self.ax_out.tick_params(axis='y', labelcolor=color_out)
+
+            self.span = SpanSelector(self.ax_out, self.onselect, 'horizontal', useblit=False,
                                 props=dict(alpha=0.2, facecolor='green'), interactive=True)
 
             self.canvas.mpl_connect('scroll_event', self.zoom_fun)
@@ -166,24 +172,16 @@ class DataSelectionWindow(QDialog):
     def plotU(self):
         self.input_ref.set_xdata(self.t)
         self.input_ref.set_ydata(self.u)
-        self.resetXYLim()
+        self.ax.set_xlim([self.t[0], self.t[-1]])
+        self.ax.set_ylim([min(self.u), max(self.u)])
         self.canvas.draw()
 
     def plotY(self):
         self.output_ref.set_xdata(self.t)
         self.output_ref.set_ydata(self.y)
-        self.resetXYLim()
-        self.canvas.draw()
-
-    def resetXYLim(self):
         self.ax.set_xlim([self.t[0], self.t[-1]])
-
-        if len(self.u) > 0 and len(self.y) > 0:
-            self.ax.set_ylim([min([min(self.u), min(self.y)]), max([max(self.u), max(self.y)])])
-        elif len(self.u) > 0:
-            self.ax.set_ylim([min(self.u), max(self.u)])
-        elif len(self.y) > 0:
-            self.ax.set_ylim([min(self.y), max(self.y)])
+        self.ax_out.set_ylim([min(self.y), max(self.y)])
+        self.canvas.draw()
 
     def onselect(self, xmin, xmax):
         indmin, indmax = np.searchsorted(self.t, (xmin, xmax))
