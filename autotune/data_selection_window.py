@@ -90,7 +90,20 @@ class DataSelectionWindow(QDialog):
     def refreshInputOutputData(self, axis=0):
         if self.file_name:
             self.axis = axis
-            (self.t, self.u, self.y, self.v) = getInputOutputData(self.file_name, axis)
+            (t, u, y, _) = getInputOutputData(self.file_name, axis)
+
+            if(len(t) > 10e3):
+                # Downsample to speed up plotting preview
+                downsampling_factor = int(len(t)/10e3)+1
+                self.t = t[:-downsampling_factor+1:downsampling_factor]
+                self.u = u[:-downsampling_factor+1:downsampling_factor]
+                self.y = y[:-downsampling_factor+1:downsampling_factor]
+
+            else:
+                self.t = t
+                self.u = u
+                self.y = y
+
             self.plotInputOutput(redraw=True)
 
     def plotInputOutput(self, redraw=False):
