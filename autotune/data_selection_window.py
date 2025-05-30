@@ -7,6 +7,7 @@ from matplotlib.widgets import SpanSelector
 import numpy as np
 
 from data_extractor import DataExtractor
+from searchable_combo_box import SearchableComboBox
 
 class DataSelectionWindow(QDialog):
     def __init__(self, filename):
@@ -39,15 +40,11 @@ class DataSelectionWindow(QDialog):
         self.combo_preset.currentIndexChanged.connect(self.selectPreset)
         in_out_group.addRow(QLabel("Preset:"), self.combo_preset)
 
-        self.combo_u = QComboBox()
-        self.combo_u.setEditable(True)
-        self.combo_u.setInsertPolicy(QComboBox.NoInsert)
+        self.combo_u = SearchableComboBox()
         self.combo_u.currentIndexChanged.connect(self.selectUData)
         in_out_group.addRow(QLabel("Input:"), self.combo_u)
 
-        self.combo_y = QComboBox()
-        self.combo_y.setEditable(True)
-        self.combo_y.setInsertPolicy(QComboBox.NoInsert)
+        self.combo_y = SearchableComboBox()
         self.combo_y.currentIndexChanged.connect(self.selectYData)
         in_out_group.addRow(QLabel("Output:"), self.combo_y)
         top_group.addLayout(in_out_group)
