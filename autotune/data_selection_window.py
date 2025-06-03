@@ -13,6 +13,41 @@ class DataSelectionWindow(QDialog):
     def __init__(self, filename):
         QDialog.__init__(self)
 
+        self.preset_candidates = {
+                'Rollrate': {
+                    'input': 'vehicle_torque_setpoint/xyz[0].0',
+                    'output': 'vehicle_angular_velocity/xyz[0].0',
+                    'input_legacy': 'actuator_controls_0/control[0].0'
+                },
+                'Pitchrate': {
+                    'input': 'vehicle_torque_setpoint/xyz[1].0',
+                    'output': 'vehicle_angular_velocity/xyz[1].0',
+                    'input_legacy': 'actuator_controls_0/control[1].0'
+                },
+                'Yawrate': {
+                    'input': 'vehicle_torque_setpoint/xyz[2].0',
+                    'output': 'vehicle_angular_velocity/xyz[2].0',
+                    'input_legacy': 'actuator_controls_0/control[2].0'
+                },
+                'Rollrate(FW)': {
+                    'input': 'vehicle_torque_setpoint/xyz[0].1',
+                    'output': 'vehicle_angular_velocity/xyz[0].0',
+                    'input_legacy': 'actuator_controls_1/control[0].0'
+                },
+                'Pitchrate(FW)': {
+                    'input': 'vehicle_torque_setpoint/xyz[1].1',
+                    'output': 'vehicle_angular_velocity/xyz[1].0',
+                    'input_legacy': 'actuator_controls_1/control[1].0'
+                },
+                'Yawrate(FW)': {
+                    'input': 'vehicle_torque_setpoint/xyz[2].1',
+                    'output': 'vehicle_angular_velocity/xyz[2].0',
+                    'input_legacy': 'actuator_controls_1/control[2].0'
+                }
+        }
+
+        self.presets = {}
+
         self.t = []
         self.u = []
         self.y = []
@@ -35,8 +70,7 @@ class DataSelectionWindow(QDialog):
         in_out_group = QFormLayout()
         self.combo_preset = QComboBox()
         self.combo_preset.setEditable(False)
-        self.presets = ['Rollrate', 'Pitchrate', 'Yawrate']
-        self.combo_preset.addItems(self.presets)
+
         self.combo_preset.currentIndexChanged.connect(self.selectPreset)
         in_out_group.addRow(QLabel("Preset:"), self.combo_preset)
 
@@ -90,8 +124,20 @@ class DataSelectionWindow(QDialog):
             self.combo_y.addItems(list_names)
 
             # Trigger preset selection
+            self.fillPresets()
             self.combo_preset.setCurrentIndex(0)
             self.selectPreset(0)
+
+    def fillPresets(self):
+        self.combo_preset.clear()
+        self.presets = {}
+
+        for candidate in self.preset_candidates:
+            (index_u, index_y) = self.findInputOutputIndex(self.preset_candidates[candidate])
+            if index_u > -1 and index_y > -1:
+                self.presets[candidate] = self.preset_candidates[candidate]
+
+        self.combo_preset.addItems(list(self.presets.keys()))
 
     def printRangeError(self):
         msg = QMessageBox()
@@ -101,35 +147,28 @@ class DataSelectionWindow(QDialog):
         msg.exec_()
 
     def selectPreset(self, index):
-        preset = self.presets[index]
-        if preset == 'Rollrate':
-            index_u = self.combo_u.findText("vehicle_torque_setpoint/xyz[0].0")
-            index_y = self.combo_u.findText("vehicle_angular_velocity/xyz[0].0")
-
-            if index_u < 0:
-                # Look for legacy topic
-                index_u = self.combo_u.findText("actuator_controls_0/control[0].0")
-
-        elif preset == 'Pitchrate':
-            index_u = self.combo_u.findText("vehicle_torque_setpoint/xyz[1].0")
-            index_y = self.combo_u.findText("vehicle_angular_velocity/xyz[1].0")
-
-            if index_u < 0:
-                # Look for legacy topic
-                index_u = self.combo_u.findText("actuator_controls_0/control[1].0")
-
-        elif preset == 'Yawrate':
-            index_u = self.combo_u.findText("vehicle_torque_setpoint/xyz[2].0")
-            index_y = self.combo_u.findText("vehicle_angular_velocity/xyz[2].0")
-
-            if index_u < 0:
-                # Look for legacy topic
-                index_u = self.combo_u.findText("actuator_controls_0/control[2].0")
+        preset_key = list(self.presets.keys())[index]
+        preset = self.presets[preset_key]
+        (index_u, index_y) = self.findInputOutputIndex(preset)
 
         if index_u > -1:
             self.combo_u.setCurrentIndex(index_u)
         if index_y > -1:
             self.combo_y.setCurrentIndex(index_y)
+
+    def findInputOutputIndex(self, preset):
+        index_u = self.combo_u.findText(preset['input'])
+        index_y = self.combo_u.findText(preset['output'])
+
+        if index_u < 0 and 'input_legacy' in preset:
+            # Look for legacy topic
+            index_u = self.combo_u.findText(preset['input_legacy'])
+
+        if index_y < 0 and 'output_legacy' in preset:
+            # Look for legacy topic
+            index_y = self.combo_u.findText(preset['output_legacy'])
+
+        return (index_u, index_y)
 
     def selectUData(self, index):
         self.index_u = index
