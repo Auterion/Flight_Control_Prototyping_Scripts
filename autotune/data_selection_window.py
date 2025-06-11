@@ -215,14 +215,20 @@ class DataSelectionWindow(QDialog):
         self.input_ref.set_xdata(self.t)
         self.input_ref.set_ydata(self.u)
         self.ax.set_xlim([self.t[0], self.t[-1]])
-        self.ax.set_ylim([min(self.u), max(self.u)])
+        min_u = min(self.u)
+        max_u = max(self.u)
+        if min_u < max_u:
+            self.ax.set_ylim([min_u, max_u])
         self.canvas.draw()
 
     def plotY(self):
         self.output_ref.set_xdata(self.t)
         self.output_ref.set_ydata(self.y)
         self.ax.set_xlim([self.t[0], self.t[-1]])
-        self.ax_out.set_ylim([min(self.y), max(self.y)])
+        min_y = min(self.y)
+        max_y = max(self.y)
+        if min_y < max_y:
+            self.ax_out.set_ylim([min_y, max_y])
         self.canvas.draw()
 
     def onselect(self, xmin, xmax):
