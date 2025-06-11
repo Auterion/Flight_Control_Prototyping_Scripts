@@ -37,7 +37,7 @@ Description:
 """
 
 import sys
-from PyQt5.QtWidgets import QDialog, QApplication, QLabel, QRadioButton, QSlider, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView
+from PyQt5.QtWidgets import QDialog, QApplication, QLabel, QRadioButton, QSlider, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QComboBox
 from PyQt5.QtCore import Qt
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -116,17 +116,34 @@ class Window(QDialog):
         self.line_edit_delays.setRange(0, 1000)
         self.line_edit_delays.valueChanged.connect(self.onDelaysChanged)
         id_params_group.addRow(QLabel("Delays"), self.line_edit_delays)
+        input_scale_group = QGroupBox('Input scaling')
+        input_scale_group.setToolTip("Scale the input to identify a model at trim airspeed (requires true airspeed data)")
+
+        input_scale_form = QFormLayout()
+        self.input_scale_combo = QComboBox()
+        self.input_scale_combo.setEditable(False)
+        self.input_scale_choices = ["True airspeed^2", "True airspeed", "None"]
+        self.input_scale_combo.addItems(self.input_scale_choices)
+        self.input_scale_combo.setEnabled(False)
+        self.input_scale_combo.currentIndexChanged.connect(self.selectInputScale)
+        input_scale_form.addRow(self.input_scale_combo)
+
         self.line_edit_trim = QDoubleSpinBox()
         self.trim_airspeed = 20.0
         self.line_edit_trim.setValue(self.trim_airspeed)
         self.line_edit_trim.setRange(0.0, 100.0)
         self.line_edit_trim.textChanged.connect(self.onTrimChanged)
         self.line_edit_trim.setEnabled(False)
-        id_params_group.addRow(QLabel("Trim airspeed"), self.line_edit_trim)
+        input_scale_form.addRow(QLabel("Trim airspeed"), self.line_edit_trim)
+        input_scale_group.setLayout(input_scale_form)
+        id_params_group.addRow(input_scale_group)
+
         self.btn_run_sys_id = QPushButton("Run identification")
         self.btn_run_sys_id.clicked.connect(self.onSysIdClicked)
         self.btn_run_sys_id.setEnabled(False)
+
         id_params_group.addRow(self.btn_run_sys_id)
+
         left_menu.addLayout(id_params_group)
 
         layout_tf = self.createTfLayout()
@@ -211,6 +228,10 @@ class Window(QDialog):
         self.t_coeffs.setVerticalHeaderLabels(labels)
         self.t_coeffs.setFixedHeight(self.t_coeffs.verticalHeader().length()
                                    + self.t_coeffs.horizontalHeader().height() + 2)
+
+    def selectInputScale(self, index):
+        self.btn_run_sys_id.setEnabled(True)
+        self.plotInputOutput()
 
     def onModelChanged(self):
         self.btn_update_model.setEnabled(True)
@@ -655,9 +676,21 @@ class Window(QDialog):
 
     def plotInputOutput(self, redraw=False):
         if len(self.true_airspeed) == len(self.input):
-            scale = np.array(self.true_airspeed) / self.trim_airspeed
-            self.u = self.input * scale**2
+            scale = 1
+
+            scale_type = self.input_scale_choices[self.input_scale_combo.currentIndex()]
+            if scale_type == "True airspeed":
+                scale = np.array(self.true_airspeed) / self.trim_airspeed
+
+            elif scale_type == "True airspeed^2":
+                scale = (np.array(self.true_airspeed) / self.trim_airspeed)**2
+
+            self.u = self.input * scale
+            self.input_scale_combo.setEnabled(True)
             self.line_edit_trim.setEnabled(True)
+        else:
+            self.input_scale_combo.setEnabled(False)
+            self.line_edit_trim.setEnabled(False)
 
         if self.model_ref is None or redraw:
             # First time we have no plot reference, so do a normal plot.
