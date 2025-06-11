@@ -180,6 +180,9 @@ class DataSelectionWindow(QDialog):
         (self.t, self.y) = self.data_extractor.getPreview(self.topics[index])
         self.plotY()
 
+    def getTrimAirspeed(self):
+        return self.data_extractor.getTrimAirspeed()
+
     def initPlot(self):
         if self.input_ref is None:
             self.figure.clear()

@@ -698,6 +698,11 @@ class Window(QDialog):
                 self.u = self.input
                 self.y = select.y
                 self.true_airspeed = select.v
+                trim_airspeed = select.getTrimAirspeed()
+
+                if trim_airspeed is not None:
+                    self.line_edit_trim.setValue(trim_airspeed)
+
                 self.refreshInputOutputData()
                 self.runIdentification()
                 self.computeController()

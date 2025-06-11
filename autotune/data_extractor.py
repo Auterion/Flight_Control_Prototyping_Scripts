@@ -70,6 +70,13 @@ class DataExtractor():
 
         return (t_data, data)
 
+    def getTrimAirspeed(self):
+        params = self.log.initial_parameters
+        if 'FW_AIRSPD_TRIM' in params:
+            return params['FW_AIRSPD_TRIM']
+        else:
+            return None
+
     def getData(self, field_def):
         data = get_data(self.log, field_def.topic_name, field_def.variable_name, field_def.instance)
         t_data = us2s(get_data(self.log, field_def.topic_name, 'timestamp', field_def.instance))
