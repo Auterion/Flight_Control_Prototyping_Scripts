@@ -293,6 +293,10 @@ class Window(QDialog):
         self.pid_no_zero_box.setChecked(False)
         self.pid_no_zero_box.stateChanged.connect(self.updateClosedLoop)
         layout_structure.addWidget(self.pid_no_zero_box)
+        self.negate_control_box = QCheckBox("Negate control output", self)
+        self.negate_control_box.setChecked(False)
+        self.negate_control_box.stateChanged.connect(self.updateClosedLoop)
+        layout_structure.addWidget(self.negate_control_box)
         layout_pid.addRow(layout_structure)
 
         layout_k = QHBoxLayout()
@@ -566,7 +570,7 @@ class Window(QDialog):
         #TODO:find a better solution
         self.ki /= 5.0
         static_gain = sum(self.num) / sum(self.den)
-        self.kff = 1 / static_gain
+        self.kff = max(1 / static_gain, 0.0)
 
         self.updateKIDSliders()
         self.updateClosedLoop()
@@ -607,7 +611,14 @@ class Window(QDialog):
 
         id_control = ctrl.summing_junction(inputs=['e', 'i_out', 'd_out'], output='id_out')
         p_control = ctrl.TransferFunction([kc], [1], dt, inputs='id_out', outputs='pid_out')
-        sum_control = ctrl.summing_junction(inputs=['pid_out', 'ff_out'], output='u')
+        sum_control = ctrl.summing_junction(inputs=['pid_out', 'ff_out'], output='control_out')
+
+        if self.negate_control_box.isChecked():
+            output_sign = -1.0
+        else:
+            output_sign = 1.0
+
+        out_sign = ctrl.TransferFunction(output_sign, 1.0, dt, inputs='control_out', outputs='u')
 
         remove_zero = self.pid_no_zero_box.isChecked()
         no_derivative_kick = True
@@ -620,14 +631,14 @@ class Window(QDialog):
             # Derivative on feedback only to remove the "derivative kick"
             d_control = ctrl.TransferFunction(-derivative_num, derivative_den, dt, inputs='y', outputs='d_out')
 
-        closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, id_control, plant], inputs='r', outputs='y')
+        closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, id_control, out_sign, plant], inputs='r', outputs='y')
 
         t_out,y_out = ctrl.step_response(closed_loop, T=np.arange(0,2,dt))
 
         # Add disturbance
         sum_feedback_no_ref = ctrl.summing_junction(inputs=['-y'], output='e')
-        sum_control_with_disturbance = ctrl.summing_junction(inputs=['pid_out', 'disturbance'], output='u')
-        disturbance_loop = ctrl.interconnect([sampler, sum_feedback_no_ref, sum_control_with_disturbance, p_control, i_control, d_control, id_control, plant], inputs='disturbance', outputs='y')
+        sum_control_with_disturbance = ctrl.summing_junction(inputs=['pid_out', 'disturbance'], output='control_out')
+        disturbance_loop = ctrl.interconnect([sampler, sum_feedback_no_ref, sum_control_with_disturbance, p_control, i_control, d_control, id_control, out_sign, plant], inputs='disturbance', outputs='y')
         d = np.zeros_like(t_out)
         d[t_out >= 1.0] = -0.05 #TODO: parameterize
         _, y_d = ctrl.forced_response(disturbance_loop, t_out, d)
