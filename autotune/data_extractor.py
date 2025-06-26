@@ -117,7 +117,8 @@ def get_delta_mean(data_list):
     return dx
 
 def resample_interp(t, u, t_new):
-    interp = make_interp_spline(t, u, k=1)
+    t_unique, indices = np.unique(t, return_index=True)
+    interp = make_interp_spline(t_unique, u[indices], k=1)
     return interp(t_new)
 
 def find_autotune_sequence(log, axis):
