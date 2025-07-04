@@ -301,10 +301,10 @@ class Window(QDialog):
 
         layout_k = QHBoxLayout()
         self.slider_k = DoubleSlider(Qt.Horizontal)
-        self.slider_k.setMinimum(0.01)
+        self.slider_k.setMinimum(0.001)
         self.slider_k.setMaximum(4.0)
-        self.slider_k.setInterval(0.01)
-        self.lbl_k = QLabel("{:.2f} ({:.2f})".format(self.kc, self.kc))
+        self.slider_k.setInterval(0.001)
+        self.lbl_k = QLabel("{:.3f} ({:.3f})".format(self.kc, self.kc))
         layout_k.addWidget(self.slider_k)
         layout_k.addWidget(self.lbl_k)
         self.slider_k.valueChanged.connect(self.updateLabelK)
@@ -347,7 +347,7 @@ class Window(QDialog):
 
     def updateLabelK(self):
         self.kc = self.slider_k.value()
-        self.lbl_k.setText("{:.2f} ({:.2f})".format(self.kc, self.kc))
+        self.lbl_k.setText("{:.3f} ({:.3f})".format(self.kc, self.kc))
 
         # Kc also modifies the Ki and Kd gains of the parallel form
         self.lbl_i.setText("{:.2f} ({:.2f})".format(self.ki, self.kc * self.ki))
