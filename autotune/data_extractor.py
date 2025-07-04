@@ -161,6 +161,7 @@ def resampleIdentificationData(t_u_data, u_data, t_y_data, y_data, t_v_data, v_d
     v_aligned = []
 
     if len(v_data) > 0:
+        v_data = np.nan_to_num(v_data, nan=1000)
         v_aligned = resample_interp(t_v_data, v_data, t_aligned)
 
     return (t_aligned, u_aligned, y_aligned, v_aligned)
