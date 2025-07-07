@@ -567,14 +567,16 @@ class Window(QDialog):
     def computeController(self):
         if not self.is_system_identified:
             return
-        sigma = self.rise_time # rise time
-        delta = self.damping_index # damping property, set between 0 and 2 (1 for Butterworth)
-        lbda = self.detune_coeff
-        (self.kc, self.ki, self.kd) = computePidGmvc(self.num, self.den, self.dt, sigma, delta, lbda)
-        #TODO:find a better solution
-        self.ki /= 5.0
-        static_gain = sum(self.num) / sum(self.den)
-        self.kff = max(1 / static_gain, 0.0)
+
+        if self.tuning_tabs.tabText(self.tuning_tabs.currentIndex()) == "GMVC":
+            sigma = self.rise_time # rise time
+            delta = self.damping_index # damping property, set between 0 and 2 (1 for Butterworth)
+            lbda = self.detune_coeff
+            (self.kc, self.ki, self.kd) = computePidGmvc(self.num, self.den, self.dt, sigma, delta, lbda)
+            #TODO:find a better solution
+            self.ki /= 5.0
+            static_gain = sum(self.num) / sum(self.den)
+            self.kff = max(1 / static_gain, 0.0)
 
         self.updateKIDSliders()
         self.updateClosedLoop()
