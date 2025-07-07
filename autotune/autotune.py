@@ -37,7 +37,7 @@ Description:
 """
 
 import sys
-from PyQt5.QtWidgets import QDialog, QApplication, QLabel, QRadioButton, QSlider, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QComboBox
+from PyQt5.QtWidgets import QDialog, QApplication, QLabel, QRadioButton, QSlider, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QComboBox, QTabWidget, QWidget
 from PyQt5.QtCore import Qt
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -158,11 +158,15 @@ class Window(QDialog):
         left_menu.addLayout(offset_group)
         left_menu.addStretch(1)
 
-        layout_gmvc = self.createGmvcLayout()
-        layout_pid = self.createPidLayout()
-        layout_controller = QHBoxLayout()
-        layout_controller.addLayout(layout_gmvc)
-        layout_controller.addLayout(layout_pid)
+        self.tuning_tabs = QTabWidget()
+
+        self.tab_pid = QWidget()
+        self.tab_pid.setLayout(self.createPidLayout())
+        self.tuning_tabs.addTab(self.tab_pid, "PID")
+
+        self.tab_gmvc = QWidget()
+        self.tab_gmvc.setLayout(self.createGmvcLayout())
+        self.tuning_tabs.addTab(self.tab_gmvc, "GMVC")
 
         layout_plot = QVBoxLayout()
         layout_h.addLayout(left_menu)
@@ -172,7 +176,7 @@ class Window(QDialog):
         layout_plot.addWidget(self.canvas)
         layout_v.addLayout(layout_h)
         layout_v.setStretch(0,1)
-        layout_v.addLayout(layout_controller)
+        layout_v.addWidget(self.tuning_tabs)
         self.setLayout(layout_v)
 
     def reset(self):
