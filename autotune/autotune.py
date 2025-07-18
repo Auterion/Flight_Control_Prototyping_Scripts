@@ -452,55 +452,27 @@ class Window(QDialog):
         n = self.sys_id_n_poles # order of the denominator (a_1,...,a_n)
         m = self.sys_id_n_zeros # order of the numerator (b_0,...,b_m)
         d = self.sys_id_delays # number of delays
-        tau = 60.0 # forgetting period
-        lbda = 1.0 - self.dt/tau
-        self.sysid = SystemIdentification(n, m, d)
-        self.sysid.lbda = lbda
+        id = SystemIdentification(n, m, d, self.dt)
 
-        (theta_hat, a_coeffs, b_coeffs) = self.sysid.run(self.t, self.u, self.y)
+        est = id.fit(self.u.reshape(-1, 1), self.y.reshape(-1, 1))
 
-        self.plotStateVector(a_coeffs, b_coeffs)
+        self.num = est.G_.num_list[0][0]
+        self.den = est.G_.den_list[0][0][0:n+1]
+        self.Gz = ctrl.TransferFunction(self.num, self.den, self.dt)
+
+        num_coeffs = self.num
+        den_coeffs = self.den[1:n+1]
         self.is_system_identified = True
         self.btn_run_sys_id.setEnabled(False)
-        dt = self.dt
-        # num = self.sysid.getNum()
-        # den = self.sysid.getDen()
-        # self.Gz_dot = ctrl.TransferFunction(num, den, dt)
 
-        # Uncomment below to add integrator
-        # self.sysid.addIntegrator()
-        self.num = self.sysid.getNum()
-
-        self.den = self.sysid.getDen()
-
-        self.Gz = ctrl.TransferFunction(self.num, self.den, dt)
-        self.updateTfDisplay(a_coeffs[:, -1], b_coeffs[:, -1])
+        self.updateTfDisplay(den_coeffs, num_coeffs)
         self.plotPolesZeros()
         self.replayInputData()
-
-    def plotStateVector(self, a_coeffs, b_coeffs):
-        t = self.t
-        ax = self.figure.add_subplot(3,3,(4,5))
-        legend = []
-
-        for i in range(len(a_coeffs)):
-            ax.plot(t, a_coeffs[i])
-            legend.append("a{}".format(i+1))
-
-        for i in range(len(b_coeffs)):
-            ax.plot(t, b_coeffs[i])
-            legend.append("b{}".format(i))
-
-        ax.set_title("Parameter identification")
-        ax.set_xlabel("Time (s)")
-        ax.legend(legend, loc='lower left')
-
-        self.canvas.draw()
 
     def replayInputData(self):
         if not self.is_system_identified:
             return
-        d = self.sysid.d
+        d = self.sys_id_delays
         u_detrended = detrend(self.u)
         u_delayed = np.concatenate(([0 for k in range(d)], u_detrended[0:(len(u_detrended)-d)]))
         self.t_est, self.y_est = ctrl.forced_response(self.Gz, T=self.t, U=u_delayed)
