@@ -44,23 +44,30 @@ import control as ctrl
 from arx_rls import ArxRls
 from scipy.optimize import lsq_linear, minimize
 
+class SysIdResult(object):
+    def __init__(self, num, den, dt):
+        self.G_ = ctrl.TransferFunction(num, den, dt)
+
 class SystemIdentification(object):
-    def __init__(self, n=2, m=2, d=1):
+    def __init__(self, n=2, m=2, d=1, dt = 0.0):
         self.n = n # order of the denominator (a_1,...,a_n)
         self.m = m # order of the numerator (b_0,...,b_m)
         self.d = d # number of delays
         self.forgetting_tc = 60.0 # forgetting factor for weighted RLS in seconds
         self.f_hp = 0.5 # high-pass filter cutoff frequency
         self.f_lp = 30.0 # low-pass filter cutoff frequency
+        self.dt = dt
 
-    def run(self, t, u, y):
-        n_steps = len(t)
-        dt = t[1] - t[0]
+        tau = 60.0 # forgetting period
+        self.lbda = 1.0 - self.dt/tau
+
+    def fit(self, u, y):
+        n_steps = len(u)
 
         # High-pass filter parameters
         if self.f_hp > 0.0:
             tau_hp = 1/(2*np.pi*self.f_hp)
-            alpha_hp = tau_hp/(tau_hp+dt)
+            alpha_hp = tau_hp/(tau_hp+self.dt)
         else:
             alpha_hp = 0.0
 
@@ -71,7 +78,7 @@ class SystemIdentification(object):
 
         # Low-pass filter parameters
         tau_lp = 1/(2*np.pi*self.f_lp)
-        alpha_lp = tau_lp/(tau_lp+dt)
+        alpha_lp = tau_lp/(tau_lp+self.dt)
         u_lp = np.zeros(n_steps)
         y_lp = np.zeros(n_steps)
         u_lp[0] = u[0]
@@ -97,7 +104,7 @@ class SystemIdentification(object):
         use_rls = True
         if use_rls:
             # Identification
-            rls = ArxRls(self.n, self.m, self.d, lbda=(1 - dt / self.forgetting_tc))
+            rls = ArxRls(self.n, self.m, self.d, lbda=(1 - self.dt / self.forgetting_tc))
 
             for k in range(n_steps):
                 # Update model
@@ -126,7 +133,7 @@ class SystemIdentification(object):
             theta_hat = res.x
 
             # Refine model using output-error optimization
-            J = lambda x: np.sum(np.power(abs(np.array(B)-self.simulateModel(x, u_lp, dt)), 2.0)) # cost function
+            J = lambda x: np.sum(np.power(abs(np.array(B)-self.simulateModel(x, u_lp, self.dt)), 2.0)) # cost function
             x0 = np.append(res.x, 0) # initial conditions
             res = minimize(J, x0, method='nelder-mead', options={'disp': True})
             theta_hat = res.x
@@ -138,7 +145,8 @@ class SystemIdentification(object):
 
         self.theta_hat = theta_hat
 
-        return (theta_hat, a_coeffs, b_coeffs)
+        estimate = SysIdResult(self.getNum(), self.getDen(), self.dt)
+        return estimate
 
     def simulateModel(self, x, u, dt):
         a_coeffs = np.ones(self.n+1)
