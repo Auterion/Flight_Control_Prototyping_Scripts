@@ -71,7 +71,7 @@ class Window(QDialog):
         self.rise_time = 0.13
         self.damping_index = 0.0
         self.detune_coeff = 0.5
-        self.kc = 0.0
+        self.kc = 0.01
         self.ki = 0.0
         self.kd = 0.0
         self.kff = 0.0
@@ -635,9 +635,8 @@ class Window(QDialog):
 
         self.plotClosedLoop(t_out, y_out)
         w = np.logspace(-1, 3, 40).tolist()
-        mag, phase, omega = ctrl.bode(plant, omega=np.asarray(w), plot=False)
-        mag_cl, phase_cl, omega_cl = ctrl.bode(closed_loop, omega=np.asarray(w), plot=False)
-        self.plotBode(omega, mag, omega_cl, mag_cl)
+        (mag_cl, phase_cl, omega_cl) = ctrl.frequency_response(closed_loop, omega=np.asarray(w))
+        self.plotBode(omega_cl, mag_cl)
 
     def plotClosedLoop(self, t, y):
         if self.closed_loop_ref is None:
@@ -656,7 +655,7 @@ class Window(QDialog):
 
         self.canvas.draw()
 
-    def plotBode(self, w, mag, w_cl, mag_cl):
+    def plotBode(self, w_cl, mag_cl):
         if self.bode_plot_ref is None:
             ax = self.figure.add_subplot(3,3,(8,9))
             f = w_cl/(2*np.pi)
