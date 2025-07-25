@@ -1,0 +1,21 @@
+[project]
+name = "autotune"
+version = "0.1.0"
+description = "System identification and controller tuning tool for PX4"
+authors = [
+    {name = "bresch",email = "brescianimathieu@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10, <4.0"
+dependencies = [
+    "numpy (>=1.26.4,<2.0.0)",
+    "control (>=0.10.2,<0.11.0)",
+    "scipy (>=1.15.1,<2.0.0)",
+    "pyqt5 (>=5.15.11,<6.0.0)",
+    "pyulog (>=1.2.2,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
