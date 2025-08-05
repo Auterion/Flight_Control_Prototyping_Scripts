@@ -5,6 +5,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.widgets import SpanSelector
 
 import numpy as np
+from scipy import signal
 
 from data_extractor import DataExtractor
 from searchable_combo_box import SearchableComboBox
@@ -56,9 +57,9 @@ class DataSelectionWindow(QDialog):
 
         self.input_ref = None
         self.output_ref = None
-        self.figure = plt.figure(1)
+        self.figure = plt.figure(figsize=(8, 6))
         self.canvas = FigureCanvas(self.figure)
-        self.initPlot()
+        self.initPlots()
 
         layout_v = QVBoxLayout()
 
@@ -183,10 +184,12 @@ class DataSelectionWindow(QDialog):
     def getTrimAirspeed(self):
         return self.data_extractor.getTrimAirspeed()
 
-    def initPlot(self):
+    def initPlots(self):
         if self.input_ref is None:
             self.figure.clear()
-            self.ax = self.figure.add_subplot(1,1,1)
+
+            # --- Time series Axes (Top) --- 
+            self.ax = self.figure.add_subplot(2,1,1)
             color_in = 'tab:blue'
             plot_refs = self.ax.plot([], [], color=color_in)
             self.input_ref = plot_refs[0]
@@ -207,6 +210,15 @@ class DataSelectionWindow(QDialog):
 
             self.span = SpanSelector(self.ax_out, self.onselect, 'horizontal', useblit=False,
                                 props=dict(alpha=0.2, facecolor='green'), interactive=True)
+            
+            # --- Coherence Plot (Bottom) --- 
+            self.ax_coherence = self.figure.add_subplot(2, 1, 2)
+            self.ax_coherence.set_title("Coherence")
+            self.ax_coherence.set_xlabel("Frequency [Hz]")
+            self.ax_coherence.set_ylabel("Coherence")
+            self.coherence_ref, = self.ax_coherence.plot([], [])
+
+            self.figure.tight_layout()
 
             self.canvas.mpl_connect('scroll_event', self.zoom_fun)
             self.canvas.draw()
@@ -231,6 +243,71 @@ class DataSelectionWindow(QDialog):
             self.ax_out.set_ylim([min_y, max_y])
         self.canvas.draw()
 
+    def plotCoherence(self):
+        if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:
+            return
+
+        # Use selected range if available
+        if self.t_start is not None and self.t_stop is not None and self.t_stop > self.t_start:
+            # Get indices within selected range
+            ind_start = np.searchsorted(self.t, self.t_start)
+            ind_stop = np.searchsorted(self.t, self.t_stop)
+
+            t_sel = self.t[ind_start:ind_stop]
+            u_sel = self.u[ind_start:ind_stop]
+            y_sel = self.y[ind_start:ind_stop]
+        else:
+            # Fall back to full signal if no range selected
+            t_sel = self.t
+            u_sel = self.u
+            y_sel = self.y
+
+        num_samples = len(t_sel)
+        if num_samples < 64: # I kind of made up this number -> maybe requires some research 
+            self.ax_coherence.clear()
+            self.ax_coherence.set_title("Coherence (Selection too short)")
+            self.ax_coherence.text(0.5, 0.5, f"Not enough data ({num_samples} samples).\nSelect a larger window.",
+                                ha='center', va='center', transform=self.ax_coherence.transAxes,
+                                fontsize=10, color='red')
+            self.canvas.draw()
+            return
+
+        # Estimate sampling frequency
+        time_diffs = np.diff(t_sel)
+        avg_time_diff = np.mean(time_diffs)
+        if avg_time_diff == 0:
+            return 
+        fs = 1 / avg_time_diff
+
+        # Choose segment size
+        nperseg = min(256, num_samples // 4) # Also needs to be verified 
+
+        # Compute coherence
+        freq, Cuy = signal.coherence(u_sel, y_sel, fs, nperseg=nperseg)
+
+        # Update coherence plot
+        self.ax_coherence.clear()
+        self.ax_coherence.plot(freq, Cuy, label='Coherence(u, y)')
+        self.ax_coherence.set_title("Coherence")
+        self.ax_coherence.set_xlabel("Frequency [Hz]")
+        self.ax_coherence.set_ylabel("Coherence")
+        self.ax_coherence.set_xlim([min(freq), max(freq)])
+        self.ax_coherence.set_ylim([0, 1])
+        self.ax_coherence.grid(True)
+
+        # Add informative annotation
+        duration = t_sel[-1] - t_sel[0]
+        freq_res = fs / nperseg
+        info_text = (f"Samples: {num_samples}, Duration: {duration:.2f}s, "
+                    f"fs: {fs:.1f}Hz, nperseg: {nperseg}, Δf: {freq_res:.2f}Hz")
+
+        self.ax_coherence.text(0.98, 0.02, info_text,
+                            ha='right', va='bottom',
+                            transform=self.ax_coherence.transAxes,
+                            fontsize=8, color='gray')
+
+        self.canvas.draw()
+
     def onselect(self, xmin, xmax):
         indmin, indmax = np.searchsorted(self.t, (xmin, xmax))
         indmax = min(len(self.t) - 1, indmax)
@@ -240,6 +317,8 @@ class DataSelectionWindow(QDialog):
         self.t_stop = self.t[indmax]
         self.ax.set_xlim(self.t_start - 1.0, self.t_stop + 1.0)
         self.canvas.draw()
+
+        self.plotCoherence()
 
     def zoom_fun(self, event):
         base_scale = 1.1
