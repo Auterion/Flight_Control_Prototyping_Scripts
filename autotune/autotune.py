@@ -62,7 +62,6 @@ class Window(QDialog):
         self.closed_loop_ref = None
         self.closed_loop_ax = None
         self.bode_plot_ref = None
-        self.state_plot_refs= []
         self.pz_plot_refs= []
         self.file_name = None
         self.is_system_identified = False
@@ -184,7 +183,6 @@ class Window(QDialog):
         self.input_ref = None
         self.closed_loop_ref = None
         self.bode_plot_ref = None
-        self.state_plot_refs= []
         self.pz_plot_refs= []
         self.is_system_identified = False
 
