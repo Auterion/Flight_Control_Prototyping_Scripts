@@ -247,23 +247,20 @@ class DataSelectionWindow(QDialog):
         if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:
             return
 
-        # Use selected range if available
+        # Use getInputOutputData with selected range
         if self.t_start is not None and self.t_stop is not None and self.t_stop > self.t_start:
-            # Get indices within selected range
-            ind_start = np.searchsorted(self.t, self.t_start)
-            ind_stop = np.searchsorted(self.t, self.t_stop)
-
-            t_sel = self.t[ind_start:ind_stop]
-            u_sel = self.u[ind_start:ind_stop]
-            y_sel = self.y[ind_start:ind_stop]
+            t_sel, u_sel, y_sel, _ = self.data_extractor.getInputOutputData(
+                self.topics[self.index_u], self.topics[self.index_y],
+                self.t_start, self.t_stop
+            )
         else:
-            # Fall back to full signal if no range selected
-            t_sel = self.t
-            u_sel = self.u
-            y_sel = self.y
+            # If no range selected, just use full duration
+            t_sel, u_sel, y_sel, _ = self.data_extractor.getInputOutputData(
+                self.topics[self.index_u], self.topics[self.index_y]
+            )   
 
         num_samples = len(t_sel)
-        if num_samples < 64: # I kind of made up this number -> maybe requires some research 
+        if num_samples < 256: # I kind of made up this number -> maybe requires some research 
             self.ax_coherence.clear()
             self.ax_coherence.set_title("Coherence (Selection too short)")
             self.ax_coherence.text(0.5, 0.5, f"Not enough data ({num_samples} samples).\nSelect a larger window.",
@@ -280,7 +277,7 @@ class DataSelectionWindow(QDialog):
         fs = 1 / avg_time_diff
 
         # Choose segment size
-        nperseg = min(256, num_samples // 4) # Also needs to be verified 
+        nperseg = min(1024, max(256, num_samples // 8))
 
         # Compute coherence
         freq, Cuy = signal.coherence(u_sel, y_sel, fs, nperseg=nperseg)
