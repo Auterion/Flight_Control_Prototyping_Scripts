@@ -38,7 +38,7 @@ Description:
 
 import numpy as np
 import matplotlib.pylab as plt
-from data_extractor import getAllData
+from utils.data_extractor import getAllData
 from RangeFinderConsistencyCheck import RangeFinderConsistencyCheck
 
 def run(logfile):
