@@ -7,10 +7,10 @@ Author: Mathieu Bresciani
 Email: brescianimathieu@gmail.com
 Github: https://github.com/bresch
 Description:
-    Implementation of the Ziegler-Nichols rules for close-loop PID tuning. The gains are given
-    for a parallel implementation of the PID controller.
+    Implementation of the Ziegler-Nichols rules for close-loop PID tuning.
+    The gains are given for a parallel implementation of the PID controller.
     Four methods are available: "classical", "overshoot", "no_overshoot" and "pessen".
-    For more details, see http://notesnet.blogspot.com/2013/02/zieglernichols-method.html
+    For more details: http://notesnet.blogspot.com/2013/02/zieglernichols-method.html
 """
 
 

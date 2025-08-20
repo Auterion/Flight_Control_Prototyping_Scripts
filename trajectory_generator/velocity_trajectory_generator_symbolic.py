@@ -111,8 +111,10 @@ res_T2 = res_T2[0]
 res_T1 = solve(f2.subs([(T_2, res_T2), (T_3, res_T3)]), T_1)
 res_T1 = res_T1
 print(
-    "For multiple axes applications, we need to synchronize the trajectories such that they all end at the same time.\n\
-Given the total time of the longest trajectory T, we can solve again T_1, T_2 and T_3 for the other axes:"
+    "For multiple axes applications, we need to synchronize the trajectories\
+such that they all end at the same time.\n\
+Given the total time of the longest trajectory T,\
+we can solve again T_1, T_2 and T_3 for the other axes:"
 )
 print("T_1 =")
 pprint(res_T1)

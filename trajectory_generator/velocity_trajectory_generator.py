@@ -67,7 +67,8 @@ def integrate_T(j, a_prev, v_prev, x_prev, dt, a_max, v_max):
         dt / 2.0 * (a_T + a_prev) + v_prev
     )  # Simplification using a_T: 1 mult + 1 div + 2 add
 
-    # x_T = j*dt*dt*dt/6.0 + a_prev*dt*dt/2.0 + v_prev*dt + x_prev # Original equation: 6 mult + 2 div + 3 add
+    # x_T = j*dt*dt*dt/6.0 + a_prev*dt*dt/2.0 + v_prev*dt + x_prev
+    # Original equation: 6 mult + 2 div + 3 add
     x_T = (
         dt / 3.0 * (v_T + a_prev * dt / 2.0 + 2 * v_prev) + x_prev
     )  # Simplification using v_T: 3 mult + 2 div + 3 add
@@ -294,8 +295,10 @@ for k in range(0, n):
         t[k] = t[k - 1] + dt
         verboseprint("k = {}\tt = {}".format(k, t[k]))
 
-        # Correct the jerk if dt is bigger than before and that we only need one step of jerk to complete phase T1 or T3
-        # This helps to avoid overshooting and chattering around zero acceleration due to dt jitter
+        # Correct the jerk if dt is bigger than before
+        # and that we only need one step of jerk to complete phase T1 or T3
+        # This helps to avoid overshooting and chattering around zero acceleration
+        # due to dt jitter
         if dt > dt_prev and (
             (dt > T1 and T1 > FLT_EPSILON) or (dt > T3 and T3 > FLT_EPSILON)
         ):
