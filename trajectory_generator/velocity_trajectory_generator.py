@@ -33,7 +33,8 @@ Description:
 
 from __future__ import print_function
 
-from numpy import *
+import numpy as np
+from numpy import sqrt, sign
 import matplotlib.pylab as plt
 import sys
 import math
@@ -52,7 +53,9 @@ if verbose:
         print("")
 
 else:
-    verboseprint = lambda *a: None  # do-nothing function
+
+    def verboseprint(*args):
+        return
 
 
 def integrate_T(j, a_prev, v_prev, x_prev, dt, a_max, v_max):
@@ -257,15 +260,15 @@ dt_0 = 1.0 / 50.0
 t_end = 5.2
 
 # Initialize vectors
-t = arange(0.0, t_end + dt_0, dt_0)
+t = np.arange(0.0, t_end + dt_0, dt_0)
 n = len(t)
 
-j_T = zeros(n)
-j_T_corrected = zeros(n)
-a_T = zeros(n)
-v_T = zeros(n)
-x_T = zeros(n)
-v_d = zeros(n)
+j_T = np.zeros(n)
+j_T_corrected = np.zeros(n)
+a_T = np.zeros(n)
+v_T = np.zeros(n)
+x_T = np.zeros(n)
+v_d = np.zeros(n)
 
 j_T[0] = 0.0
 j_T_corrected[0] = 0.0
@@ -278,9 +281,13 @@ dt_prev = dt_0
 sigma_jitter = 0.0
 sigma_jitter = dt_0 / 5.0
 
+T1 = 0.0
+T2 = 0.0
+T3 = 0.0
+
 # Main loop
 for k in range(0, n):
-    dt = dt_0 + random.randn() * sigma_jitter  # Add jitter
+    dt = dt_0 + np.random.randn() * sigma_jitter  # Add jitter
 
     if k > 0:
         t[k] = t[k - 1] + dt
@@ -361,7 +368,7 @@ plt.plot(t, j_T, "*")
 plt.plot(t, a_T, "*")
 plt.plot(t, v_T)
 plt.plot(t, x_T)
-plt.plot(arange(0.0, t_end + dt_0, dt_0), t)
+plt.plot(np.arange(0.0, t_end + dt_0, dt_0), t)
 plt.plot(t, j_T_corrected)
 plt.legend(["v_d", "j_T", "a_T", "v_T", "x_T", "t"])
 plt.xlabel("time (s)")

@@ -11,7 +11,7 @@ Description:
     trajectory generator.
 """
 
-from sympy import *
+from sympy import Symbol, pprint, solve, integrate
 
 j = Symbol("j_max", real=True)
 a_0 = Symbol("a0", real=True)
