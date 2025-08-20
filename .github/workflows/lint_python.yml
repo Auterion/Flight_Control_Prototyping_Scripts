@@ -1,5 +1,5 @@
 name: lint_python
-on: [pull_request, push]
+on: [pull_request]
 jobs:
   lint_python:
     runs-on: ubuntu-latest
@@ -19,4 +19,4 @@ jobs:
       - run: mypy --ignore-missing-imports  --install-types --non-interactive . || true
       - run: pytest . || pytest --doctest-modules . || true
       - run: shopt -s globstar && pyupgrade --py36-plus **/*.py || true
-      - run: safety check --full-report || true
+      - run: safety check
