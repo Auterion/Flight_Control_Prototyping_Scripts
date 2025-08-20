@@ -202,11 +202,11 @@ if __name__ == '__main__':
         description='Extract identification data from a give .ulg file')
 
     parser.add_argument('logfile', help='Full ulog file path, name and extension', type=str)
-    parser.add_argument('--axis', dest='axis', choices=['x', 'y', 'z'], help='the body axis on interest')
     args = parser.parse_args()
 
     logfile = os.path.abspath(args.logfile) # Convert to absolute path
-    axis = {'x':0, 'y':1, 'z':2}[args.axis]
 
-    (t_aligned, u_aligned, y_aligned, v_aligned) = getInputOutputData(logfile, axis, instance=0)
+    x_field_def = FieldDefinition("vehicle_torque_setpoint", "xyz[0]", 0)
+    y_field_def = FieldDefinition("vehicle_angular_velocity", "xyz[0]", 0)
+    (t_aligned, u_aligned, y_aligned, v_aligned) = DataExtractor(logfile).getInputOutputData(x_field_def, y_field_def)
     printCppArrays(t_aligned, u_aligned, y_aligned)

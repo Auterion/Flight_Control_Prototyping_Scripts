@@ -52,7 +52,7 @@ def plotrotc(q = Quaternion(), p = (0,0,0)):
         q: [optional] body attitude quaternion. Defaults to level.
         p: [optional] 3D body position in space Defaults to origin.
     """
-    # convert the quaternion to a rotation metrix because the columns are the base vectors
+    # convert the quaternion to a rotation matrix because the columns are the base vectors
     R = q.rotation_matrix
     # plot unit vectors from the body position into the 3 base vector directions
     ay.quiver(*p, *R[:,0], color='red')
