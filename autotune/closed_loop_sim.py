@@ -66,25 +66,25 @@ from pid_design import computePidGmvc, gainsToNumDen
 # 1st order model + integrator
 dt = 0.001
 f_n = 2.0
-w_n = 2*np.pi*f_n
-pz1 = np.exp(-w_n*dt)
-pz2 = 1 # integrator
+w_n = 2 * np.pi * f_n
+pz1 = np.exp(-w_n * dt)
+pz2 = 1  # integrator
 den = np.convolve([1, -pz1], [1, -pz2])
-num = [100*(1-pz1)*dt]
+num = [100 * (1 - pz1) * dt]
 
-sigma = 0.05 # rise time
-delta = 0.5 # damping property, set between 0 and 2 (1 for Butterworth)
+sigma = 0.05  # rise time
+delta = 0.5  # damping property, set between 0 and 2 (1 for Butterworth)
 lbda = 0
 (kc, ki, kd) = computePidGmvc(num, den, dt, sigma, delta, lbda)
 print("Standard: kc = {}, ki = {}, kd = {}\n".format(kc, ki, kd))
-print("Parallel: kp = {}, ki = {}, kd = {}\n".format(kc, kc*ki, kc*kd))
+print("Parallel: kp = {}, ki = {}, kd = {}\n".format(kc, kc * ki, kc * kd))
 
 # Compute reference model (just for plotting)
-rho = dt/sigma
-mu = 0.25 * (1-delta) + 0.51 * delta
-p1 = -2*np.exp(-rho/(2*mu))*np.cos((np.sqrt(4*mu-1)*rho/(2*mu)))
-p2 = np.exp(-rho/mu)
-P = ctrl.TransferFunction([1+p1+p2],[1, p1, p2], dt)
+rho = dt / sigma
+mu = 0.25 * (1 - delta) + 0.51 * delta
+p1 = -2 * np.exp(-rho / (2 * mu)) * np.cos((np.sqrt(4 * mu - 1) * rho / (2 * mu)))
+p2 = np.exp(-rho / mu)
+P = ctrl.TransferFunction([1 + p1 + p2], [1, p1, p2], dt)
 
 Gz2 = ctrl.TransferFunction(num, den, dt)
 (pid_num, pid_den) = gainsToNumDen(kc, ki, kd, dt)
@@ -92,8 +92,8 @@ PID = ctrl.TransferFunction(pid_num, pid_den, dt)
 Gcl = ctrl.feedback(PID * Gz2, 1)
 
 # Simulate step response
-t_ref, y_ref = ctrl.step_response(P, T=np.arange(0,1,dt))
-t_out, y_out = ctrl.step_response(Gcl, T=np.arange(0,1,dt))
+t_ref, y_ref = ctrl.step_response(P, T=np.arange(0, 1, dt))
+t_out, y_out = ctrl.step_response(Gcl, T=np.arange(0, 1, dt))
 
 plt.plot(t_out, y_out)
 plt.plot(t_ref, y_ref)

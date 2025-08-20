@@ -44,7 +44,8 @@ from math import sin, cos, asin, acos, degrees, radians, sqrt
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-def plotrotc(q = Quaternion(), p = (0,0,0)):
+
+def plotrotc(q=Quaternion(), p=(0, 0, 0)):
     """
     Plot 3D RGB (x,y,z) axes of the vehicle body frame body frame
 
@@ -55,11 +56,12 @@ def plotrotc(q = Quaternion(), p = (0,0,0)):
     # convert the quaternion to a rotation matrix because the columns are the base vectors
     R = q.rotation_matrix
     # plot unit vectors from the body position into the 3 base vector directions
-    ay.quiver(*p, *R[:,0], color='red')
-    ay.quiver(*p, *R[:,1], color='green')
-    ay.quiver(*p, *R[:,2], color='blue')
+    ay.quiver(*p, *R[:, 0], color="red")
+    ay.quiver(*p, *R[:, 1], color="green")
+    ay.quiver(*p, *R[:, 2], color="blue")
 
-def qcontrol_full(q = Quaternion(), qd = Quaternion()):
+
+def qcontrol_full(q=Quaternion(), qd=Quaternion()):
     """
     Calculate angular velocity to get from current to desired attitude
     All axes are treated equally hence the name "full".
@@ -75,9 +77,10 @@ def qcontrol_full(q = Quaternion(), qd = Quaternion()):
     qe = q.inverse * qd
     # using sin(alpha/2) scaled rotation axis as attitude error (see quaternion definition by axis angle)
     # also taking care of the antipodal unit quaternion ambiguity
-    return 2 * np.sign(qe[0]+1e-10) * np.array([qe[1], qe[2], qe[3]])
+    return 2 * np.sign(qe[0] + 1e-10) * np.array([qe[1], qe[2], qe[3]])
 
-def qcontrol_reduced(q = Quaternion(), qd = Quaternion(), yw = 1):
+
+def qcontrol_reduced(q=Quaternion(), qd=Quaternion(), yw=1):
     """
     Calculate angular velocity to get from current to desired attitude
     The body yaw axis has less priority then roll and pitch hence the name "reduced".
@@ -110,9 +113,10 @@ def qcontrol_reduced(q = Quaternion(), qd = Quaternion(), yw = 1):
     qe = q.inverse * qd
     # using sin(alpha/2) scaled rotation axis as attitude error (see quaternion definition by axis angle)
     # also taking care of the antipodal unit quaternion ambiguity
-    return 2 * np.sign(qe[0]+1e-10) * np.array([qe[1], qe[2], qe[3]])
+    return 2 * np.sign(qe[0] + 1e-10) * np.array([qe[1], qe[2], qe[3]])
 
-def ftoq(f = np.array([0,0,1]), yaw = 0):
+
+def ftoq(f=np.array([0, 0, 1]), yaw=0):
     """
     Calculate a desired attitude from 3D thrust and yaw in world frame
     Assuming a default multicopter configuration.
@@ -139,7 +143,8 @@ def ftoq(f = np.array([0,0,1]), yaw = 0):
     Rd = np.column_stack((body_x, body_y, body_z))
     return Quaternion(matrix=Rd)
 
-def dcm_z(q = Quaternion()):
+
+def dcm_z(q=Quaternion()):
     """
     Calculate the body z-axis base vector from body attitude.
 
@@ -152,9 +157,10 @@ def dcm_z(q = Quaternion()):
     # convert quaternion to rotation matrix
     R = q.rotation_matrix
     # take last column vector
-    return R[:,2]
+    return R[:, 2]
 
-def vtoq(src = np.array([0,0,1]), dst = np.array([0,0,1]), eps = 1e-5):
+
+def vtoq(src=np.array([0, 0, 1]), dst=np.array([0, 0, 1]), eps=1e-5):
     """
     Calculate quaternion representing the shortest rotation
     from one vector to the other
@@ -171,50 +177,51 @@ def vtoq(src = np.array([0,0,1]), dst = np.array([0,0,1]), eps = 1e-5):
     cr = np.cross(src, dst)
     dt = np.dot(src, dst)
 
-    if(la.norm(cr) < eps and dt < 0):
+    if la.norm(cr) < eps and dt < 0:
         # handle corner cases with 180 degree rotations
         # if the two vectors are parallel, cross product is zero
         # if they point opposite, the dot product is negative
         cr = np.abs(src)
-        if(cr[0] < cr[2]):
-            if(cr[0] < cr[2]):
-                cr = np.array([1,0,0])
+        if cr[0] < cr[2]:
+            if cr[0] < cr[2]:
+                cr = np.array([1, 0, 0])
             else:
-                cr = np.array([0,0,1])
+                cr = np.array([0, 0, 1])
         else:
-            if(cr[1] < cr[2]):
-                cr = np.array([0,1,0])
+            if cr[1] < cr[2]:
+                cr = np.array([0, 1, 0])
             else:
-                cr = np.array([0,0,1])
+                cr = np.array([0, 0, 1])
         q[0] = 0
     else:
         # normal case, do half-way quaternion solution
-        q[0] = dt + sqrt(np.dot(src,src) * np.dot(dst,dst))
+        q[0] = dt + sqrt(np.dot(src, src) * np.dot(dst, dst))
     q[1] = cr[0]
     q[2] = cr[1]
     q[3] = cr[2]
     return q.normalised
 
+
 # setup 3D plot
-fig = plt.figure('Quaternion attitude control')
-ay = fig.add_subplot(111, projection='3d')
+fig = plt.figure("Quaternion attitude control")
+ay = fig.add_subplot(111, projection="3d")
 ay.set_xlim([-5, 1])
 ay.set_ylim([-5, 1])
 ay.set_zlim([-5, 1])
-ay.set_xlabel('X')
-ay.set_ylabel('Y')
-ay.set_zlabel('Z')
+ay.set_xlabel("X")
+ay.set_ylabel("Y")
+ay.set_zlabel("Z")
 
 # initialize state
 steps = 0
-q = qd = Quaternion() # atttitude state
-v = np.array([0.,0.,0.]) # velocity state
-p = np.array([0.,0.,0.]) # position state
+q = qd = Quaternion()  # atttitude state
+v = np.array([0.0, 0.0, 0.0])  # velocity state
+p = np.array([0.0, 0.0, 0.0])  # position state
 
 # specify goal and parameters
-pd = np.array([-5,0,0]) # desired position
-yd = radians(180) # desired yaw
-dt = 0.2 # time steps
+pd = np.array([-5, 0, 0])  # desired position
+yd = radians(180)  # desired yaw
+dt = 0.2  # time steps
 
 # run simulation until the goal is reached
 while steps < 1000 and (not np.isclose(p, pd).all() or (q.inverse * qd).degrees > 0.1):
@@ -222,23 +229,23 @@ while steps < 1000 and (not np.isclose(p, pd).all() or (q.inverse * qd).degrees 
     plotrotc(q, p)
 
     # run minimal position & velocity control
-    vd = (pd - p)
-    fd = (vd - v)
-    fd += np.array([0,0,1]) # "gravity"
+    vd = pd - p
+    fd = vd - v
+    fd += np.array([0, 0, 1])  # "gravity"
 
     # run attitude control
     qd = ftoq(fd, yd)
     thrust = np.dot(fd, dcm_z(q))
-    w = 3*qcontrol_reduced(q, qd, 0.4)
+    w = 3 * qcontrol_reduced(q, qd, 0.4)
 
     # propagate states with minimal, ideal simulation
     q.integrate(w, dt)
     f = dcm_z(q) * thrust
-    v += f - np.array([0,0,1])
-    p += dt*v
+    v += f - np.array([0, 0, 1])
+    p += dt * v
 
     # print progress
     steps += 1
-    print(steps, '\t', p)
+    print(steps, "\t", p)
 
 plt.show()

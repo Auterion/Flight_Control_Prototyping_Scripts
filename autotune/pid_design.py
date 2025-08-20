@@ -39,8 +39,9 @@ Description:
 
 import numpy as np
 
+
 def computePidGmvc(num, den, dt, sigma=0.1, delta=0.0, lbda=0.5):
-    '''Compute a set of PID gains using General Minimum Variance Control law design
+    """Compute a set of PID gains using General Minimum Variance Control law design
 
     Args:
         num: the coefficients of the numerator of the discrete-time plant transfer function
@@ -59,14 +60,14 @@ def computePidGmvc(num, den, dt, sigma=0.1, delta=0.0, lbda=0.5):
         kc: the controller gain
         ki: the integral gain (= 1/Ti)
         kd: the derivative gain (= Td)
-    '''
+    """
     if len(den) != 3:
         print("Only supports 2nd order system")
-        return(0.0, 0.0, 0.0)
+        return (0.0, 0.0, 0.0)
 
     if len(num) > 3:
         print("Cannot have more than 2 zeros")
-        return(0.0, 0.0, 0.0)
+        return (0.0, 0.0, 0.0)
 
     a1 = den[1]
     a2 = den[2]
@@ -81,22 +82,23 @@ def computePidGmvc(num, den, dt, sigma=0.1, delta=0.0, lbda=0.5):
         b2 = 0
 
     # Solve GMVC law (see derivation in pid_synthesis_symbolic.py)
-    rho = dt/sigma
-    mu = 0.25 * (1-delta) + 0.51 * delta
-    p1 = -2*np.exp(-rho/(2*mu))*np.cos(np.sqrt(4*mu-1)*rho/(2*mu))
-    p2 = np.exp(-rho/mu)
+    rho = dt / sigma
+    mu = 0.25 * (1 - delta) + 0.51 * delta
+    p1 = -2 * np.exp(-rho / (2 * mu)) * np.cos(np.sqrt(4 * mu - 1) * rho / (2 * mu))
+    p2 = np.exp(-rho / mu)
     e1 = -a1 + p1 + 1
-    f0 = -a1*e1 + a1 - a2 + e1 + p2
-    f1 = a1*e1 - a2*e1 + a2
-    f2 = a2*e1
+    f0 = -a1 * e1 + a1 - a2 + e1 + p2
+    f1 = a1 * e1 - a2 * e1 + a2
+    f2 = a2 * e1
 
     # Translate to PID gains
-    nu = lbda + (e1 + 1)*(b0 + b1 + b2)
-    kc = -(f1 + 2*f2)/nu
-    ki = -(f0 + f1 + f2)/(dt*(f1 + 2*f2))
-    kd = -dt*f2/(f1 + 2*f2)
+    nu = lbda + (e1 + 1) * (b0 + b1 + b2)
+    kc = -(f1 + 2 * f2) / nu
+    ki = -(f0 + f1 + f2) / (dt * (f1 + 2 * f2))
+    kd = -dt * f2 / (f1 + 2 * f2)
 
     return (kc, ki, kd)
+
 
 def gainsToNumDen(kc, ki, kd, dt):
     # use backwards Euler approximation for the derivative: s -> (z-1)/dt
@@ -110,22 +112,22 @@ def gainsToNumDen(kc, ki, kd, dt):
     kDp = kD / dt
 
     b0 = kDp
-    b1 = kc + kIp - 2*kDp
+    b1 = kc + kIp - 2 * kDp
     b2 = -kc + kIp + kDp
 
     num = [b0, b1, b2]
     den = [1, -1, 0]
     return (num, den)
 
+
 def computePidDahlin(num, den, dt, rise_time=1.0):
     if len(den) != 3:
         print("Only supports 2nd order system")
-        return(0.0, 0.0, 0.0)
+        return (0.0, 0.0, 0.0)
 
     if len(num) > 3:
         print("Cannot have zeros")
-        return(0.0, 0.0, 0.0)
-
+        return (0.0, 0.0, 0.0)
 
     Q = 1.0 - np.exp(-dt / rise_time)
     a1 = den[1]

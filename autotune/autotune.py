@@ -37,7 +37,31 @@ Description:
 """
 
 import sys
-from PyQt5.QtWidgets import QDialog, QApplication, QLabel, QRadioButton, QSlider, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QComboBox, QTabWidget, QWidget, QGridLayout
+from PyQt5.QtWidgets import (
+    QDialog,
+    QApplication,
+    QLabel,
+    QRadioButton,
+    QSlider,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QFileDialog,
+    QLineEdit,
+    QSpinBox,
+    QDoubleSpinBox,
+    QMessageBox,
+    QCheckBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QGroupBox,
+    QComboBox,
+    QTabWidget,
+    QWidget,
+    QGridLayout,
+)
 from PyQt5.QtCore import Qt
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -53,6 +77,7 @@ from scipy.signal import detrend
 
 from data_selection_window import DataSelectionWindow
 
+
 class Window(QDialog):
     def __init__(self, parent=None):
         super(Window, self).__init__(parent)
@@ -62,7 +87,7 @@ class Window(QDialog):
         self.closed_loop_ref = None
         self.closed_loop_ax = None
         self.bode_plot_ref = None
-        self.pz_plot_refs= []
+        self.pz_plot_refs = []
         self.file_name = None
         self.is_system_identified = False
         self.axis = 0
@@ -115,8 +140,10 @@ class Window(QDialog):
         self.line_edit_delays.setRange(0, 1000)
         self.line_edit_delays.valueChanged.connect(self.onDelaysChanged)
         id_params_group.addRow(QLabel("Delays"), self.line_edit_delays)
-        input_scale_group = QGroupBox('Input scaling')
-        input_scale_group.setToolTip("Scale the input to identify a model at trim airspeed (requires true airspeed data)")
+        input_scale_group = QGroupBox("Input scaling")
+        input_scale_group.setToolTip(
+            "Scale the input to identify a model at trim airspeed (requires true airspeed data)"
+        )
 
         input_scale_form = QFormLayout()
         self.input_scale_combo = QComboBox()
@@ -151,7 +178,7 @@ class Window(QDialog):
         offset_group = QFormLayout()
         self.line_edit_offset = QDoubleSpinBox()
         self.line_edit_offset.setValue(0.0)
-        self.line_edit_offset.setRange(-10.0,10.0)
+        self.line_edit_offset.setRange(-10.0, 10.0)
         self.line_edit_offset.textChanged.connect(self.onOffsetChanged)
         offset_group.addRow(QLabel("Offset"), self.line_edit_offset)
         left_menu.addLayout(offset_group)
@@ -170,11 +197,11 @@ class Window(QDialog):
         layout_plot = QVBoxLayout()
         layout_h.addLayout(left_menu)
         layout_h.addLayout(layout_plot)
-        layout_h.setStretch(1,1)
+        layout_h.setStretch(1, 1)
         layout_plot.addWidget(self.toolbar)
         layout_plot.addWidget(self.canvas)
         layout_v.addLayout(layout_h)
-        layout_v.setStretch(0,1)
+        layout_v.setStretch(0, 1)
         layout_v.addWidget(self.tuning_tabs)
         self.setLayout(layout_v)
 
@@ -183,7 +210,7 @@ class Window(QDialog):
         self.input_ref = None
         self.closed_loop_ref = None
         self.bode_plot_ref = None
-        self.pz_plot_refs= []
+        self.pz_plot_refs = []
         self.is_system_identified = False
 
     def createTfLayout(self):
@@ -222,14 +249,17 @@ class Window(QDialog):
         labels = []
 
         for i in range(self.sys_id_n_poles):
-            labels.append("a{}".format(i+1))
+            labels.append("a{}".format(i + 1))
 
-        for i in range(self.sys_id_n_zeros+1):
+        for i in range(self.sys_id_n_zeros + 1):
             labels.append("b{}".format(i))
 
         self.t_coeffs.setVerticalHeaderLabels(labels)
-        self.t_coeffs.setFixedHeight(self.t_coeffs.verticalHeader().length()
-                                   + self.t_coeffs.horizontalHeader().height() + 2)
+        self.t_coeffs.setFixedHeight(
+            self.t_coeffs.verticalHeader().length()
+            + self.t_coeffs.horizontalHeader().height()
+            + 2
+        )
 
     def selectInputScale(self, index):
         self.btn_run_sys_id.setEnabled(True)
@@ -447,19 +477,19 @@ class Window(QDialog):
     def runIdentification(self):
         n_steps = len(self.t)
 
-        n = self.sys_id_n_poles # order of the denominator (a_1,...,a_n)
-        m = self.sys_id_n_zeros # order of the numerator (b_0,...,b_m)
-        d = self.sys_id_delays # number of delays
+        n = self.sys_id_n_poles  # order of the denominator (a_1,...,a_n)
+        m = self.sys_id_n_zeros  # order of the numerator (b_0,...,b_m)
+        d = self.sys_id_delays  # number of delays
         id = SystemIdentification(n, m, d, self.dt)
 
         est = id.fit(self.u.reshape(-1, 1), self.y.reshape(-1, 1))
 
         self.num = est.G_.num_list[0][0]
-        self.den = est.G_.den_list[0][0][0:n+1]
+        self.den = est.G_.den_list[0][0][0 : n + 1]
         self.Gz = ctrl.TransferFunction(self.num, self.den, self.dt)
 
         num_coeffs = self.num
-        den_coeffs = self.den[1:n+1]
+        den_coeffs = self.den[1 : n + 1]
         self.is_system_identified = True
         self.btn_run_sys_id.setEnabled(False)
 
@@ -472,19 +502,24 @@ class Window(QDialog):
             return
         d = self.sys_id_delays
         u_detrended = detrend(self.u)
-        u_delayed = np.concatenate(([0 for k in range(d)], u_detrended[0:(len(u_detrended)-d)]))
+        u_delayed = np.concatenate(
+            ([0 for k in range(d)], u_detrended[0 : (len(u_detrended) - d)])
+        )
         self.t_est, self.y_est = ctrl.forced_response(self.Gz, T=self.t, U=u_delayed)
         if len(self.t_est) > len(self.y_est):
-            self.t_est = self.t_est[0:len(self.y_est - 1)]
+            self.t_est = self.t_est[0 : len(self.y_est - 1)]
         self.plotInputOutput()
 
     def updateTfDisplay(self, a_coeffs, b_coeffs):
-
         for i in range(self.sys_id_n_poles):
             self.t_coeffs.setItem(i, 0, QTableWidgetItem("{:.6f}".format(a_coeffs[i])))
 
         for i in range(self.sys_id_n_zeros + 1):
-            self.t_coeffs.setItem(self.sys_id_n_poles + i, 0, QTableWidgetItem("{:.6f}".format(b_coeffs[i])))
+            self.t_coeffs.setItem(
+                self.sys_id_n_poles + i,
+                0,
+                QTableWidgetItem("{:.6f}".format(b_coeffs[i])),
+            )
 
         dt = self.Gz.dt
         self.line_edit_dt.setText("{:.4f}".format(dt))
@@ -496,16 +531,17 @@ class Window(QDialog):
         poles = self.Gz.poles()
         zeros = self.Gz.zeros()
         if not self.pz_plot_refs:
-            ax = self.figure.add_subplot(3,3,6)
-            plot_ref = ax.plot(poles.real, poles.imag, 'rx', markersize=10)
+            ax = self.figure.add_subplot(3, 3, 6)
+            plot_ref = ax.plot(poles.real, poles.imag, "rx", markersize=10)
             self.pz_plot_refs.append(plot_ref[0])
-            plot_ref = ax.plot(zeros.real, zeros.imag, 'ro', markersize=10)
+            plot_ref = ax.plot(zeros.real, zeros.imag, "ro", markersize=10)
             self.pz_plot_refs.append(plot_ref[0])
-            uc = mpatches.Circle((0,0), radius=1, fill=False,
-                                color='black', ls='dashed')
+            uc = mpatches.Circle(
+                (0, 0), radius=1, fill=False, color="black", ls="dashed"
+            )
             ax.add_patch(uc)
-            ax.axhline(0, color ="black", linestyle ="--")
-            ax.axvline(0, color ="black", linestyle ="--")
+            ax.axhline(0, color="black", linestyle="--")
+            ax.axvline(0, color="black", linestyle="--")
             ax.set_xlim(-1.5, 1.5)
             ax.set_ylim(-1.5, 1.5)
             ax.set_aspect(1.0)
@@ -530,7 +566,7 @@ class Window(QDialog):
             val = float(self.t_coeffs.item(i, 0).text())
             self.den.append(val)
 
-        for i in range(self.sys_id_n_zeros+1):
+        for i in range(self.sys_id_n_zeros + 1):
             val = float(self.t_coeffs.item(self.sys_id_n_poles + i, 0).text())
             self.num.append(val)
 
@@ -550,11 +586,15 @@ class Window(QDialog):
             return
 
         if self.tuning_tabs.tabText(self.tuning_tabs.currentIndex()) == "GMVC":
-            sigma = self.rise_time # rise time
-            delta = self.damping_index # damping property, set between 0 and 2 (1 for Butterworth)
+            sigma = self.rise_time  # rise time
+            delta = (
+                self.damping_index
+            )  # damping property, set between 0 and 2 (1 for Butterworth)
             lbda = self.detune_coeff
-            (self.kc, self.ki, self.kd) = computePidGmvc(self.num, self.den, self.dt, sigma, delta, lbda)
-            #TODO:find a better solution
+            (self.kc, self.ki, self.kd) = computePidGmvc(
+                self.num, self.den, self.dt, sigma, delta, lbda
+            )
+            # TODO:find a better solution
             self.ki /= 5.0
             static_gain = sum(self.num) / sum(self.den)
             self.kff = max(1 / static_gain, 0.0)
@@ -580,66 +620,126 @@ class Window(QDialog):
         kd = self.kd
         kff = self.kff
 
-        delays = ctrl.TransferFunction([1], np.append([1], np.zeros(self.sys_id_delays)), dt, inputs='r', outputs='rd')
-        plant = ctrl.TransferFunction(num, den, dt, inputs='u', outputs='plant_out')
-        sampler = ctrl.TransferFunction([1], [1, 0], dt, inputs='plant_out', outputs='y')
-        sum_feedback = ctrl.summing_junction(inputs=['rd', '-y'], output='e')
+        delays = ctrl.TransferFunction(
+            [1],
+            np.append([1], np.zeros(self.sys_id_delays)),
+            dt,
+            inputs="r",
+            outputs="rd",
+        )
+        plant = ctrl.TransferFunction(num, den, dt, inputs="u", outputs="plant_out")
+        sampler = ctrl.TransferFunction(
+            [1], [1, 0], dt, inputs="plant_out", outputs="y"
+        )
+        sum_feedback = ctrl.summing_junction(inputs=["rd", "-y"], output="e")
 
         # Default is standard PID
-        feedforward = ctrl.TransferFunction([kff], [1], dt, inputs='rd', outputs='ff_out')
-        i_control = ctrl.TransferFunction([ki * dt, ki * dt], [2, -2], dt, inputs='e', outputs='i_out') # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
+        feedforward = ctrl.TransferFunction(
+            [kff], [1], dt, inputs="rd", outputs="ff_out"
+        )
+        i_control = ctrl.TransferFunction(
+            [ki * dt, ki * dt], [2, -2], dt, inputs="e", outputs="i_out"
+        )  # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
 
         # Derivative with 1st order LPF (discretized using Euler method: s = (z-1)/dt)
-        derivative_cutoff_freq = 10.0 # Hz
+        derivative_cutoff_freq = 10.0  # Hz
         tau = 1 / (2 * np.pi * derivative_cutoff_freq)
-        derivative_num = np.array([kd , -kd])
+        derivative_num = np.array([kd, -kd])
         derivative_den = np.array([tau, -tau + dt])
-        d_control = ctrl.TransferFunction(derivative_num, derivative_den, dt, inputs='e', outputs='d_out')
+        d_control = ctrl.TransferFunction(
+            derivative_num, derivative_den, dt, inputs="e", outputs="d_out"
+        )
 
-        id_control = ctrl.summing_junction(inputs=['e', 'i_out', 'd_out'], output='id_out')
-        p_control = ctrl.TransferFunction([kc], [1], dt, inputs='id_out', outputs='pid_out')
-        sum_control = ctrl.summing_junction(inputs=['pid_out', 'ff_out'], output='control_out')
+        id_control = ctrl.summing_junction(
+            inputs=["e", "i_out", "d_out"], output="id_out"
+        )
+        p_control = ctrl.TransferFunction(
+            [kc], [1], dt, inputs="id_out", outputs="pid_out"
+        )
+        sum_control = ctrl.summing_junction(
+            inputs=["pid_out", "ff_out"], output="control_out"
+        )
 
         if self.negate_control_box.isChecked():
             output_sign = -1.0
         else:
             output_sign = 1.0
 
-        out_sign = ctrl.TransferFunction(output_sign, 1.0, dt, inputs='control_out', outputs='u')
+        out_sign = ctrl.TransferFunction(
+            output_sign, 1.0, dt, inputs="control_out", outputs="u"
+        )
 
         remove_zero = self.pid_no_zero_box.isChecked()
         no_derivative_kick = True
 
         if remove_zero:
             # P on feedback only to remove zero (3-loop autopilot style)
-            id_control = ctrl.summing_junction(inputs=['-y', 'i_out', 'd_out'], output='id_out')
+            id_control = ctrl.summing_junction(
+                inputs=["-y", "i_out", "d_out"], output="id_out"
+            )
 
         if no_derivative_kick:
             # Derivative on feedback only to remove the "derivative kick"
-            d_control = ctrl.TransferFunction(-derivative_num, derivative_den, dt, inputs='y', outputs='d_out')
+            d_control = ctrl.TransferFunction(
+                -derivative_num, derivative_den, dt, inputs="y", outputs="d_out"
+            )
 
-        closed_loop = ctrl.interconnect([delays, sampler, sum_feedback, feedforward, sum_control, p_control, i_control, d_control, id_control, out_sign, plant], inputs='r', outputs='y')
+        closed_loop = ctrl.interconnect(
+            [
+                delays,
+                sampler,
+                sum_feedback,
+                feedforward,
+                sum_control,
+                p_control,
+                i_control,
+                d_control,
+                id_control,
+                out_sign,
+                plant,
+            ],
+            inputs="r",
+            outputs="y",
+        )
 
-        t_out,y_out = ctrl.step_response(closed_loop, T=np.arange(0,2,dt))
+        t_out, y_out = ctrl.step_response(closed_loop, T=np.arange(0, 2, dt))
 
         # Add disturbance
-        sum_feedback_no_ref = ctrl.summing_junction(inputs=['-y'], output='e')
-        sum_control_with_disturbance = ctrl.summing_junction(inputs=['pid_out', 'disturbance'], output='control_out')
-        disturbance_loop = ctrl.interconnect([sampler, sum_feedback_no_ref, sum_control_with_disturbance, p_control, i_control, d_control, id_control, out_sign, plant], inputs='disturbance', outputs='y')
+        sum_feedback_no_ref = ctrl.summing_junction(inputs=["-y"], output="e")
+        sum_control_with_disturbance = ctrl.summing_junction(
+            inputs=["pid_out", "disturbance"], output="control_out"
+        )
+        disturbance_loop = ctrl.interconnect(
+            [
+                sampler,
+                sum_feedback_no_ref,
+                sum_control_with_disturbance,
+                p_control,
+                i_control,
+                d_control,
+                id_control,
+                out_sign,
+                plant,
+            ],
+            inputs="disturbance",
+            outputs="y",
+        )
         d = np.zeros_like(t_out)
-        d[t_out >= 1.0] = -0.05 #TODO: parameterize
+        d[t_out >= 1.0] = -0.05  # TODO: parameterize
         _, y_d = ctrl.forced_response(disturbance_loop, t_out, d)
         y_out += y_d
 
         self.plotClosedLoop(t_out, y_out)
         w = np.logspace(-1, 3, 40).tolist()
-        (mag_cl, phase_cl, omega_cl) = ctrl.frequency_response(closed_loop, omega=np.asarray(w))
+        (mag_cl, phase_cl, omega_cl) = ctrl.frequency_response(
+            closed_loop, omega=np.asarray(w)
+        )
         self.plotBode(omega_cl, mag_cl)
 
     def plotClosedLoop(self, t, y):
         if self.closed_loop_ref is None:
-            ax = self.figure.add_subplot(3,3,7)
-            ax.step(t, [1 if i>0 else 0 for i in t], 'k--')
+            ax = self.figure.add_subplot(3, 3, 7)
+            ax.step(t, [1 if i > 0 else 0 for i in t], "k--")
             plot_ref = ax.plot(t, y)
             self.closed_loop_ref = plot_ref[0]
             self.closed_loop_ax = ax
@@ -649,23 +749,23 @@ class Window(QDialog):
         else:
             self.closed_loop_ref.set_xdata(t)
             self.closed_loop_ref.set_ydata(y)
-            self.closed_loop_ax.set_ylim(np.min(y),np.max([1.5, np.max(y)]))
+            self.closed_loop_ax.set_ylim(np.min(y), np.max([1.5, np.max(y)]))
 
         self.canvas.draw()
 
     def plotBode(self, w_cl, mag_cl):
         if self.bode_plot_ref is None:
-            ax = self.figure.add_subplot(3,3,(8,9))
-            f = w_cl/(2*np.pi)
+            ax = self.figure.add_subplot(3, 3, (8, 9))
+            f = w_cl / (2 * np.pi)
             plot_ref = ax.semilogx(f, 10 * np.log10(mag_cl))
-            ax.plot([f[0], f[-1]], [0, 0], 'k--')
-            ax.plot([f[0], f[-1]], [-3, -3], 'g--')
+            ax.plot([f[0], f[-1]], [0, 0], "k--")
+            ax.plot([f[0], f[-1]], [-3, -3], "g--")
             self.bode_plot_ref = plot_ref[0]
             ax.set_title("Bode")
             ax.set_xlabel("Frequency (Hz)")
             ax.set_ylabel("Magnitude (dB)")
         else:
-            f = w_cl/(2*np.pi)
+            f = w_cl / (2 * np.pi)
             self.bode_plot_ref.set_xdata(f)
             self.bode_plot_ref.set_ydata(10 * np.log10(mag_cl))
 
@@ -680,7 +780,7 @@ class Window(QDialog):
                 scale = np.array(self.true_airspeed) / self.trim_airspeed
 
             elif scale_type == "True airspeed^2":
-                scale = (np.array(self.true_airspeed) / self.trim_airspeed)**2
+                scale = (np.array(self.true_airspeed) / self.trim_airspeed) ** 2
 
             self.u = self.input * scale
             self.input_scale_combo.setEnabled(True)
@@ -694,7 +794,7 @@ class Window(QDialog):
             # .plot returns a list of line <reference>s, as we're
             # only getting one we can take the first element.
             self.figure.clear()
-            ax = self.figure.add_subplot(3,3,(1,3))
+            ax = self.figure.add_subplot(3, 3, (1, 3))
             input_ref = ax.plot(self.t, self.u)
             self.input_ref = input_ref[0]
             ax.plot(self.t, self.y)
@@ -721,21 +821,21 @@ class Window(QDialog):
         select = DataSelectionWindow(self.file_name)
 
         if select.exec_():
-                self.reset()
-                self.file_name = select.file_name
-                self.t = select.t - select.t[0]
-                self.input = select.u
-                self.u = self.input
-                self.y = select.y
-                self.true_airspeed = select.v
-                trim_airspeed = select.getTrimAirspeed()
+            self.reset()
+            self.file_name = select.file_name
+            self.t = select.t - select.t[0]
+            self.input = select.u
+            self.u = self.input
+            self.y = select.y
+            self.true_airspeed = select.v
+            trim_airspeed = select.getTrimAirspeed()
 
-                if trim_airspeed is not None:
-                    self.line_edit_trim.setValue(trim_airspeed)
+            if trim_airspeed is not None:
+                self.line_edit_trim.setValue(trim_airspeed)
 
-                self.refreshInputOutputData()
-                self.runIdentification()
-                self.computeController()
+            self.refreshInputOutputData()
+            self.runIdentification()
+            self.computeController()
 
     def refreshInputOutputData(self):
         self.reset()
@@ -746,7 +846,7 @@ class Window(QDialog):
 
     def resampleData(self, dt):
         self.dt = dt
-        t_new = np.arange(0, self.t[-1]+self.dt, self.dt)
+        t_new = np.arange(0, self.t[-1] + self.dt, self.dt)
         self.u = resample_interp(self.t, self.u, t_new)
         self.y = resample_interp(self.t, self.y, t_new)
         self.input = resample_interp(self.t, self.input, t_new)
@@ -756,10 +856,10 @@ class Window(QDialog):
 
         self.t = t_new
 
-class DoubleSlider(QSlider):
 
+class DoubleSlider(QSlider):
     def __init__(self, *args, **kargs):
-        super(DoubleSlider, self).__init__( *args, **kargs)
+        super(DoubleSlider, self).__init__(*args, **kargs)
         self._min = 0
         self._max = 99
         self.interval = 1
@@ -789,7 +889,7 @@ class DoubleSlider(QSlider):
     def setInterval(self, value):
         # To avoid division by zero
         if not value:
-            raise ValueError('Interval of zero specified')
+            raise ValueError("Interval of zero specified")
         self.interval = value
         self._range_adjusted()
 
@@ -798,7 +898,7 @@ class DoubleSlider(QSlider):
         super(DoubleSlider, self).setMaximum(number_of_steps)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     main = Window()

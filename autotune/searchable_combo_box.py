@@ -1,6 +1,7 @@
 from PyQt5.QtCore import Qt, QSortFilterProxyModel
 from PyQt5.QtWidgets import QComboBox, QCompleter
 
+
 class SearchableComboBox(QComboBox):
     def __init__(self, parent=None):
         super(SearchableComboBox, self).__init__(parent)
@@ -40,4 +41,3 @@ class SearchableComboBox(QComboBox):
         self.completer.setCompletionColumn(column)
         self.pFilterModel.setFilterKeyColumn(column)
         super(SearchableComboBox, self).setModelColumn(column)
-

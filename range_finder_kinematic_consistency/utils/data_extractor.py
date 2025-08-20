@@ -39,24 +39,28 @@ import numpy as np
 from scipy import signal
 from pyulog import ULog
 
+
 def getAllData(logfile):
     log = ULog(logfile)
 
-    rng = getData(log, 'distance_sensor', 'current_distance')
-    t_rng = ms2s(getData(log, 'distance_sensor', 'timestamp'))
+    rng = getData(log, "distance_sensor", "current_distance")
+    t_rng = ms2s(getData(log, "distance_sensor", "timestamp"))
 
-    vz = getData(log, 'vehicle_local_position', 'vz')
-    t_vz = ms2s(getData(log, 'vehicle_local_position', 'timestamp'))
+    vz = getData(log, "vehicle_local_position", "vz")
+    t_vz = ms2s(getData(log, "vehicle_local_position", "timestamp"))
 
     STATE_VZ = 6
-    vz_var = getData(log, 'estimator_states', f'covariances[{STATE_VZ}]')
-    t_vz_var = ms2s(getData(log, 'estimator_states', 'timestamp'))
+    vz_var = getData(log, "estimator_states", f"covariances[{STATE_VZ}]")
+    t_vz_var = ms2s(getData(log, "estimator_states", "timestamp"))
 
-    (t_aligned, rng_aligned, vz_aligned, vz_var_aligned) = alignData(log, t_rng, rng, t_vz, vz, t_vz_var, vz_var)
+    (t_aligned, rng_aligned, vz_aligned, vz_var_aligned) = alignData(
+        log, t_rng, rng, t_vz, vz, t_vz_var, vz_var
+    )
 
     t_aligned -= t_aligned[0]
 
     return (t_aligned, rng_aligned, vz_aligned, vz_var_aligned)
+
 
 def getData(log, topic_name, variable_name, instance=0):
     variable_data = np.array([])
@@ -68,17 +72,20 @@ def getData(log, topic_name, variable_name, instance=0):
 
     return variable_data
 
+
 def ms2s(time_ms):
     return time_ms * 1e-6
+
 
 def getDeltaMean(data_list):
     dx = 0
     length = len(data_list)
-    for i in range(1,length):
-        dx = dx + (data_list[i]-data_list[i-1])
+    for i in range(1, length):
+        dx = dx + (data_list[i] - data_list[i - 1])
 
-    dx = dx/(length-1)
+    dx = dx / (length - 1)
     return dx
+
 
 def alignData(log, t_u_data, u_data, t_y_data, y_data, t_y2_data, y2_data):
     len_y = len(t_y_data)
@@ -93,28 +100,30 @@ def alignData(log, t_u_data, u_data, t_y_data, y_data, t_y2_data, y2_data):
     for i_u in range(len(t_u_data)):
         t_u = t_u_data[i_u]
 
-        while t_y_data[i_y] <= t_u and i_y < len_y-1:
+        while t_y_data[i_y] <= t_u and i_y < len_y - 1:
             i_y += 1
-        while t_y2_data[i_y2] <= t_u and i_y2 < len_y2-1:
+        while t_y2_data[i_y2] <= t_u and i_y2 < len_y2 - 1:
             i_y2 += 1
 
         u_aligned = np.append(u_aligned, u_data[i_u])
-        y_aligned = np.append(y_aligned, y_data[i_y-1])
-        y2_aligned = np.append(y2_aligned, y2_data[i_y2-1])
+        y_aligned = np.append(y_aligned, y_data[i_y - 1])
+        y2_aligned = np.append(y2_aligned, y2_data[i_y2 - 1])
         t_aligned.append(t_u)
 
     return (t_aligned, u_aligned, y_aligned, y2_aligned)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
     import os
 
-    parser = argparse.ArgumentParser(
-        description='Extract data from a give .ulg file')
+    parser = argparse.ArgumentParser(description="Extract data from a give .ulg file")
 
-    parser.add_argument('logfile', help='Full ulog file path, name and extension', type=str)
+    parser.add_argument(
+        "logfile", help="Full ulog file path, name and extension", type=str
+    )
     args = parser.parse_args()
 
-    logfile = os.path.abspath(args.logfile) # Convert to absolute path
+    logfile = os.path.abspath(args.logfile)  # Convert to absolute path
 
     (t_aligned, u_aligned, y_aligned, y2_data) = getAllData(logfile)

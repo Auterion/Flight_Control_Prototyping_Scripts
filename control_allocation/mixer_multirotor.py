@@ -21,18 +21,21 @@ from mixerlib import *
 # m = B * u
 
 # Normal quad x
-#B = np.matrix([
+# B = np.matrix([
 #                [-1.0, 1.0, 1.0, -1.0],
 #                [1.0, -1.0, 1.0, -1.0],
 #                [1.0, 1.0, -1.0, -1.0],
 #                [1.0, 1.0, 1.0, 1.0]])
 
 # Wide front arms
-B = np.matrix([
-                [-1.0, 0.5, 1.0, -0.5],
-                [1.0, -1.0, 1.0, -1.0],
-                [1.0, 1.0, -1.0, -1.0],
-                [1.0, 1.0, 1.0, 1.0]])
+B = np.matrix(
+    [
+        [-1.0, 0.5, 1.0, -0.5],
+        [1.0, -1.0, 1.0, -1.0],
+        [1.0, 1.0, -1.0, -1.0],
+        [1.0, 1.0, 1.0, 1.0],
+    ]
+)
 
 # Compute the control allocation matrix using the pseudo inverse of the actuator effectiveness matrix
 # u = P * m
@@ -40,20 +43,25 @@ P = np.linalg.pinv(B)
 
 ##################################
 # quad x
-P = np.matrix([
-	[ -0.707107,  0.707107,  1.000000,  1.000000 ],
-	[  0.707107, -0.707107,  1.000000,  1.000000 ],
-	[  0.707107,  0.707107, -1.000000,  1.000000 ],
-	[ -0.707107, -0.707107, -1.000000,  1.000000 ]])
+P = np.matrix(
+    [
+        [-0.707107, 0.707107, 1.000000, 1.000000],
+        [0.707107, -0.707107, 1.000000, 1.000000],
+        [0.707107, 0.707107, -1.000000, 1.000000],
+        [-0.707107, -0.707107, -1.000000, 1.000000],
+    ]
+)
 B = np.linalg.pinv(P)
 ##################################
 
 # Desired accelerations (actuator controls)
-p_dot_sp = 2.2 # roll acceleration (p is the roll rate)
-q_dot_sp = -0.1 # pitch acceleration
-r_dot_sp = 0.03 # yaw acceleration
-T_sp = 1.0 # vertical thrust
-m_sp = np.matrix([p_dot_sp, q_dot_sp, r_dot_sp, T_sp]).T # Vector of desired "accelerations"
+p_dot_sp = 2.2  # roll acceleration (p is the roll rate)
+q_dot_sp = -0.1  # pitch acceleration
+r_dot_sp = 0.03  # yaw acceleration
+T_sp = 1.0  # vertical thrust
+m_sp = np.matrix(
+    [p_dot_sp, q_dot_sp, r_dot_sp, T_sp]
+).T  # Vector of desired "accelerations"
 
 # Airmode type (none/xy/xyz)
 airmode = "none"

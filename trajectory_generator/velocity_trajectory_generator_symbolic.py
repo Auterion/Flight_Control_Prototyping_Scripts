@@ -25,26 +25,26 @@ T_3 = Symbol("T3", real=True)
 a_max = Symbol("a_max", real=True)
 
 # Final acceleration (at t3)
-f1 = a_0 + j*T_1 - j*T_3 - a_3
-f1 = f1.subs(a_3, 0) # Force final acceleration to be null
+f1 = a_0 + j * T_1 - j * T_3 - a_3
+f1 = f1.subs(a_3, 0)  # Force final acceleration to be null
 res_T3 = solve(f1, T_3)
 res_T3 = res_T3[0]
 # Acceleration at t1
-at1 = a_0 + j*T_1
+at1 = a_0 + j * T_1
 # Acceleration at t2
 at2 = at1
 # Velocity at t1
-vt1 = v_0 + a_0*T_1 + 0.5*j*T_1**2
+vt1 = v_0 + a_0 * T_1 + 0.5 * j * T_1**2
 # Velocity at t2
-vt2 = vt1 + at1*T_2
+vt2 = vt1 + at1 * T_2
 # Velocity at t3
-vt3 = vt2 + at2*T_3 - 0.5*j*T_3**2
+vt3 = vt2 + at2 * T_3 - 0.5 * j * T_3**2
 # Position at t1
-xt1 = x_0 + v_0*T_1 + 0.5*a_0*T_1**2 + 1/6*j*T_1**3
+xt1 = x_0 + v_0 * T_1 + 0.5 * a_0 * T_1**2 + 1 / 6 * j * T_1**3
 # Position at t2
-xt2 = xt1 + vt1*T_2 + 0.5*at1*T_2**2
+xt2 = xt1 + vt1 * T_2 + 0.5 * at1 * T_2**2
 # Position at t3
-xt3 = xt2 + vt2*T_3 + 0.5*at2*T_3**2 - 1/6*j*T_3**3
+xt3 = xt2 + vt2 * T_3 + 0.5 * at2 * T_3**2 - 1 / 6 * j * T_3**3
 
 f2 = vt3 - v_3
 f2 = f2.subs([(v_0, 0)])
@@ -66,8 +66,8 @@ pprint(res_j3[0])
 print(res_j3[0])
 print("Step 2 - Check for saturation. If a_0 + j*T_1 > a_max, recompute T_1 using:")
 print("T_1 =")
-pprint(solve(a_0 + j*T_1 - a_max, T_1)[0])
-print(solve(a_0 + j*T_1 - a_max, T_1)[0])
+pprint(solve(a_0 + j * T_1 - a_max, T_1)[0])
+print(solve(a_0 + j * T_1 - a_max, T_1)[0])
 print("Step 3 - Compute T3 using:")
 print("T_3 =")
 pprint(res_T3)
@@ -103,15 +103,17 @@ print("x_sp =")
 pprint(f_x_sp)
 
 print("=============== Time synchronization ===============")
-T123 = Symbol("T123", real=True) # Total time
+T123 = Symbol("T123", real=True)  # Total time
 
-f3 = T123 - T_1 - T_2 - T_3 # Time constraint
+f3 = T123 - T_1 - T_2 - T_3  # Time constraint
 res_T2 = solve(f3.subs(T_3, res_T3), T_2)
 res_T2 = res_T2[0]
 res_T1 = solve(f2.subs([(T_2, res_T2), (T_3, res_T3)]), T_1)
 res_T1 = res_T1
-print("For multiple axes applications, we need to synchronize the trajectories such that they all end at the same time.\n\
-Given the total time of the longest trajectory T, we can solve again T_1, T_2 and T_3 for the other axes:")
+print(
+    "For multiple axes applications, we need to synchronize the trajectories such that they all end at the same time.\n\
+Given the total time of the longest trajectory T, we can solve again T_1, T_2 and T_3 for the other axes:"
+)
 print("T_1 =")
 pprint(res_T1)
 print(res_T1)

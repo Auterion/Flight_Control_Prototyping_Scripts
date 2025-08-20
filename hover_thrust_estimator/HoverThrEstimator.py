@@ -26,21 +26,23 @@ import matplotlib.pylab as plt
 
 innov_sq_length = 10
 FLT_EPSILON = sys.float_info.epsilon
-NAN = float('nan')
-verbose = True;
+NAN = float("nan")
+verbose = True
 
 if verbose:
+
     def verboseprint(*args):
         # Print each argument separately so caller doesn't need to
         # stuff everything to be printed into a single string
         for arg in args:
-           print(arg)
+            print(arg)
         print()
+
 else:
-    verboseprint = lambda *a: None      # do-nothing function
+    verboseprint = lambda *a: None  # do-nothing function
+
 
 class HoverThrEstimator(object):
-
     def setState(self, hover_thr):
         self._hover_thr = hover_thr
 
@@ -97,15 +99,14 @@ class HoverThrEstimator(object):
             self.updateState(K, innov)
             self.updateStateCovariance(K, H)
 
-            residual =  self.computeInnov(acc_z, thrust)
+            residual = self.computeInnov(acc_z, thrust)
 
         elif not abs(self._innov_test_ratio_signed_lpf) < 0.2:
             self.bumpStateVariance()
 
-        self.updateLpf(residual, sign(innov)*innov_test_ratio)
+        self.updateLpf(residual, sign(innov) * innov_test_ratio)
         self.updateMeasurementNoise(residual, H)
         return (innov, innov_var, innov_test_ratio)
-
 
     def computeH(self, thrust):
         return -9.81 * thrust / (self._hover_thr**2)
@@ -118,7 +119,7 @@ class HoverThrEstimator(object):
         return self._P * H / innov_var
 
     def computeInnov(self, acc_z, thrust):
-        return  acc_z - self.predictedAccZ(thrust)
+        return acc_z - self.predictedAccZ(thrust)
 
     def predictedAccZ(self, thrust):
         return 9.81 * thrust / self._hover_thr - 9.81
@@ -127,7 +128,7 @@ class HoverThrEstimator(object):
         return innov**2 / (self._innov_gate_size**2 * innov_var)
 
     def isTestRatioPassing(self, innov_test_ratio):
-        return (innov_test_ratio < 1.0)
+        return innov_test_ratio < 1.0
 
     def updateState(self, K, innov):
         self._hover_thr += K * innov
@@ -139,7 +140,11 @@ class HoverThrEstimator(object):
     def updateMeasurementNoise(self, residual, H):
         alpha = self._dt / (self._noise_learning_time_constant + self._dt)
         res_no_bias = residual - self._residual_lpf
-        self._R = clip(self._R * (1.0 - alpha) + alpha * (res_no_bias**2 + H * self._P * H), 1.0, 400.0)
+        self._R = clip(
+            self._R * (1.0 - alpha) + alpha * (res_no_bias**2 + H * self._P * H),
+            1.0,
+            400.0,
+        )
 
     def bumpStateVariance(self):
         self._P += 1000.0 * self._Q * self._dt
@@ -150,10 +155,14 @@ class HoverThrEstimator(object):
     def updateLpf(self, residual, innov_test_ratio_signed):
         alpha = self._dt / (self._lpf_time_constant + self._dt)
         self._residual_lpf = (1.0 - alpha) * self._residual_lpf + alpha * residual
-        self._innov_test_ratio_signed_lpf = (1.0 - alpha) * self._innov_test_ratio_signed_lpf + alpha * clip(innov_test_ratio_signed, -1.0, 1.0)
+        self._innov_test_ratio_signed_lpf = (
+            1.0 - alpha
+        ) * self._innov_test_ratio_signed_lpf + alpha * clip(
+            innov_test_ratio_signed, -1.0, 1.0
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     hover_thr_0 = 0.5
     hover_ekf = HoverThrEstimator(hover_thr_0)
     assert hover_ekf._hover_thr == hover_thr_0
