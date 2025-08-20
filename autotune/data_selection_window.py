@@ -225,6 +225,7 @@ class DataSelectionWindow(QDialog):
             self.ax_coherence.set_title("Coherence")
             self.ax_coherence.set_xlabel("Frequency (Hz)")
             self.ax_coherence.set_ylabel("Coherence")
+            self.ax_coherence.set_xscale('log')
 
             self.canvas.mpl_connect('scroll_event', self.zoom_fun)
             self.canvas.draw()
@@ -278,9 +279,13 @@ class DataSelectionWindow(QDialog):
             )   
 
         num_samples = len(t_sel)
+        duration = t_sel[-1] - t_sel[0]
         
-        if num_samples < 256:
-            self.label_warning.setText(f"Not enough data ({num_samples} samples). Select a larger window.")
+        if num_samples < 256 or duration < 5:
+            self.label_warning.setText(
+                f"Increase the window size to at least 5 seconds and 256 samples. "
+                f"Currently selected: {duration:.2f} seconds, {num_samples} samples."
+            )
             self.label_warning.show()
             
             self.coherence_ref.set_xdata([])
@@ -305,7 +310,7 @@ class DataSelectionWindow(QDialog):
         # Update coherence plot 
         self.coherence_ref.set_xdata(freq)
         self.coherence_ref.set_ydata(Cuy)
-        self.ax_coherence.set_xlim([min(freq), max(freq)])
+        self.ax_coherence.set_xlim([0, 20])
         self.ax_coherence.set_ylim([0, 1])
 
         # Remove previous annotation if it exists
@@ -313,7 +318,6 @@ class DataSelectionWindow(QDialog):
             self.coherence_info_text.remove()
             self.coherence_info_text = None
 
-        duration = t_sel[-1] - t_sel[0]
         freq_res = fs / nperseg
         info_text = (f"Samples: {num_samples}, Duration: {duration:.2f}s, "
                     f"fs: {fs:.1f}Hz, nperseg: {nperseg}, Δf: {freq_res:.2f}Hz")
