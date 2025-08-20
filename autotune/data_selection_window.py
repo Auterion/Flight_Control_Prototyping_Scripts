@@ -1,25 +1,21 @@
-from PyQt5.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QFormLayout,
-    QPushButton,
-    QLabel,
-    QFormLayout,
-    QRadioButton,
-    QMessageBox,
-    QFileDialog,
-    QComboBox,
-)
-
 import matplotlib.pyplot as plt
+import numpy as np
+from data_extractor import DataExtractor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.widgets import SpanSelector
-
-import numpy as np
+from PyQt5.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
+)
 from scipy import signal
-
-from data_extractor import DataExtractor
 from searchable_combo_box import SearchableComboBox
 
 

@@ -36,11 +36,11 @@ Description:
     Auto-tuning algorithm test on simulated 2nd order transfer function
 """
 
-import numpy as np
 import matplotlib.pylab as plt
-from scipy import signal
+import numpy as np
 from arx_rls import ArxRls
 from pid_design import computePidGmvc
+from scipy import signal
 
 
 def run():

@@ -11,8 +11,8 @@ Description:
 """
 
 import numpy as np
-from scipy import signal
 from matplotlib import pyplot as plt
+from scipy import signal
 
 frequencies = []
 amplitudes = []

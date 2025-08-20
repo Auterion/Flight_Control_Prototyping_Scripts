@@ -38,9 +38,8 @@ Description:
     running a weighted RLS algorithm to identify an ARX parametric model
 """
 
-import numpy as np
 import control as ctrl
-
+import numpy as np
 from arx_rls import ArxRls
 from scipy.optimize import lsq_linear, minimize
 

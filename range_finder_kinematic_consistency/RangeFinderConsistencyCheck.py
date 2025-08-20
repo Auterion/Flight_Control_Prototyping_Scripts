@@ -36,10 +36,11 @@ Github: https://github.com/bresch
 Description:
 """
 
-import numpy as np
-import sys
 import math
+import sys
+
 import matplotlib.pylab as plt
+import numpy as np
 from AlphaFilter import AlphaFilter
 
 FLT_EPSILON = sys.float_info.epsilon

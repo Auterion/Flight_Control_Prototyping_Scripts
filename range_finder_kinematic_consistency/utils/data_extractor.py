@@ -36,8 +36,8 @@ Description:
 """
 
 import numpy as np
-from scipy import signal
 from pyulog import ULog
+from scipy import signal
 
 
 def getAllData(logfile):

@@ -26,10 +26,11 @@ Description:
 
 from __future__ import print_function
 
-from numpy import *
-import sys
 import math
+import sys
+
 import matplotlib.pylab as plt
+from numpy import *
 
 FLT_EPSILON = sys.float_info.epsilon
 NAN = float("nan")

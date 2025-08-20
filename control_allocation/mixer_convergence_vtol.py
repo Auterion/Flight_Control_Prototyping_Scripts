@@ -1,8 +1,7 @@
-import numpy as np
-from mixerlib import normal_mode, mix_forward_thrust_and_yaw
-
 import matplotlib.pylab as plt
+import numpy as np
 from matplotlib.patches import FancyArrowPatch
+from mixerlib import mix_forward_thrust_and_yaw, normal_mode
 from mpl_toolkits.mplot3d import proj3d
 
 

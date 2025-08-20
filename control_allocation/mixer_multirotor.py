@@ -11,7 +11,6 @@ Description:
 
 import numpy as np
 import numpy.matlib
-
 from mixerlib import *
 
 # --------------------------------------------------

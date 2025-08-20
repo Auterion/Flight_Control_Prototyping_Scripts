@@ -37,8 +37,8 @@ Description:
 """
 
 import numpy as np
-from scipy import signal
 from pyulog import ULog
+from scipy import signal
 from scipy.interpolate import make_interp_spline
 
 

@@ -9,11 +9,12 @@ Github: https://github.com/bresch
 Description:
 """
 
-from numpy import *
+import os
+
 import matplotlib.pylab as plt
 from HoverThrEstimator import HoverThrEstimator
+from numpy import *
 from pyulog import ULog
-import os
 
 
 def get_data(log, topic_name, variable_name):

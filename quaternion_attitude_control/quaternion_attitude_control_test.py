@@ -35,14 +35,13 @@ Description:
     to verify attitude control strategies and visualize the result.
 """
 
-import numpy as np
-from numpy import linalg as la
-
-from pyquaternion import Quaternion
-from math import sin, cos, asin, acos, degrees, radians, sqrt
+from math import acos, asin, cos, degrees, radians, sin, sqrt
 
 import matplotlib.pyplot as plt
+import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
+from numpy import linalg as la
+from pyquaternion import Quaternion
 
 
 def plotrotc(q=Quaternion(), p=(0, 0, 0)):

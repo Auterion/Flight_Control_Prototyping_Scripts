@@ -17,9 +17,9 @@ Description:
     accel = g * Thrust / Hover thrust - g
 """
 
-from numpy import *
 import matplotlib.pylab as plt
 from HoverThrEstimator import HoverThrEstimator
+from numpy import *
 
 
 def getAccelFromThrTime(thrust, t, ht):

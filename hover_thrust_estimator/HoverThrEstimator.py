@@ -19,10 +19,11 @@ Description:
     H[k] = -g * T[k] / Th[k]**2
 """
 
-from numpy import *
-import sys
 import math
+import sys
+
 import matplotlib.pylab as plt
+from numpy import *
 
 innov_sq_length = 10
 FLT_EPSILON = sys.float_info.epsilon

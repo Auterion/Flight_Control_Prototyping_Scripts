@@ -12,8 +12,8 @@ Description:
     Requires numpy, matplotlib
 """
 
-import numpy as np
 import matplotlib.pylab as plt
+import numpy as np
 
 
 def runExperiment(total_time, samples, axis):

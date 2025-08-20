@@ -39,10 +39,10 @@ Description:
 """
 
 import matplotlib.pylab as plt
-from pyulog import ULog
-from pyulog.px4 import PX4ULog
 import numpy as np
 import quaternion
+from pyulog import ULog
+from pyulog.px4 import PX4ULog
 from scipy import optimize
 
 
@@ -223,8 +223,8 @@ def run(logfile):
 
 
 if __name__ == "__main__":
-    import os
     import argparse
+    import os
 
     # Get the path of this script (without file name)
     script_path = os.path.split(os.path.realpath(__file__))[0]

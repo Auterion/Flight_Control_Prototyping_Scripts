@@ -36,10 +36,10 @@ Github: https://github.com/bresch
 Description:
 """
 
-import numpy as np
 import matplotlib.pylab as plt
-from utils.data_extractor import getAllData
+import numpy as np
 from RangeFinderConsistencyCheck import RangeFinderConsistencyCheck
+from utils.data_extractor import getAllData
 
 
 def run(logfile):
@@ -121,8 +121,8 @@ def plotData(
 
 
 if __name__ == "__main__":
-    import os
     import argparse
+    import os
 
     # Get the path of this script (without file name)
     script_path = os.path.split(os.path.realpath(__file__))[0]

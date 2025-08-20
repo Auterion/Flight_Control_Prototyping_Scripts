@@ -37,45 +37,43 @@ Description:
 """
 
 import sys
-from PyQt5.QtWidgets import (
-    QDialog,
-    QApplication,
-    QLabel,
-    QRadioButton,
-    QSlider,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QFormLayout,
-    QFileDialog,
-    QLineEdit,
-    QSpinBox,
-    QDoubleSpinBox,
-    QMessageBox,
-    QCheckBox,
-    QTableWidget,
-    QTableWidgetItem,
-    QHeaderView,
-    QGroupBox,
-    QComboBox,
-    QTabWidget,
-    QWidget,
-    QGridLayout,
-)
-from PyQt5.QtCore import Qt
 
+import control as ctrl
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+from data_extractor import *
+from data_selection_window import DataSelectionWindow
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-
-from data_extractor import *
 from pid_design import computePidGmvc
-from system_identification import SystemIdentification
-import control as ctrl
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QRadioButton,
+    QSlider,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 from scipy.signal import detrend
-
-from data_selection_window import DataSelectionWindow
+from system_identification import SystemIdentification
 
 
 class Window(QDialog):

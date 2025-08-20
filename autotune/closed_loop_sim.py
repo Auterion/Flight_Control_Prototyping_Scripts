@@ -35,9 +35,9 @@ License: BSD 3-Clause
 Description:
     Simulate closed-loop system with generated PID controller
 """
-import numpy as np
 import control as ctrl
 import matplotlib.pylab as plt
+import numpy as np
 from pid_design import computePidGmvc, gainsToNumDen
 
 # Discrete-time model given by system identification

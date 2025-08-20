@@ -27,17 +27,18 @@ Description:
     as the integral of the velocity setpoint. If this one is bigger than
     x_err_max, the integration is frozen.
 
-    The algorithm is simulated in a loop (typically that would be the position control loop)
+    The algorithm is simulated in a loop
+    (typically that would be the position control loop)
     where the trajectory is recomputed a each iteration.
 """
 
 from __future__ import print_function
 
-import numpy as np
-from numpy import sqrt, sign
-import matplotlib.pylab as plt
 import sys
-import math
+
+import matplotlib.pylab as plt
+import numpy as np
+from numpy import sign, sqrt
 
 FLT_EPSILON = sys.float_info.epsilon
 NAN = float("nan")
