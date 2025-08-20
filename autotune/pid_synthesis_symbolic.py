@@ -40,8 +40,7 @@ Description:
     T.Yamatoto, K.Fujii and M.Kaneda, Design and implementation of a self-tuning pid controller, 1998
 """
 
-from sympy import *
-from sympy import linsolve
+from sympy import Symbol, collect, expand, linsolve, solveset
 
 z = Symbol("z", real=True)
 

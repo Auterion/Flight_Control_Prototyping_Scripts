@@ -26,11 +26,11 @@ Description:
 
 from __future__ import print_function
 
-import math
 import sys
 
 import matplotlib.pylab as plt
-from numpy import *
+import numpy as np
+from numpy import sign, sqrt
 
 FLT_EPSILON = sys.float_info.epsilon
 NAN = float("nan")
@@ -46,7 +46,9 @@ if verbose:
         print("")
 
 else:
-    verboseprint = lambda *a: None  # do-nothing function
+
+    def verboseprint(*args):
+        return
 
 
 class VelocitySmoothing(object):
@@ -190,7 +192,7 @@ class VelocitySmoothing(object):
         self._t0 = t
 
     def update(self, vel_sp, t):
-        self._vel_sp = clip(vel_sp, -self._max_vel, self._max_vel)
+        self._vel_sp = np.clip(vel_sp, -self._max_vel, self._max_vel)
         self.updateDurations(t)
 
     def evaluatePoly(self, j, a0, v0, x0, t, d):
@@ -282,14 +284,14 @@ if __name__ == "__main__":
     t_end = 6.0
 
     # Initialize vectors
-    t = arange(0.0, t_end + dt_0, dt_0)
+    t = np.arange(0.0, t_end + dt_0, dt_0)
     n = len(t)
 
-    j_T = zeros(n)
-    a_T = zeros(n)
-    v_T = zeros(n)
-    x_T = zeros(n)
-    v_d = zeros(n)
+    j_T = np.zeros(n)
+    a_T = np.zeros(n)
+    v_T = np.zeros(n)
+    x_T = np.zeros(n)
+    v_d = np.zeros(n)
 
     j_T[0] = 0.0
     a_T[0] = a0
@@ -301,7 +303,6 @@ if __name__ == "__main__":
     traj._max_jerk = j_max
     traj._max_accel = a_max
     traj._max_vel = v_max
-    traj._dt = dt_0
 
     # Main loop
     for k in range(0, n):

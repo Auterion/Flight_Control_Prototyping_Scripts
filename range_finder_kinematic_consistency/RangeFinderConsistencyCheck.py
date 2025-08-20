@@ -57,7 +57,9 @@ if verbose:
         print()
 
 else:
-    verboseprint = lambda *a: None  # do-nothing function
+
+    def verboseprint(*args):
+        return
 
 
 class RangeFinderConsistencyCheck(object):
