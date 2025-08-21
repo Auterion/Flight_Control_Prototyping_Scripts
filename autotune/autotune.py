@@ -41,11 +41,8 @@ import sys
 import control as ctrl
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-from data_extractor import *
-from data_selection_window import DataSelectionWindow
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication,
@@ -64,6 +61,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QTableWidget,
@@ -73,7 +71,19 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from scipy.signal import detrend
+
+from data_extractor import *
+from data_selection_window import DataSelectionWindow
+from pid_design import computePidGmvc
 from system_identification import SystemIdentification
+
+
+def isNumber(value):
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
 
 
 class Window(QDialog):
@@ -93,10 +103,7 @@ class Window(QDialog):
         self.rise_time = 0.13
         self.damping_index = 0.0
         self.detune_coeff = 0.5
-        self.kc = 0.01
-        self.ki = 0.0
-        self.kd = 0.0
-        self.kff = 0.0
+        self.gains = {"P": 0.01, "I": 0.0, "D": 0.0, "FF": 0.0}
         self.figure = plt.figure(1)
         self.figure.subplots_adjust(hspace=0.5, wspace=1.0)
         self.num = []
@@ -315,6 +322,22 @@ class Window(QDialog):
         msg.exec_()
 
     def createPidLayout(self):
+        self.gain_line_edit = {}
+        self.gain_slider = {}
+        self.parallel_gain_lbl = {}
+        slider_props = {
+            "P": {"min": 0.001, "max": 4.0, "step": 0.001},
+            "I": {"min": 0.0, "max": 20.0, "step": 0.1},
+            "D": {"min": 0.0, "max": 0.2, "step": 0.001},
+            "FF": {"min": 0.0, "max": 1.0, "step": 0.001},
+        }
+
+        def make_slider_callback(gain):
+            return lambda: self.updateGainFromSlider(gain)
+
+        def make_line_edit_callback(gain):
+            return lambda: self.updateGainFromLineEdit(gain)
+
         layout_pid = QGridLayout()
 
         layout_options = QHBoxLayout()
@@ -332,87 +355,73 @@ class Window(QDialog):
         layout_pid.addWidget(QLabel("Ideal/Standard\nKp * [1 + Ki + Kd]"), 0, 2)
         layout_pid.addWidget(QLabel("Parallel\nKp + Ki + Kd"), 0, 3)
 
-        layout_pid.addWidget(QLabel("K"), 1, 0)
-        self.slider_k = DoubleSlider(Qt.Horizontal)
-        self.slider_k.setMinimum(0.001)
-        self.slider_k.setMaximum(4.0)
-        self.slider_k.setInterval(0.001)
-        self.slider_k.valueChanged.connect(self.updateLabelK)
-        layout_pid.addWidget(self.slider_k, 1, 1)
-        self.lbl_k_standard = QLabel("{:.3f}".format(self.kc))
-        layout_pid.addWidget(self.lbl_k_standard, 1, 2)
-        self.lbl_k_parallel = QLabel("{:.3f}".format(self.kc))
-        layout_pid.addWidget(self.lbl_k_parallel, 1, 3)
+        row = 1
+        for gain in self.gains.keys():
+            if gain == "FF":
+                layout_pid.addWidget(QLabel("{}".format(gain)), row, 0)
+            else:
+                layout_pid.addWidget(QLabel("K{}".format(gain.lower())), row, 0)
 
-        layout_pid.addWidget(QLabel("I"), 2, 0)
-        self.slider_i = DoubleSlider(Qt.Horizontal)
-        self.slider_i.setMinimum(0.0)
-        self.slider_i.setMaximum(20.0)
-        self.slider_i.setInterval(0.1)
-        self.slider_i.valueChanged.connect(self.updateLabelI)
-        layout_pid.addWidget(self.slider_i, 2, 1)
-        self.lbl_i_standard = QLabel("{:.2f}".format(self.ki))
-        layout_pid.addWidget(self.lbl_i_standard, 2, 2)
-        self.lbl_i_parallel = QLabel("{:.2f}".format(self.kc * self.ki))
-        layout_pid.addWidget(self.lbl_i_parallel, 2, 3)
+            self.gain_slider[gain] = DoubleSlider(Qt.Horizontal)
+            self.gain_slider[gain].setMinimum(slider_props[gain]["min"])
+            self.gain_slider[gain].setMaximum(slider_props[gain]["max"])
+            self.gain_slider[gain].setInterval(slider_props[gain]["step"])
+            self.gain_slider[gain].valueChanged.connect(make_slider_callback(gain))
+            layout_pid.addWidget(self.gain_slider[gain], row, 1)
 
-        layout_pid.addWidget(QLabel("D"), 3, 0)
-        self.slider_d = DoubleSlider(Qt.Horizontal)
-        self.slider_d.setMinimum(0.0)
-        self.slider_d.setMaximum(0.2)
-        self.slider_d.setInterval(0.001)
-        self.slider_d.valueChanged.connect(self.updateLabelD)
-        layout_pid.addWidget(self.slider_d, 3, 1)
-        self.lbl_d_standard = QLabel("{:.3f}".format(self.kd))
-        layout_pid.addWidget(self.lbl_d_standard, 3, 2)
-        self.lbl_d_parallel = QLabel("{:.4f}".format(self.kc * self.kd))
-        layout_pid.addWidget(self.lbl_d_parallel, 3, 3)
+            self.gain_line_edit[gain] = QLineEdit("{:.3f}".format(self.gains[gain]))
+            self.gain_line_edit[gain].setSizePolicy(
+                QSizePolicy.Minimum, QSizePolicy.Fixed
+            )
+            self.gain_line_edit[gain].setMinimumWidth(0)
+            self.gain_line_edit[gain].setMinimumSize(0, 0)
+            self.gain_line_edit[gain].setAlignment(Qt.AlignCenter)
+            self.gain_line_edit[gain].textChanged.connect(make_line_edit_callback(gain))
+            layout_pid.addWidget(self.gain_line_edit[gain], row, 2)
 
-        layout_pid.addWidget(QLabel("FF"), 4, 0)
-        self.slider_ff = DoubleSlider(Qt.Horizontal)
-        self.slider_ff.setMinimum(0.0)
-        self.slider_ff.setMaximum(5.0)
-        self.slider_ff.setInterval(0.01)
-        self.slider_ff.valueChanged.connect(self.updateLabelFF)
-        layout_pid.addWidget(self.slider_ff, 4, 1)
-        self.lbl_ff_standard = QLabel("{:.3f}".format(self.kff))
-        layout_pid.addWidget(self.lbl_ff_standard, 4, 2)
-        self.lbl_ff_parallel = QLabel("{:.3f}".format(self.kff))
-        layout_pid.addWidget(self.lbl_ff_parallel, 4, 3)
+            if gain == "P" or gain == "FF":
+                self.parallel_gain_lbl[gain] = QLabel("{:.4f}".format(self.gains[gain]))
+            else:
+                self.parallel_gain_lbl[gain] = QLabel(
+                    "{:.4f}".format(self.gains["P"] * self.gains[gain])
+                )
+            self.parallel_gain_lbl[gain].setAlignment(Qt.AlignCenter)
+            layout_pid.addWidget(self.parallel_gain_lbl[gain], row, 3)
+
+            row += 1
 
         return layout_pid
 
-    def updateLabelK(self):
-        self.kc = self.slider_k.value()
-        self.lbl_k_standard.setText("{:.3f}".format(self.kc))
-        self.lbl_k_parallel.setText("{:.3f}".format(self.kc))
+    def updateGainFromSlider(self, gain: str):
+        if self.gain_slider[gain].hasFocus():
+            self.gains[gain] = self.gain_slider[gain].value()
+            self.gain_line_edit[gain].setText("{:.3f}".format(self.gains[gain]))
+            self.updateGainLabels(gain)
+            if self.gain_slider[gain].isSliderDown():
+                self.updateClosedLoop()
 
-        # Kc also modifies the Ki and Kd gains of the parallel form
-        self.lbl_i_parallel.setText("{:.2f}".format(self.kc * self.ki))
-        self.lbl_d_parallel.setText("{:.4f}".format(self.kc * self.kd))
-        if self.slider_k.isSliderDown():
+    def updateGainFromLineEdit(self, gain: str):
+        if (
+            isNumber(self.gain_line_edit[gain].text())
+            and self.gain_line_edit[gain].hasFocus()
+        ):
+            self.gains[gain] = float(self.gain_line_edit[gain].text())
+            self.gain_slider[gain].setValue(self.gains[gain])
+            self.updateGainLabels(gain)
             self.updateClosedLoop()
 
-    def updateLabelI(self):
-        self.ki = self.slider_i.value()
-        self.lbl_i_standard.setText("{:.2f}".format(self.ki))
-        self.lbl_i_parallel.setText("{:.2f}".format(self.kc * self.ki))
-        if self.slider_i.isSliderDown():
-            self.updateClosedLoop()
-
-    def updateLabelD(self):
-        self.kd = self.slider_d.value()
-        self.lbl_d_standard.setText("{:.3f}".format(self.kd))
-        self.lbl_d_parallel.setText("{:.4f}".format(self.kc * self.kd))
-        if self.slider_d.isSliderDown():
-            self.updateClosedLoop()
-
-    def updateLabelFF(self):
-        self.kff = self.slider_ff.value()
-        self.lbl_ff_standard.setText("{:.3f}".format(self.kff))
-        self.lbl_ff_parallel.setText("{:.3f}".format(self.kff))
-        if self.slider_ff.isSliderDown():
-            self.updateClosedLoop()
+    def updateGainLabels(self, gain: str):
+        if gain == "FF":
+            self.parallel_gain_lbl[gain].setText("{:.4f}".format(self.gains[gain]))
+        else:
+            # Kp also modifies the Ki and Kd gains of the parallel form
+            self.parallel_gain_lbl["P"].setText("{:.4f}".format(self.gains["P"]))
+            self.parallel_gain_lbl["I"].setText(
+                "{:.4f}".format(self.gains["P"] * self.gains["I"])
+            )
+            self.parallel_gain_lbl["D"].setText(
+                "{:.4f}".format(self.gains["P"] * self.gains["D"])
+            )
 
     def createGmvcLayout(self):
         layout_gmvc = QFormLayout()
@@ -509,6 +518,7 @@ class Window(QDialog):
         self.plotInputOutput()
 
     def updateTfDisplay(self, a_coeffs, b_coeffs):
+
         for i in range(self.sys_id_n_poles):
             self.t_coeffs.setItem(i, 0, QTableWidgetItem("{:.6f}".format(a_coeffs[i])))
 
@@ -589,22 +599,22 @@ class Window(QDialog):
                 self.damping_index
             )  # damping property, set between 0 and 2 (1 for Butterworth)
             lbda = self.detune_coeff
-            (self.kc, self.ki, self.kd) = computePidGmvc(
+            (self.gains["P"], self.gains["I"], self.gains["D"]) = computePidGmvc(
                 self.num, self.den, self.dt, sigma, delta, lbda
             )
             # TODO:find a better solution
-            self.ki /= 5.0
+            self.gains["I"] /= 5.0
             static_gain = sum(self.num) / sum(self.den)
-            self.kff = max(1 / static_gain, 0.0)
+            self.gains["FF"] = max(1 / static_gain, 0.0)
 
         self.updateKIDSliders()
         self.updateClosedLoop()
 
     def updateKIDSliders(self):
-        self.slider_k.setValue(self.kc)
-        self.slider_i.setValue(self.ki)
-        self.slider_d.setValue(self.kd)
-        self.slider_ff.setValue(self.kff)
+        for gain in self.gains.keys():
+            self.gain_line_edit[gain].setText("{:.3f}".format(self.gains[gain]))
+            self.gain_slider[gain].setValue(self.gains[gain])
+            self.updateGainLabels(gain)
 
     def updateClosedLoop(self):
         if not self.is_system_identified:
@@ -613,10 +623,10 @@ class Window(QDialog):
         num = self.num
         den = self.den
         dt = self.dt
-        kc = self.kc
-        ki = self.ki
-        kd = self.kd
-        kff = self.kff
+        kc = self.gains["P"]
+        ki = self.gains["I"]
+        kd = self.gains["D"]
+        kff = self.gains["FF"]
 
         delays = ctrl.TransferFunction(
             [1],
@@ -856,6 +866,7 @@ class Window(QDialog):
 
 
 class DoubleSlider(QSlider):
+
     def __init__(self, *args, **kargs):
         super(DoubleSlider, self).__init__(*args, **kargs)
         self._min = 0
