@@ -38,36 +38,37 @@ Description:
     running a weighted RLS algorithm to identify an ARX parametric model
 """
 
-import numpy as np
 import control as ctrl
-
+import numpy as np
 from arx_rls import ArxRls
 from scipy.optimize import lsq_linear, minimize
+
 
 class SysIdResult(object):
     def __init__(self, num, den, dt):
         self.G_ = ctrl.TransferFunction(num, den, dt)
 
+
 class SystemIdentification(object):
-    def __init__(self, n=2, m=2, d=1, dt = 0.0):
-        self.n = n # order of the denominator (a_1,...,a_n)
-        self.m = m # order of the numerator (b_0,...,b_m)
-        self.d = d # number of delays
-        self.forgetting_tc = 60.0 # forgetting factor for weighted RLS in seconds
-        self.f_hp = 0.5 # high-pass filter cutoff frequency
-        self.f_lp = 30.0 # low-pass filter cutoff frequency
+    def __init__(self, n=2, m=2, d=1, dt=0.0):
+        self.n = n  # order of the denominator (a_1,...,a_n)
+        self.m = m  # order of the numerator (b_0,...,b_m)
+        self.d = d  # number of delays
+        self.forgetting_tc = 60.0  # forgetting factor for weighted RLS in seconds
+        self.f_hp = 0.5  # high-pass filter cutoff frequency
+        self.f_lp = 30.0  # low-pass filter cutoff frequency
         self.dt = dt
 
-        tau = 60.0 # forgetting period
-        self.lbda = 1.0 - self.dt/tau
+        tau = 60.0  # forgetting period
+        self.lbda = 1.0 - self.dt / tau
 
     def fit(self, u, y):
         n_steps = len(u)
 
         # High-pass filter parameters
         if self.f_hp > 0.0:
-            tau_hp = 1/(2*np.pi*self.f_hp)
-            alpha_hp = tau_hp/(tau_hp+self.dt)
+            tau_hp = 1 / (2 * np.pi * self.f_hp)
+            alpha_hp = tau_hp / (tau_hp + self.dt)
         else:
             alpha_hp = 0.0
 
@@ -77,8 +78,8 @@ class SystemIdentification(object):
         y_hp[0] = y[0]
 
         # Low-pass filter parameters
-        tau_lp = 1/(2*np.pi*self.f_lp)
-        alpha_lp = tau_lp/(tau_lp+self.dt)
+        tau_lp = 1 / (2 * np.pi * self.f_lp)
+        alpha_lp = tau_lp / (tau_lp + self.dt)
         u_lp = np.zeros(n_steps)
         y_lp = np.zeros(n_steps)
         u_lp[0] = u[0]
@@ -91,20 +92,21 @@ class SystemIdentification(object):
         for k in range(n_steps):
             if k > 0:
                 if alpha_hp > 0.0:
-                    u_hp[k] = alpha_hp * u_hp[k-1] + alpha_hp*(u[k] - u[k-1])
-                    y_hp[k] = alpha_hp * y_hp[k-1] + alpha_hp*(y[k] - y[k-1])
+                    u_hp[k] = alpha_hp * u_hp[k - 1] + alpha_hp * (u[k] - u[k - 1])
+                    y_hp[k] = alpha_hp * y_hp[k - 1] + alpha_hp * (y[k] - y[k - 1])
                 else:
                     u_hp[k] = u[k]
                     y_hp[k] = y[k]
 
-                u_lp[k] = alpha_lp * u_lp[k-1] + (1-alpha_lp)*u_hp[k]
-                y_lp[k] = alpha_lp * y_lp[k-1] + (1-alpha_lp)*y_hp[k]
-
+                u_lp[k] = alpha_lp * u_lp[k - 1] + (1 - alpha_lp) * u_hp[k]
+                y_lp[k] = alpha_lp * y_lp[k - 1] + (1 - alpha_lp) * y_hp[k]
 
         use_rls = True
         if use_rls:
             # Identification
-            rls = ArxRls(self.n, self.m, self.d, lbda=(1 - self.dt / self.forgetting_tc))
+            rls = ArxRls(
+                self.n, self.m, self.d, lbda=(1 - self.dt / self.forgetting_tc)
+            )
 
             for k in range(n_steps):
                 # Update model
@@ -114,34 +116,36 @@ class SystemIdentification(object):
 
                 # Save for plotting
                 for i in range(self.n):
-                    a_coeffs[i,k] = theta_hat[i]
-                for i in range(self.m+1):
-                    b_coeffs[i,k] = theta_hat[i+self.n]
+                    a_coeffs[i, k] = theta_hat[i]
+                for i in range(self.m + 1):
+                    b_coeffs[i, k] = theta_hat[i + self.n]
 
-        else: # use LS
+        else:  # use LS
             # Build matrix of regressors
-            A = np.zeros((n_steps, self.n+self.m+1))
+            A = np.zeros((n_steps, self.n + self.m + 1))
             for row in range(n_steps):
                 for i in range(self.n):
-                    A[row,i] = -y_lp[row-(i+1)]
-                for i in range(self.m+1):
-                    A[row,i+self.n] = u_lp[row-(self.d+i)]
+                    A[row, i] = -y_lp[row - (i + 1)]
+                for i in range(self.m + 1):
+                    A[row, i + self.n] = u_lp[row - (self.d + i)]
 
-            B = [y_lp[i] for i in range(n_steps)] # Measured values
+            B = [y_lp[i] for i in range(n_steps)]  # Measured values
 
-            res = lsq_linear(A, B, lsmr_tol='auto', verbose=1)
+            res = lsq_linear(A, B, lsmr_tol="auto", verbose=1)
             theta_hat = res.x
 
             # Refine model using output-error optimization
-            J = lambda x: np.sum(np.power(abs(np.array(B)-self.simulateModel(x, u_lp, self.dt)), 2.0)) # cost function
-            x0 = np.append(res.x, 0) # initial conditions
-            res = minimize(J, x0, method='nelder-mead', options={'disp': True})
+            J = lambda x: np.sum(
+                np.power(abs(np.array(B) - self.simulateModel(x, u_lp, self.dt)), 2.0)
+            )  # cost function
+            x0 = np.append(res.x, 0)  # initial conditions
+            res = minimize(J, x0, method="nelder-mead", options={"disp": True})
             theta_hat = res.x
 
             for i in range(self.n):
-                a_coeffs[i,-1] = theta_hat[i]
-            for i in range(self.m+1):
-                b_coeffs[i,-1] = theta_hat[i+self.n]
+                a_coeffs[i, -1] = theta_hat[i]
+            for i in range(self.m + 1):
+                b_coeffs[i, -1] = theta_hat[i + self.n]
 
         self.theta_hat = theta_hat
 
@@ -149,27 +153,31 @@ class SystemIdentification(object):
         return estimate
 
     def simulateModel(self, x, u, dt):
-        a_coeffs = np.ones(self.n+1)
-        b_coeffs = np.zeros(self.m+1)
+        a_coeffs = np.ones(self.n + 1)
+        b_coeffs = np.zeros(self.m + 1)
 
         for i in range(self.n):
-            a_coeffs[i+1] = x[i]
-        for i in range(self.m+1):
-            b_coeffs[i] = x[i+self.n]
+            a_coeffs[i + 1] = x[i]
+        for i in range(self.m + 1):
+            b_coeffs[i] = x[i + self.n]
 
-        delays = ctrl.TransferFunction([1], np.append([1], np.zeros(self.d)), dt, inputs='r', outputs='rd')
-        plant = ctrl.TransferFunction(b_coeffs, a_coeffs, dt, inputs='rd', outputs='y')
+        delays = ctrl.TransferFunction(
+            [1], np.append([1], np.zeros(self.d)), dt, inputs="r", outputs="rd"
+        )
+        plant = ctrl.TransferFunction(b_coeffs, a_coeffs, dt, inputs="rd", outputs="y")
 
-        system = ctrl.interconnect([delays, plant], inputs='r', outputs='y')
+        system = ctrl.interconnect([delays, plant], inputs="r", outputs="y")
 
         _, y = ctrl.forced_response(system, U=u)
         return y
 
     def getNum(self):
-        num = [self.theta_hat.item(i) for i in range(self.n, self.n+self.m+1)] # b0 .. bm
+        num = [
+            self.theta_hat.item(i) for i in range(self.n, self.n + self.m + 1)
+        ]  # b0 .. bm
         return num
 
     def getDen(self):
-        den = [self.theta_hat.item(i) for i in range(0, self.n)] # a1 .. an
-        den.insert(0, 1.0) # add 1 to get [1, a1, .., an]
+        den = [self.theta_hat.item(i) for i in range(0, self.n)]  # a1 .. an
+        den.insert(0, 1.0)  # add 1 to get [1, a1, .., an]
         return den

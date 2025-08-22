@@ -12,8 +12,9 @@ Description:
     Requires numpy, matplotlib
 """
 
-import numpy as np
 import matplotlib.pylab as plt
+import numpy as np
+
 
 def runExperiment(total_time, samples, axis):
     # time setup
@@ -34,11 +35,11 @@ def runExperiment(total_time, samples, axis):
     filtered = np.zeros(samples)
     filtered[0] = 0.0
     for n in range(1, samples):
-        filtered[n] = alpha * filtered[n-1] + (1 - alpha) * noisy[n]
+        filtered[n] = alpha * filtered[n - 1] + (1 - alpha) * noisy[n]
 
-    axis.plot(t, noisy, label = "noisy")
-    axis.plot(t, signal, label = "signal")
-    axis.plot(t, filtered, label = "filtered")
+    axis.plot(t, noisy, label="noisy")
+    axis.plot(t, signal, label="signal")
+    axis.plot(t, filtered, label="filtered")
 
 
 # plotting

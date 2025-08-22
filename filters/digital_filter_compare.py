@@ -11,8 +11,8 @@ Description:
 """
 
 import numpy as np
-from scipy import signal
 from matplotlib import pyplot as plt
+from scipy import signal
 
 frequencies = []
 amplitudes = []
@@ -21,9 +21,10 @@ step_responses = []
 group_delays = []
 names = []
 
+
 def addFilter(b, a, sampling_freq, name=""):
     w, h = signal.freqz(b, a, fs=sampling_freq)
-    t, y = signal.dstep((b, a, 1.0/fs))
+    t, y = signal.dstep((b, a, 1.0 / fs))
     w_gd, gd = signal.group_delay((b, a))
 
     frequencies.append(w)
@@ -33,9 +34,11 @@ def addFilter(b, a, sampling_freq, name=""):
     group_delays.append(gd)
     names.append(name)
 
+
 def plotFilters():
     plotBode()
     plotStep()
+
 
 def plotBode():
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
@@ -48,28 +51,30 @@ def plotBode():
         group_delay_ms = group_delays[n] / fs * 1e3
         ax3.semilogx(frequencies[n], group_delay_ms)
 
-    ax1.set_title('Digital filter frequency response')
-    ax1.set_ylabel('Amplitude (dB)')
-    ax2.set_ylabel('Angle (degrees)')
-    ax3.set_ylabel('Group delay (ms)')
-    ax3.set_xlabel('Frequency (Hz)')
+    ax1.set_title("Digital filter frequency response")
+    ax1.set_ylabel("Amplitude (dB)")
+    ax2.set_ylabel("Angle (degrees)")
+    ax3.set_ylabel("Group delay (ms)")
+    ax3.set_xlabel("Frequency (Hz)")
     ax1.legend(names)
     ax1.grid()
     ax2.grid()
-    ax2.axis('tight')
+    ax2.axis("tight")
     plt.show()
+
 
 def plotStep():
     n_filters = len(times)
     for n in range(n_filters):
         plt.plot(times[n], np.squeeze(step_responses[n]))
 
-    plt.title('Digital filter frequency response')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Amplitude (-)')
+    plt.title("Digital filter frequency response")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude (-)")
     plt.legend(names)
     plt.grid()
     plt.show()
+
 
 def create1stOrderButterworthLpf(fc, fs):
     gamma = np.tan(np.pi * fc / fs)
@@ -78,6 +83,7 @@ def create1stOrderButterworthLpf(fc, fs):
     a = [1.0, (gamma - 1.0) / D]
     name = createName("Lpf-1-Butter", fc)
     return b, a, name
+
 
 def create2ndOrderButterworthLpf(fc, fs):
     gamma = np.tan(np.pi * fc / fs)
@@ -94,6 +100,7 @@ def create2ndOrderButterworthLpf(fc, fs):
     a = [a0_prime, a1_prime, a2_prime] / D
     name = createName("Lpf-2-Butter", fc)
     return b, a, name
+
 
 def createLpf2p(fc, fs):
     fr = fs / fc
@@ -112,6 +119,7 @@ def createLpf2p(fc, fs):
     name = createName("Lpf-2-PX4", fc)
     return b, a, name
 
+
 def create2ndOrderNotch(fc, bw, fs):
     alpha = np.tan(np.pi * bw / fs)
     beta = -np.cos(2.0 * np.pi * fc / fs)
@@ -127,6 +135,7 @@ def create2ndOrderNotch(fc, bw, fs):
     a = [a0_prime / D, a1_prime / D, a2_prime / D]
     name = createName("Notch-2", fc, bw)
     return b, a, name
+
 
 def create2ndOrderButterworthBandStop(fc, bw, fs):
     gamma = np.tan(np.pi * fc / fs)
@@ -144,6 +153,7 @@ def create2ndOrderButterworthBandStop(fc, bw, fs):
     name = createName("BStop-2-Butter", fc, bw)
     return b, a, name
 
+
 def create2ndOrderLpf(fc, zeta, fs):
     T = 1.0 / fs
     wn = 2.0 * np.pi * fc
@@ -153,18 +163,19 @@ def create2ndOrderLpf(fc, zeta, fs):
     a0a = 1.0
     a1a = 2.0 * zeta * wn
     a2a = wn**2
-    D = a0a*K2 + a1a*K + a2a
+    D = a0a * K2 + a1a * K + a2a
     b0_prime = b2a
     b1_prime = 2.0 * b2a
     b2_prime = b2a
     a0_prime = D
-    a1_prime = 2.0 * a2a - 2.0*K2
-    a2_prime = a0a*K2 - a1a*K + a2a
+    a1_prime = 2.0 * a2a - 2.0 * K2
+    a2_prime = a0a * K2 - a1a * K + a2a
 
     b = [b0_prime / D, b1_prime / D, b2_prime / D]
     a = [a0_prime / D, a1_prime / D, a2_prime / D]
     name = createName("Lpf-2-damp", fc)
     return b, a, name
+
 
 def create2ndOrderCriticallyDamped(fc, fs):
     wn = 2.0 * np.pi * fc
@@ -173,18 +184,19 @@ def create2ndOrderCriticallyDamped(fc, fs):
     b2a = wn**2
     a1a = 2.0 * wn
     a2a = wn**2
-    D = K2 + a1a*K + a2a
+    D = K2 + a1a * K + a2a
     b0_prime = b2a
     b1_prime = 2.0 * b2a
     b2_prime = b2a
     a0_prime = D
-    a1_prime = 2.0 * a2a - 2.0*K2
-    a2_prime = K2 - a1a*K + a2a
+    a1_prime = 2.0 * a2a - 2.0 * K2
+    a2_prime = K2 - a1a * K + a2a
 
     b = [b0_prime / D, b1_prime / D, b2_prime / D]
     a = [a0_prime / D, a1_prime / D, a2_prime / D]
     name = createName("Lpf-2-crit-damp", fc)
     return b, a, name
+
 
 def create1stOrderLpf(fc, fs):
     dt = 1.0 / fs
@@ -197,6 +209,7 @@ def create1stOrderLpf(fc, fs):
     a = [a0, a1]
     name = createName("Lpf-1-alpha", fc)
     return b, a, name
+
 
 def create1stOrderHpf(fc, fs):
     dt = 1.0 / fs
@@ -211,6 +224,7 @@ def create1stOrderHpf(fc, fs):
     name = createName("Hpf-1-alpha", fc)
     return b, a, name
 
+
 def create1stOrderButterworthHpf(fc, fs):
     dt = 1.0 / fs
     gamma = np.tan(np.pi * fc / fs)
@@ -222,6 +236,7 @@ def create1stOrderButterworthHpf(fc, fs):
     a = [a0, a1]
     name = createName("Hpf-1-Butter", fc)
     return b, a, name
+
 
 def create2ndOrderButterworthHpf(fc, fs):
     # Butterworth
@@ -241,6 +256,7 @@ def create2ndOrderButterworthHpf(fc, fs):
     name = createName("Hpf-2-Butter", fc)
     return b, a, name
 
+
 def createName(prefix, fc, bw=0.0):
     name = prefix + " (fc = {}".format(fc)
     if bw > 0.1:
@@ -248,7 +264,8 @@ def createName(prefix, fc, bw=0.0):
     name += ")".format(bw)
     return name
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     fs = 1000.0
     cutoff = 80.0
     bandwidth = 30.0

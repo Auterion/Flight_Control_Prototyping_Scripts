@@ -40,8 +40,7 @@ Description:
     T.Yamatoto, K.Fujii and M.Kaneda, Design and implementation of a self-tuning pid controller, 1998
 """
 
-from sympy import *
-from sympy import linsolve
+from sympy import Symbol, collect, expand, linsolve, solveset
 
 z = Symbol("z", real=True)
 
@@ -68,7 +67,7 @@ F = f0 + f1 * z**-1 + f2 * z**-2
 A = 1 + a1 * z**-1 + a2 * z**-2
 
 # Compute eq.11 and collect the factors of each negative power of z
-expanded = expand(delta * A * E + z**-(km +1) * F)
+expanded = expand(delta * A * E + z ** -(km + 1) * F)
 collected = collect(expanded, z)
 
 # Compare with the the polynomial P to find e1 and f0
@@ -95,17 +94,19 @@ KD = Symbol("KD", real=True)
 dt = Symbol("dt", real=True)
 nu = Symbol("nu", real=True)
 # Parallel form is required to solve a linear set of equations
-C = kc + KI*dt + KD/dt - (kc + 2*KD/dt) * z**-1 + KD/dt * z**-2
-Eqns = [C.coeff(z, 0)-f0/nu, C.coeff(z, -1)-f1/nu, C.coeff(z, -2)-f2/nu]
+C = kc + KI * dt + KD / dt - (kc + 2 * KD / dt) * z**-1 + KD / dt * z**-2
+Eqns = [C.coeff(z, 0) - f0 / nu, C.coeff(z, -1) - f1 / nu, C.coeff(z, -2) - f2 / nu]
 res = linsolve(Eqns, kc, KI, KD)
 # Transform results into standard form
 res_kc = res.args[0][0]
-res_ki = res.args[0][1]/res_kc
-res_kd = res.args[0][2]/res_kc
+res_ki = res.args[0][1] / res_kc
+res_kd = res.args[0][2] / res_kc
 
 print("# Parameters")
 print("sigma = 0.04 # desired rise time in seconds")
-print("delta = 1.0 # damping index, set between 0 and 2 (0 for binomial, 1 for Butterworth)")
+print(
+    "delta = 1.0 # damping index, set between 0 and 2 (0 for binomial, 1 for Butterworth)"
+)
 print("lbda = 0.5 # tuning parameter, increase to increase robustness")
 print("")
 print("# Algorithm")

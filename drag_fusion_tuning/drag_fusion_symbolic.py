@@ -35,7 +35,7 @@ License: BSD 3-Clause
 Description:
 """
 
-from sympy import *
+from sympy import Symbol, pprint, solve
 
 V = Symbol("V", real=True)
 rho = Symbol("rho", real=True)

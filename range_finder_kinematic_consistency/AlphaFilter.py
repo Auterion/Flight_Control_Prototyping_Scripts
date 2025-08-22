@@ -36,24 +36,25 @@ Description:
 """
 
 import sys
+
 import numpy as np
 
 M_PI_F = 3.14159265
 FLT_EPSILON = sys.float_info.epsilon
 
-class AlphaFilter(object):
 
+class AlphaFilter(object):
     def __init__(self):
         self._cutoff_freq = 0.0
         self._alpha = 0.0
         self._filter_state = 0.0
 
-	# Set filter parameters for time abstraction
-	#
-	# Both parameters have to be provided in the same units.
-	#
-	# @param sample_interval interval between two samples
-	# @param time_constant filter time constant determining convergence
+    # Set filter parameters for time abstraction
+    #
+    # Both parameters have to be provided in the same units.
+    #
+    # @param sample_interval interval between two samples
+    # @param time_constant filter time constant determining convergence
     def setParameters(self, sample_interval, time_constant):
         denominator = time_constant + sample_interval
 
@@ -61,29 +62,35 @@ class AlphaFilter(object):
             self.setAlpha(sample_interval / denominator)
 
     def setCutoffFreq(self, sample_freq, cutoff_freq):
-        if (sample_freq <= 0.0) or (cutoff_freq <= 0.0) or (cutoff_freq >= sample_freq / 2.0) or not np.isfinite(sample_freq) or not np.isfinite(cutoff_freq):
-			# Invalid parameters
+        if (
+            (sample_freq <= 0.0)
+            or (cutoff_freq <= 0.0)
+            or (cutoff_freq >= sample_freq / 2.0)
+            or not np.isfinite(sample_freq)
+            or not np.isfinite(cutoff_freq)
+        ):
+            # Invalid parameters
             return False
 
         self.setParameters(1.0 / sample_freq, 1.0 / (2.0 * M_PI_F * cutoff_freq))
         self._cutoff_freq = cutoff_freq
         return True
 
-	# Set filter parameter alpha directly without time abstraction
-	#
-	# @param alpha [0,1] filter weight for the previous state. High value - long time constant.
+    # Set filter parameter alpha directly without time abstraction
+    #
+    # @param alpha [0,1] filter weight for the previous state. High value - long time constant.
     def setAlpha(self, alpha):
         self._alpha = alpha
 
-	# Set filter state to an initial value
-	#
-	# @param sample new initial value
+    # Set filter state to an initial value
+    #
+    # @param sample new initial value
     def reset(self, sample):
         self._filter_state = sample
 
-	# Add a new raw value to the filter
-	#
-	# @return retrieve the filtered result
+    # Add a new raw value to the filter
+    #
+    # @return retrieve the filtered result
     def update(self, sample):
         self._filter_state = self.updateCalculation(sample)
         return self._filter_state
@@ -97,11 +104,11 @@ class AlphaFilter(object):
     def updateCalculation(self, sample):
         return (1.0 - self._alpha) * self._filter_state + self._alpha * sample
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     lpf = AlphaFilter()
     lpf.setAlpha(0.1)
 
     for i in range(1, 100):
         out = lpf.update(1)
-        print(out);
-
+        print(out)

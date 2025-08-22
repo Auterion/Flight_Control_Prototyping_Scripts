@@ -18,16 +18,16 @@ def compute_desaturation_gain(u, u_min, u_max, delta_u):
     # in order to unsaturate the output that has the greatest saturation
     d_u_sat_plus = u_max - u
     d_u_sat_minus = u_min - u
-    k = np.zeros(u.size*2)
+    k = np.zeros(u.size * 2)
     for i in range(u.size):
         if abs(delta_u[i]) < 0.000001:
             # avoid division by zero
             continue
 
         if d_u_sat_minus[i] > 0.0:
-            k[2*i] = d_u_sat_minus[i] / delta_u[i]
+            k[2 * i] = d_u_sat_minus[i] / delta_u[i]
         if d_u_sat_plus[i] < 0.0:
-            k[2*i+1] = d_u_sat_plus[i] / delta_u[i]
+            k[2 * i + 1] = d_u_sat_plus[i] / delta_u[i]
 
     k_min = min(k)
     k_max = max(k)
@@ -48,7 +48,7 @@ def minimize_sat(u, u_min, u_max, delta_u):
     # be minimized by shifting the vertical thrust setpoint,
     # without changing the roll/pitch/yaw accelerations.
     k_1 = compute_desaturation_gain(u, u_min, u_max, delta_u)
-    u_1 = u + k_1 * delta_u # Try to unsaturate
+    u_1 = u + k_1 * delta_u  # Try to unsaturate
     k_2 = compute_desaturation_gain(u_1, u_min, u_max, delta_u)
 
     # Compute optimal gain that equilibrates the saturations
@@ -57,6 +57,7 @@ def minimize_sat(u, u_min, u_max, delta_u):
     u_prime = u + k_opt * delta_u
     return u_prime
 
+
 def mix_yaw(m_sp, u, P, u_min, u_max):
     m_sp_yaw_only = np.matlib.zeros(m_sp.size).T
     m_sp_yaw_only[2, 0] = m_sp[2, 0]
@@ -64,11 +65,12 @@ def mix_yaw(m_sp, u, P, u_min, u_max):
 
     # Change yaw acceleration to unsaturate the outputs if needed (do not change roll/pitch),
     # and allow some yaw response at maximum thrust
-    u_r_dot = P[:,2]
-    u_pp = minimize_sat(u_p, u_min, u_max+0.15, u_r_dot)
+    u_r_dot = P[:, 2]
+    u_pp = minimize_sat(u_p, u_min, u_max + 0.15, u_r_dot)
     u_T = P[:, 3]
     u_ppp = minimize_sat(u_pp, -1000, u_max, u_T)
     return u_ppp
+
 
 def airmode_xy(m_sp, P, u_min, u_max):
     # Mix without yaw
@@ -119,6 +121,7 @@ def normal_mode(m_sp, P, u_min, u_max):
     u_final = mix_yaw(m_sp, u_p3, P, u_min, u_max)
     return (u, u_final)
 
+
 def mix_forward_thrust_and_yaw(m_sp, P, u_min, u_max):
     # mix everything
     u = P * m_sp
@@ -133,4 +136,4 @@ def mix_forward_thrust_and_yaw(m_sp, P, u_min, u_max):
 
     u_final = minimize_sat(u_prime, u_min, u_max, u_T)
 
-    return u,u_final
+    return u, u_final

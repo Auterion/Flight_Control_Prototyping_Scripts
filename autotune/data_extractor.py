@@ -37,17 +37,19 @@ Description:
 """
 
 import numpy as np
-from scipy import signal
 from pyulog import ULog
+from scipy import signal
 from scipy.interpolate import make_interp_spline
 
-class FieldDefinition():
+
+class FieldDefinition:
     def __init__(self, topic, var, inst):
         self.topic_name = topic
         self.variable_name = var
         self.instance = inst
 
-class DataExtractor():
+
+class DataExtractor:
     def __init__(self, logfile_name):
         self.log = ULog(logfile_name)
 
@@ -62,24 +64,28 @@ class DataExtractor():
     def getPreview(self, field_def):
         (t_data, data) = self.getData(field_def)
 
-        if(len(t_data) > 10e3):
+        if len(t_data) > 10e3:
             # Downsample to speed up plotting preview
-            downsampling_factor = int(len(t_data)/10e3)+1
-            t_data = t_data[:-downsampling_factor+1:downsampling_factor]
-            data = data[:-downsampling_factor+1:downsampling_factor]
+            downsampling_factor = int(len(t_data) / 10e3) + 1
+            t_data = t_data[: -downsampling_factor + 1 : downsampling_factor]
+            data = data[: -downsampling_factor + 1 : downsampling_factor]
 
         return (t_data, data)
 
     def getTrimAirspeed(self):
         params = self.log.initial_parameters
-        if 'FW_AIRSPD_TRIM' in params:
-            return params['FW_AIRSPD_TRIM']
+        if "FW_AIRSPD_TRIM" in params:
+            return params["FW_AIRSPD_TRIM"]
         else:
             return None
 
     def getData(self, field_def):
-        data = get_data(self.log, field_def.topic_name, field_def.variable_name, field_def.instance)
-        t_data = us2s(get_data(self.log, field_def.topic_name, 'timestamp', field_def.instance))
+        data = get_data(
+            self.log, field_def.topic_name, field_def.variable_name, field_def.instance
+        )
+        t_data = us2s(
+            get_data(self.log, field_def.topic_name, "timestamp", field_def.instance)
+        )
 
         return (t_data, data)
 
@@ -87,12 +93,15 @@ class DataExtractor():
         (t_u_data, u_data) = self.getData(field_def_u)
         (t_y_data, y_data) = self.getData(field_def_y)
 
-        v_data = get_data(self.log, 'airspeed_validated', 'true_airspeed_m_s')
-        t_v_data = us2s(get_data(self.log, 'airspeed_validated', 'timestamp'))
+        v_data = get_data(self.log, "airspeed_validated", "true_airspeed_m_s")
+        t_v_data = us2s(get_data(self.log, "airspeed_validated", "timestamp"))
 
-        (t_aligned, u_aligned, y_aligned, v_aligned) = resampleIdentificationData(t_u_data, u_data, t_y_data, y_data, t_v_data, v_data, t_start, t_stop)
+        (t_aligned, u_aligned, y_aligned, v_aligned) = resampleIdentificationData(
+            t_u_data, u_data, t_y_data, y_data, t_v_data, v_data, t_start, t_stop
+        )
 
         return (t_aligned, u_aligned, y_aligned, v_aligned)
+
 
 def get_data(log, topic_name, variable_name, instance=0):
     variable_data = np.array([])
@@ -104,29 +113,33 @@ def get_data(log, topic_name, variable_name, instance=0):
 
     return variable_data
 
+
 def us2s(time_ms):
     return time_ms * 1e-6
+
 
 def get_delta_mean(data_list):
     dx = 0
     length = len(data_list)
-    for i in range(1,length):
-        dx = dx + (data_list[i]-data_list[i-1])
+    for i in range(1, length):
+        dx = dx + (data_list[i] - data_list[i - 1])
 
-    dx = dx/(length-1)
+    dx = dx / (length - 1)
     return dx
+
 
 def resample_interp(t, u, t_new):
     t_unique, indices = np.unique(t, return_index=True)
     interp = make_interp_spline(t_unique, u[indices], k=1)
     return interp(t_new)
 
+
 def find_autotune_sequence(log, axis):
     t_start = None
     t_stop = None
-    status_data = get_data(log, 'autotune_attitude_control_status', 'state')
-    t_status = us2s(get_data(log, 'autotune_attitude_control_status', 'timestamp'))
-    axis_to_state = [2, 4, 6] # roll, pitch, yaw states
+    status_data = get_data(log, "autotune_attitude_control_status", "state")
+    t_status = us2s(get_data(log, "autotune_attitude_control_status", "timestamp"))
+    axis_to_state = [2, 4, 6]  # roll, pitch, yaw states
 
     status_prev = 0
 
@@ -144,7 +157,10 @@ def find_autotune_sequence(log, axis):
 
     return (t_start, t_stop)
 
-def resampleIdentificationData(t_u_data, u_data, t_y_data, y_data, t_v_data, v_data, t_start, t_stop):
+
+def resampleIdentificationData(
+    t_u_data, u_data, t_y_data, y_data, t_v_data, v_data, t_start, t_stop
+):
     if not t_start:
         t_start = t_u_data[0]
 
@@ -166,47 +182,54 @@ def resampleIdentificationData(t_u_data, u_data, t_y_data, y_data, t_v_data, v_d
 
     return (t_aligned, u_aligned, y_aligned, v_aligned)
 
+
 def printCppArrays(t_aligned, u_aligned, y_aligned):
     # Print data in c++ arrays
     # TODO: print to file and trigger from GUI using an "export" button
     n_samples = len(t_aligned)
-    u_array = 'static constexpr float u_data[{}] = {{'.format(n_samples)
-    y_array = 'static constexpr float y_data[{}] = {{'.format(n_samples)
-    t_array = 'static constexpr float t_data[{}] = {{'.format(n_samples)
+    u_array = "static constexpr float u_data[{}] = {{".format(n_samples)
+    y_array = "static constexpr float y_data[{}] = {{".format(n_samples)
+    t_array = "static constexpr float t_data[{}] = {{".format(n_samples)
 
     for u in u_aligned:
-        u_array += '{}f, '.format(u)
+        u_array += "{}f, ".format(u)
 
     for y in y_aligned:
-        y_array += '{}f, '.format(y)
+        y_array += "{}f, ".format(y)
 
     for t in t_aligned:
-        t_array += '{}f, '.format(t)
+        t_array += "{}f, ".format(t)
 
-    u_array += '};'
-    y_array += '};'
-    t_array += '};'
+    u_array += "};"
+    y_array += "};"
+    t_array += "};"
 
-    print('\n')
+    print("\n")
     print(u_array)
-    print('\n')
+    print("\n")
     print(y_array)
-    print('\n')
+    print("\n")
     print(t_array)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
     import os
 
     parser = argparse.ArgumentParser(
-        description='Extract identification data from a give .ulg file')
+        description="Extract identification data from a give .ulg file"
+    )
 
-    parser.add_argument('logfile', help='Full ulog file path, name and extension', type=str)
-    parser.add_argument('--axis', dest='axis', choices=['x', 'y', 'z'], help='the body axis on interest')
+    parser.add_argument(
+        "logfile", help="Full ulog file path, name and extension", type=str
+    )
     args = parser.parse_args()
 
-    logfile = os.path.abspath(args.logfile) # Convert to absolute path
-    axis = {'x':0, 'y':1, 'z':2}[args.axis]
+    logfile = os.path.abspath(args.logfile)  # Convert to absolute path
 
-    (t_aligned, u_aligned, y_aligned, v_aligned) = getInputOutputData(logfile, axis, instance=0)
+    x_field_def = FieldDefinition("vehicle_torque_setpoint", "xyz[0]", 0)
+    y_field_def = FieldDefinition("vehicle_angular_velocity", "xyz[0]", 0)
+    (t_aligned, u_aligned, y_aligned, v_aligned) = DataExtractor(
+        logfile
+    ).getInputOutputData(x_field_def, y_field_def)
     printCppArrays(t_aligned, u_aligned, y_aligned)

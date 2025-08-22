@@ -36,25 +36,31 @@ Github: https://github.com/bresch
 Description:
 """
 
-import numpy as np
-import sys
 import math
+import sys
+
 import matplotlib.pylab as plt
+import numpy as np
 from AlphaFilter import AlphaFilter
 
 FLT_EPSILON = sys.float_info.epsilon
-NAN = float('nan')
-verbose = True;
+NAN = float("nan")
+verbose = True
 
 if verbose:
+
     def verboseprint(*args):
         # Print each argument separately so caller doesn't need to
         # stuff everything to be printed into a single string
         for arg in args:
-           print(arg)
+            print(arg)
         print()
+
 else:
-    verboseprint = lambda *a: None      # do-nothing function
+
+    def verboseprint(*args):
+        return
+
 
 class RangeFinderConsistencyCheck(object):
     def __init__(self):
@@ -78,16 +84,23 @@ class RangeFinderConsistencyCheck(object):
         if (self._time_last_update_us == 0) or (dt < 0.001) or (dt > 0.5):
             self._time_last_update_us = time_us
             self._dist_bottom_prev = dist_bottom
-            return;
+            return
 
         vel_bottom = (dist_bottom - self._dist_bottom_prev) / dt
-        innov = -vel_bottom - vz; # vel_bottom is +up while vz is +down
-        vel_bottom_var = 2.0 * dist_bottom_var / (dt * dt) # Variance of the time derivative of a random variable: var(dz/dt) = 2*var(z) / dt^2
+        innov = -vel_bottom - vz
+        # vel_bottom is +up while vz is +down
+        vel_bottom_var = (
+            2.0 * dist_bottom_var / (dt * dt)
+        )  # Variance of the time derivative of a random variable: var(dz/dt) = 2*var(z) / dt^2
         innov_var = vel_bottom_var + vz_var
         normalized_innov_sq = (innov * innov) / innov_var
-        self._vel_bottom_test_ratio = normalized_innov_sq / (self._vel_bottom_gate * self._vel_bottom_gate)
+        self._vel_bottom_test_ratio = normalized_innov_sq / (
+            self._vel_bottom_gate * self._vel_bottom_gate
+        )
 
-        self._vel_bottom_signed_test_ratio_lpf.setParameters(dt, self._vel_bottom_signed_test_ratio_tau)
+        self._vel_bottom_signed_test_ratio_lpf.setParameters(
+            dt, self._vel_bottom_signed_test_ratio_tau
+        )
         signed_test_ratio = np.sign(innov) * self._vel_bottom_test_ratio
         self._vel_bottom_signed_test_ratio_lpf.update(signed_test_ratio)
 
@@ -106,7 +119,14 @@ class RangeFinderConsistencyCheck(object):
             self._time_last_inconsistent_us = time_us
 
         else:
-            if abs(vz) > self._min_vz_for_valid_consistency and self._vel_bottom_test_ratio < 1.0 and ((time_us - self._time_last_inconsistent_us) > self._consistency_hyst_time_us):
+            if (
+                abs(vz) > self._min_vz_for_valid_consistency
+                and self._vel_bottom_test_ratio < 1.0
+                and (
+                    (time_us - self._time_last_inconsistent_us)
+                    > self._consistency_hyst_time_us
+                )
+            ):
                 self._is_kinematically_consistent = True
 
     def getInnov(self):
@@ -118,15 +138,17 @@ class RangeFinderConsistencyCheck(object):
     def getSignedTestRatioLpf(self):
         return self._vel_bottom_signed_test_ratio_lpf.getState()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     rng_kin = RangeFinderConsistencyCheck()
     inn = []
     dt = 0.1
 
     for i in range(1, 100):
-        rng_kin.update(i*dt, 0.1, -1.0, 0.001, i*dt * 1e6);
+        rng_kin.update(i * dt, 0.1, -1.0, 0.001, i * dt * 1e6)
         inn.append(rng_kin.getInnov())
 
     import matplotlib.pylab as plt
+
     plt.plot(inn)
     plt.show()

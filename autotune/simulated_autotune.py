@@ -36,34 +36,35 @@ Description:
     Auto-tuning algorithm test on simulated 2nd order transfer function
 """
 
-import numpy as np
 import matplotlib.pylab as plt
-from scipy import signal
+import numpy as np
 from arx_rls import ArxRls
 from pid_design import computePidGmvc
+from scipy import signal
+
 
 def run():
     # Generate 2nd order transfer function
-    zeta = 0.2 # damping ratio
-    f_n = 2.0 # natural frequency
-    w_n = f_n * 2.0*np.pi
+    zeta = 0.2  # damping ratio
+    f_n = 2.0  # natural frequency
+    w_n = f_n * 2.0 * np.pi
     num = [w_n**2]
-    den = [1, 2.0*zeta*w_n, w_n**2]
+    den = [1, 2.0 * zeta * w_n, w_n**2]
     Gs = signal.TransferFunction(num, den)
 
     # Simulation parameters
     n_steps = 1000
     t = np.linspace(0, 5, n_steps)
-    u = np.ones(n_steps) # input signal
-    u[int(n_steps/2):-1] = -1
+    u = np.ones(n_steps)  # input signal
+    u[int(n_steps / 2) : -1] = -1
 
     # Simulate the output of the continuous-time system
     t, y, x = signal.lsim(Gs, U=u, T=t)
     dt = t[1]
 
     # Identification
-    n = 2 # order of the denominator (a_1,...,a_n)
-    m = 2 # order of the numerator (b_0,...,b_m)
+    n = 2  # order of the denominator (a_1,...,a_n)
+    m = 2  # order of the numerator (b_0,...,b_m)
     d = 1
     rls = ArxRls(n, m, d)
     for k in range(n_steps):
@@ -71,9 +72,9 @@ def run():
     theta_hat = rls._theta_hat
 
     # Construct discrete-time TF from vector of estimated parameters
-    num = [theta_hat.item(i) for i in range(n, n+m+1)] # b0 .. bm
-    den = [theta_hat.item(i) for i in range(0, n)] # a1 .. an
-    den.insert(0, 1.0) # add 1 to get [1, a1, .., an]
+    num = [theta_hat.item(i) for i in range(n, n + m + 1)]  # b0 .. bm
+    den = [theta_hat.item(i) for i in range(0, n)]  # a1 .. an
+    den.insert(0, 1.0)  # add 1 to get [1, a1, .., an]
     Gz = signal.TransferFunction(num, den, dt=dt)
     # TODO: add delay of d
 
@@ -91,5 +92,6 @@ def run():
     print("kc = {}, ki = {}, kd = {}\n".format(kc, ki, kd))
     return
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run()
