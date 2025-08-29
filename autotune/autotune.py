@@ -41,8 +41,11 @@ import sys
 import control as ctrl
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from data_extractor import *
+from data_selection_window import DataSelectionWindow
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication,
@@ -71,10 +74,6 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from scipy.signal import detrend
-
-from data_extractor import *
-from data_selection_window import DataSelectionWindow
-from pid_design import computePidGmvc
 from system_identification import SystemIdentification
 
 
