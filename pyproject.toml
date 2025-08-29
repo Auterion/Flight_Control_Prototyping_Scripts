@@ -1,0 +1,20 @@
+[project]
+name = "flight-control-prototyping-scripts"
+version = "0.1.0"
+description = ""
+requires-python = ">=3.10"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^4.3.0"
+black = "^25.1.0"
+isort = "^6.0.1"
+
+[tool.poetry]
+package-mode = false
