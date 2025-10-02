@@ -152,11 +152,19 @@ def compute_step_response_metrics(time: np.ndarray, responses: np.ndarray) -> di
         except IndexError:
             rise_times.append(np.nan)
 
-        # Settling time (within ±2% of final value)
-        within_bounds = np.where(np.abs(resp - final_val) <= 0.02 * final_val)[0]
-        settling_times.append(
-            time[within_bounds[-1]] if len(within_bounds) > 0 else np.nan
-        )
+        # Settling time (within ±10% of final value)
+        tolerance = 0.1 * final_val
+        above_lower = np.where(resp < final_val + tolerance)[0]
+        below_upper = np.where(resp > final_val - tolerance)[0]
+        within_bounds = np.intersect1d(above_lower, below_upper)
+
+        # Find first index after which response stays within bounds for the rest of the signal
+        for idx in within_bounds:
+            if np.all(resp[idx:] <= final_val + tolerance) and np.all(resp[idx:] >= final_val - tolerance):
+                settling_times.append(time[idx])
+                break
+        else:
+            settling_times.append(np.nan)
 
         # Overshoot (%)
         overshoot = (np.max(resp) - final_val) / final_val * 100
