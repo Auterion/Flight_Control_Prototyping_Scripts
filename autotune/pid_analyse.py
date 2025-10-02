@@ -122,8 +122,11 @@ def plot_step_responses_with_metrics(time: np.ndarray, responses: np.ndarray) ->
         label="±1 std",
     )
 
-    # Horizontal reference line
-    plt.axhline(1, color="red", linestyle="--", label="Input Input")
+    # Reference step input
+    step_time = np.concatenate([[-0.01, 0], time])
+    step_values = np.concatenate([[0, 1], np.ones_like(time)])
+
+    plt.step(step_time, step_values, where='post', color='red', label="Step Input")
 
     plt.xlabel("Time [s]")
     plt.ylabel("Step Response")
