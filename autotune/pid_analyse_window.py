@@ -1,7 +1,34 @@
+# pid_analyse_window.py
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 from scipy.ndimage import gaussian_filter1d
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from PyQt5.QtWidgets import QDialog, QVBoxLayout
+
+
+class PIDAnalyseWindow(QDialog):
+    """Dialog window to show estimated step response"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Estimated Step Response")
+
+        # Figure and canvas
+        self.figure, self.ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
+        self.canvas = FigureCanvas(self.figure)
+
+        # Layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.canvas)
+        self.setLayout(layout)
+
+    def generate_step_response(self, u: np.ndarray, y: np.ndarray, t: np.ndarray) -> dict:
+        """Compute and plot step response, updating the canvas."""
+        self.ax.clear()
+        metrics = plot_closed_loop_step_response(u, y, t, ax=self.ax)
+        self.canvas.draw()
+        return metrics
 
 
 def plot_closed_loop_step_response(
@@ -10,34 +37,11 @@ def plot_closed_loop_step_response(
     t: np.ndarray,
     cutfreq: float = 25.0,
     window_duration: float = 1.0,
-    ax = None
+    ax=None
 ) -> dict:
-    """
-    Estimate and plot the closed-loop step response using Wiener deconvolution,
-    including uncertainty bounds and key metrics.
-
-    Parameters
-    ----------
-    u : ndarray
-        Input setpoint signal.
-    y : ndarray
-        Measured output signal.
-    t : ndarray
-        Time vector corresponding to u and y.
-    cutfreq : float
-        Cutoff frequency for Wiener deconvolution (Hz).
-    window_duration : float
-        Duration of each analysis window in seconds.
-
-    Returns
-    -------
-    dict
-        Metrics: rise_time, settling_time, overshoot, steady_state_error (mean ± std)
-    """
-
     dt = np.diff(t).mean()
-    if dt == 0:
-        return 
+    if np.isclose(dt, 0):
+        return {}
     fs = 1 / dt
 
     frame_samples = int(window_duration * fs)
@@ -63,40 +67,38 @@ def plot_closed_loop_step_response(
     return metrics
 
 
+def wiener_deconvolution(input_: np.ndarray, output: np.ndarray, cutoff_freq: float, fs: float, epsilon: float = 1e-3) -> np.ndarray:
+    """
+    Perform Wiener deconvolution on input/output signals
+    """
+    # Pad to next power-of-2 FFT
+    n_samples = input_.shape[1]
+    n_fft = 2 ** int(np.ceil(np.log2(n_samples)))
+    input_padded = np.pad(input_, ((0, 0), (0, n_fft - n_samples)), mode="constant")
+    output_padded = np.pad(output, ((0, 0), (0, n_fft - n_samples)), mode="constant")
 
-def wiener_deconvolution(
-    input_: np.ndarray, output: np.ndarray, cutfreq: float, fs: float
-) -> np.ndarray:
-    pad_len = 1024 - (input_.shape[1] % 1024)
-    input_padded = np.pad(input_, ((0, 0), (0, pad_len)), mode="constant")
-    output_padded = np.pad(output, ((0, 0), (0, pad_len)), mode="constant")
-
+    # FFT
     H = np.fft.fft(input_padded, axis=-1)
     G = np.fft.fft(output_padded, axis=-1)
 
-    sn = create_frequency_mask(H.shape[1], cutfreq, fs)
+    # Frequency-domain Wiener filter
+    snr = create_frequency_mask(n_fft, cutoff_freq, fs)
     H_conj = np.conj(H)
-    denom = (H * H_conj) + (1.0 / sn)
-    deconvolved = np.real(np.fft.ifft(G * H_conj / denom, axis=-1))
+    deconv_freq = (H_conj * G) / (H * H_conj + epsilon / snr[None, :])
 
-    return deconvolved
-
-
-def create_frequency_mask(n_samples: int, cutfreq: float, fs: float) -> np.ndarray:
-    freqs = np.abs(np.fft.fftfreq(n_samples, 1 / fs))
-    mask = np.clip(freqs, cutfreq - 1e-9, cutfreq)
-    mask = normalize(mask)
-    len_lpf = np.sum(1 - mask)
-    mask = normalize(gaussian_filter1d(mask, len_lpf / 6.0))
-    return 10.0 * (-mask + 1.0 + 1e-9)
+    # IFFT to get impulse response
+    deconvolved = np.real(np.fft.ifft(deconv_freq, axis=-1))
+    return deconvolved[:, :n_samples]
 
 
-def normalize(arr: np.ndarray) -> np.ndarray:
-    arr -= arr.min()
-    max_val = arr.max()
-    if max_val > 1e-10:
-        arr /= max_val
-    return arr
+def create_frequency_mask(n_samples: int, cutoff_freq: float, fs: float, sigma_factor: float = 6.0) -> np.ndarray:
+    """
+    Create a smooth low-pass mask
+    """
+    freqs = np.fft.fftfreq(n_samples, 1 / fs)
+    mask = np.exp(-0.5 * (freqs / cutoff_freq) ** 2)  # Gaussian low-pass
+    mask = gaussian_filter1d(mask, sigma=n_samples / sigma_factor)
+    return np.clip(mask, 1e-3, 1.0)  # avoid zeros
 
 
 def plot_step_responses_with_metrics(time: np.ndarray, responses: np.ndarray, ax=None) -> dict:
@@ -106,56 +108,30 @@ def plot_step_responses_with_metrics(time: np.ndarray, responses: np.ndarray, ax
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 5))
 
-    # Plot individual responses lightly
     for resp in responses:
         ax.plot(time, resp, alpha=0.2, color="gray")
-
-    # Mean response
     ax.plot(time, mean_resp, color="blue", linewidth=2, label="Mean response")
-
-    # Uncertainty bounds (±1 std)
-    ax.fill_between(
-        time,
-        mean_resp - std_resp,
-        mean_resp + std_resp,
-        color="blue",
-        alpha=0.2,
-        label="±1 std",
-    )
-
-    # Reference step input
+    ax.fill_between(time, mean_resp - std_resp, mean_resp + std_resp, color="blue", alpha=0.2, label="±1 std")
     ax.plot([time[0], 0, time[-1]], [0, 1, 1], "k--", label="Step Input")
-
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Step Response")
     ax.set_title("Estimated Step Response with Uncertainty")
     ax.legend()
     ax.grid(True)
 
-    # Compute metrics
     metrics = compute_step_response_metrics(time, responses)
 
-    # --- Display metrics inside plot ---
+    # Add metrics as annotation
     metrics_text = "\n".join(
-        f"{k}: {v[0]:.2f} ± {v[1]:.2f}" for k, v in metrics.items()
+        f"{k}: {v[0]:.2f} ± {v[1]:.2f}" for k, v in metrics.items() if not np.isnan(v[0])
     )
-    ax.text(
-        0.98,
-        0.02,
-        metrics_text,
-        ha="right",
-        va="bottom",
-        transform=ax.transAxes,
-        fontsize=9,
-        color="gray",
-    )
+    ax.text(0.98, 0.02, metrics_text, ha="right", va="bottom",
+            transform=ax.transAxes, fontsize=9, color="gray")
 
     return metrics
 
 
-
 def compute_step_response_metrics(time: np.ndarray, responses: np.ndarray) -> dict:
-
     rise_times, settling_times, overshoots, steady_state_errors = [], [], [], []
 
     for resp in responses:
@@ -171,19 +147,18 @@ def compute_step_response_metrics(time: np.ndarray, responses: np.ndarray) -> di
 
         # Settling time (within ±10% of final value)
         tolerance = 0.1 * final_val
-        above_lower = np.where(resp < final_val + tolerance)[0]
-        below_upper = np.where(resp > final_val - tolerance)[0]
-        within_bounds = np.intersect1d(above_lower, below_upper)
-
-        # Find first index after which response stays within bounds for the rest of the signal
-        for idx in within_bounds:
-            if np.all(resp[idx:] <= final_val + tolerance) and np.all(resp[idx:] >= final_val - tolerance):
-                settling_times.append(time[idx])
-                break
+        within_bounds = np.where(np.abs(resp - final_val) <= tolerance)[0]
+        if len(within_bounds) > 0:
+            for idx in within_bounds:
+                if np.all(np.abs(resp[idx:] - final_val) <= tolerance):
+                    settling_times.append(time[idx])
+                    break
+            else:
+                settling_times.append(np.nan)
         else:
             settling_times.append(np.nan)
 
-        # Overshoot (%)
+        # Overshoot
         overshoot = (np.max(resp) - final_val) / final_val * 100
         overshoots.append(overshoot)
 
@@ -194,14 +169,7 @@ def compute_step_response_metrics(time: np.ndarray, responses: np.ndarray) -> di
         "rise_time": (np.nanmean(rise_times), np.nanstd(rise_times)),
         "settling_time": (np.nanmean(settling_times), np.nanstd(settling_times)),
         "overshoot (%)": (np.nanmean(overshoots), np.nanstd(overshoots)),
-        "steady_state_error": (
-            np.nanmean(steady_state_errors),
-            np.nanstd(steady_state_errors),
-        ),
+        "steady_state_error": (np.nanmean(steady_state_errors), np.nanstd(steady_state_errors)),
     }
-
-    print("Step Response Metrics (mean ± std):")
-    for k, v in metrics.items():
-        print(f"{k}: {v[0]:.3f} ± {v[1]:.3f}")
 
     return metrics

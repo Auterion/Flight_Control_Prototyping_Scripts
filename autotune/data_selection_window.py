@@ -3,7 +3,7 @@ import numpy as np
 from data_extractor import DataExtractor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.widgets import SpanSelector
-from pid_analyse import plot_closed_loop_step_response
+from pid_analyse_window import PIDAnalyseWindow
 from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
@@ -312,6 +312,7 @@ class DataSelectionWindow(QDialog):
         if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:
             return
 
+        # Get input/output data
         if (
             self.t_start is not None
             and self.t_stop is not None
@@ -328,28 +329,16 @@ class DataSelectionWindow(QDialog):
                 self.topics[self.index_u], self.topics[self.index_y]
             )
 
-        # Create or reuse Step Response dialog
-        if not hasattr(self, "step_dialog") or self.step_dialog is None:
-            self.step_dialog = QDialog(self)
-            self.step_dialog.setWindowTitle("Step Response")
-            layout = QVBoxLayout(self.step_dialog)
+        # Create analysis window if not open yet
+        if not hasattr(self, "pid_window") or self.pid_window is None:
+            self.pid_window = PIDAnalyseWindow(self)
 
-            # Matplotlib figure + canvas
-            self.step_fig, self.step_ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
-            self.step_canvas = FigureCanvas(self.step_fig)
-            layout.addWidget(self.step_canvas)
+        # Show
+        self.pid_window.show()
+        self.pid_window.raise_()
 
-            self.step_dialog.setLayout(layout)
-
-        else:
-            # Clear previous plot if dialog already exists
-            self.step_ax.clear()
-
-        plot_closed_loop_step_response(u_sel, y_sel, t_sel, ax=self.step_ax)
-        self.step_canvas.draw()
-
-        self.step_dialog.show()
-        self.step_dialog.raise_()
+        # Update plot
+        self.pid_window.generate_step_response(u_sel, y_sel, t_sel)
 
 
     def plotCoherence(self):
