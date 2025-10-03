@@ -309,11 +309,9 @@ class DataSelectionWindow(QDialog):
         self.plotCoherence()
 
     def plotPIDAnalysis(self):
-
         if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:
             return
 
-        # Use getInputOutputData with selected range
         if (
             self.t_start is not None
             and self.t_stop is not None
@@ -326,12 +324,33 @@ class DataSelectionWindow(QDialog):
                 self.t_stop,
             )
         else:
-            # If no range selected, just use full duration
             t_sel, u_sel, y_sel, _ = self.data_extractor.getInputOutputData(
                 self.topics[self.index_u], self.topics[self.index_y]
             )
 
-        plot_closed_loop_step_response(u_sel, y_sel, t_sel)
+        # Create or reuse Step Response dialog
+        if not hasattr(self, "step_dialog") or self.step_dialog is None:
+            self.step_dialog = QDialog(self)
+            self.step_dialog.setWindowTitle("Step Response")
+            layout = QVBoxLayout(self.step_dialog)
+
+            # Matplotlib figure + canvas
+            self.step_fig, self.step_ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
+            self.step_canvas = FigureCanvas(self.step_fig)
+            layout.addWidget(self.step_canvas)
+
+            self.step_dialog.setLayout(layout)
+
+        else:
+            # Clear previous plot if dialog already exists
+            self.step_ax.clear()
+
+        plot_closed_loop_step_response(u_sel, y_sel, t_sel, ax=self.step_ax)
+        self.step_canvas.draw()
+
+        self.step_dialog.show()
+        self.step_dialog.raise_()
+
 
     def plotCoherence(self):
         if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:

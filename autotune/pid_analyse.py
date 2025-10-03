@@ -10,6 +10,7 @@ def plot_closed_loop_step_response(
     t: np.ndarray,
     cutfreq: float = 25.0,
     window_duration: float = 1.0,
+    ax = None
 ) -> dict:
     """
     Estimate and plot the closed-loop step response using Wiener deconvolution,
@@ -33,7 +34,12 @@ def plot_closed_loop_step_response(
     dict
         Metrics: rise_time, settling_time, overshoot, steady_state_error (mean ± std)
     """
-    fs = estimate_sampling_frequency(t)
+
+    dt = np.diff(t).mean()
+    if dt == 0:
+        return 
+    fs = 1 / dt
+
     frame_samples = int(window_duration * fs)
     shift = frame_samples // 16
     response_window_samples = int(0.5 * fs)
@@ -53,15 +59,9 @@ def plot_closed_loop_step_response(
     step_responses = deconvolved[:, :response_window_samples].cumsum(axis=1)
 
     # Plot with uncertainty and compute metrics
-    metrics = plot_step_responses_with_metrics(time_response, step_responses)
+    metrics = plot_step_responses_with_metrics(time_response, step_responses, ax=ax)
     return metrics
 
-
-def estimate_sampling_frequency(t: np.ndarray) -> float:
-    dt = np.diff(t).mean()
-    if dt == 0:
-        raise ValueError("Time vector has zero differences.")
-    return 1 / dt
 
 
 def wiener_deconvolution(
@@ -99,21 +99,22 @@ def normalize(arr: np.ndarray) -> np.ndarray:
     return arr
 
 
-def plot_step_responses_with_metrics(time: np.ndarray, responses: np.ndarray) -> dict:
+def plot_step_responses_with_metrics(time: np.ndarray, responses: np.ndarray, ax=None) -> dict:
     mean_resp = responses.mean(axis=0)
     std_resp = responses.std(axis=0)
 
-    plt.figure(figsize=(8, 5))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 5))
 
     # Plot individual responses lightly
     for resp in responses:
-        plt.plot(time, resp, alpha=0.2, color="gray")
+        ax.plot(time, resp, alpha=0.2, color="gray")
 
     # Mean response
-    plt.plot(time, mean_resp, color="blue", linewidth=2, label="Mean response")
+    ax.plot(time, mean_resp, color="blue", linewidth=2, label="Mean response")
 
     # Uncertainty bounds (±1 std)
-    plt.fill_between(
+    ax.fill_between(
         time,
         mean_resp - std_resp,
         mean_resp + std_resp,
@@ -123,21 +124,34 @@ def plot_step_responses_with_metrics(time: np.ndarray, responses: np.ndarray) ->
     )
 
     # Reference step input
-    step_time = np.concatenate([[-0.01, 0], time])
-    step_values = np.concatenate([[0, 1], np.ones_like(time)])
+    ax.plot([time[0], 0, time[-1]], [0, 1, 1], "k--", label="Step Input")
 
-    plt.step(step_time, step_values, where='post', color='red', label="Step Input")
-
-    plt.xlabel("Time [s]")
-    plt.ylabel("Step Response")
-    plt.title("Estimated Step Response with Uncertainty")
-    plt.legend()
-    plt.tight_layout()
-    plt.show(block=False)
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Step Response")
+    ax.set_title("Estimated Step Response with Uncertainty")
+    ax.legend()
+    ax.grid(True)
 
     # Compute metrics
     metrics = compute_step_response_metrics(time, responses)
+
+    # --- Display metrics inside plot ---
+    metrics_text = "\n".join(
+        f"{k}: {v[0]:.2f} ± {v[1]:.2f}" for k, v in metrics.items()
+    )
+    ax.text(
+        0.98,
+        0.02,
+        metrics_text,
+        ha="right",
+        va="bottom",
+        transform=ax.transAxes,
+        fontsize=9,
+        color="gray",
+    )
+
     return metrics
+
 
 
 def compute_step_response_metrics(time: np.ndarray, responses: np.ndarray) -> dict:
