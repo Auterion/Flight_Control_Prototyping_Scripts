@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 import numpy as np
-from numpy.lib.stride_tricks import sliding_window_view
-from scipy.ndimage import gaussian_filter1d
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from numpy.lib.stride_tricks import sliding_window_view
 from PyQt5.QtWidgets import QDialog, QVBoxLayout
+from scipy.ndimage import gaussian_filter1d
 
 
 class PIDAnalyseWindow(QDialog):
