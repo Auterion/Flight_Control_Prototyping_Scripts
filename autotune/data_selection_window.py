@@ -340,7 +340,6 @@ class DataSelectionWindow(QDialog):
         # Update plot
         self.pid_window.generate_step_response(u_sel, y_sel, t_sel)
 
-
     def plotCoherence(self):
         if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:
             return
