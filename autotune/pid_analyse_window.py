@@ -103,9 +103,7 @@ def compute_step_response_metrics(time: np.ndarray, responses: np.ndarray) -> di
         if len(within_bounds) > 0:
             for idx in within_bounds:
                 # check that response stays within bounds till the end
-                if np.all(
-                    np.abs(resp[idx:] - final_val) <= tolerance
-                ):
+                if np.all(np.abs(resp[idx:] - final_val) <= tolerance):
                     settling_times.append(time[idx])
                     break
             else:
