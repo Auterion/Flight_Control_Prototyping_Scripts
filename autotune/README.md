@@ -40,13 +40,31 @@ python3 autotune.py
 
 ### Flight Maneuvers
 
-Using default PX4 gains. Perform these maneuvers separately for each axis: roll, pitch, and yaw.
+Ensure your vehicle passes the pre-tuning test as outlined [here](https://docs.px4.io/main/en/config/autotune_fw.html#pre-tuning-test).
 
-1. Requires valid airspeed measurement, and a correctly set FW_AIRSPD_TRIM.
-2. Fly in stabilized mode and start from level flight.
-3. Apply a manual sine chirp input (sine wave with increasing frequency) on the selected axis. Avoid any other control inputs simultaneously.
-4. For pitch and yaw: The amplitude of the input should not be too high, but should be enough to overcome noise.
-5. Repeat the maneuver a few times if necessary to capture good data.
+#### Use automated maneuvers (Recommended)
+
+1. Configure your setup to use the PX4 autotune maneuvers without applying the identified gains online:
+
+```
+   FW_AT_APPLY = Do not apply the new gains (logging only) 
+   FW_AT_AXES = 7  # Enables maneuvers on all three axes (adjust as needed) 
+   FW_AT_SYSID_F1 = 10
+   FW_AT_SYSID_TYPE = Logarithmic sine sweep
+```
+
+2. Enable an [autotune switch](https://docs.px4.io/main/en/config/autotune_fw.html#enable-disable-autotune-switch) on your RC transmitter. 
+3. Follow the procedure described [here](https://docs.px4.io/main/en/config/autotune_fw.html#auto-tuning-procedure) to perform the maneuvers.
+Since FW_AT_APPLY is set to logging only, step 5 of the procedure (applying new gains and testing) will not be executed.
+
+#### Perform manual maneuvers
+
+Perform these maneuvers separately for each axis: roll, pitch, and yaw.
+
+1. Fly in stabilized mode and start from level flight.
+2. Apply a manual sine chirp input (sine wave with increasing frequency) on the selected axis. Avoid any other control inputs simultaneously.
+3. For pitch and yaw: The amplitude of the input should not be too high, but should be enough to overcome noise.
+4. Repeat the maneuver a few times if necessary to capture good data.
 
 ### Using the Tool
 
