@@ -3,6 +3,7 @@ import numpy as np
 from data_extractor import DataExtractor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.widgets import SpanSelector
+from pid_analyse_window import PIDAnalyseWindow
 from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
@@ -53,6 +54,18 @@ class DataSelectionWindow(QDialog):
                 "input": "vehicle_torque_setpoint/xyz[2].1",
                 "output": "vehicle_angular_velocity/xyz[2].0",
                 "input_legacy": "actuator_controls_1/control[2].0",
+            },
+            "Rollrate(closed-loop)": {
+                "input": "vehicle_rates_setpoint/roll.0",
+                "output": "vehicle_angular_velocity/xyz[0].0",
+            },
+            "Pitchrate(closed-loop)": {
+                "input": "vehicle_rates_setpoint/pitch.0",
+                "output": "vehicle_angular_velocity/xyz[1].0",
+            },
+            "Yawrate(closed-loop)": {
+                "input": "vehicle_rates_setpoint/yaw.0",
+                "output": "vehicle_angular_velocity/xyz[2].0",
             },
         }
 
@@ -105,6 +118,10 @@ class DataSelectionWindow(QDialog):
         btn_ok = QPushButton("Load selection")
         btn_ok.clicked.connect(self.loadSelection)
         layout_v.addWidget(btn_ok)
+
+        pid_btn_ok = QPushButton("Analyse Current Tuning")
+        pid_btn_ok.clicked.connect(self.plotPIDAnalysis)
+        layout_v.addWidget(pid_btn_ok)
 
         self.setLayout(layout_v)
 
@@ -290,6 +307,38 @@ class DataSelectionWindow(QDialog):
         self.canvas.draw()
 
         self.plotCoherence()
+
+    def plotPIDAnalysis(self):
+        if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:
+            return
+
+        # Get input/output data
+        if (
+            self.t_start is not None
+            and self.t_stop is not None
+            and self.t_stop > self.t_start
+        ):
+            t_sel, u_sel, y_sel, _ = self.data_extractor.getInputOutputData(
+                self.topics[self.index_u],
+                self.topics[self.index_y],
+                self.t_start,
+                self.t_stop,
+            )
+        else:
+            t_sel, u_sel, y_sel, _ = self.data_extractor.getInputOutputData(
+                self.topics[self.index_u], self.topics[self.index_y]
+            )
+
+        # Create analysis window if not open yet
+        if not hasattr(self, "pid_window") or self.pid_window is None:
+            self.pid_window = PIDAnalyseWindow(self)
+
+        # Show
+        self.pid_window.show()
+        self.pid_window.raise_()
+
+        # Update plot
+        self.pid_window.generate_step_response(u_sel, y_sel, t_sel)
 
     def plotCoherence(self):
         if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:
