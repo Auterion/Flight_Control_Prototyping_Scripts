@@ -764,7 +764,7 @@ class Window(QDialog):
         if self.bode_plot_ref is None:
             ax = self.figure.add_subplot(3, 3, (8, 9))
             f = w_cl / (2 * np.pi)
-            plot_ref = ax.semilogx(f, 10 * np.log10(mag_cl))
+            plot_ref = ax.semilogx(f, 20 * np.log10(mag_cl))
             ax.plot([f[0], f[-1]], [0, 0], "k--")
             ax.plot([f[0], f[-1]], [-3, -3], "g--")
             self.bode_plot_ref = plot_ref[0]
@@ -774,7 +774,7 @@ class Window(QDialog):
         else:
             f = w_cl / (2 * np.pi)
             self.bode_plot_ref.set_xdata(f)
-            self.bode_plot_ref.set_ydata(10 * np.log10(mag_cl))
+            self.bode_plot_ref.set_ydata(20 * np.log10(mag_cl))
 
         self.canvas.draw()
 
