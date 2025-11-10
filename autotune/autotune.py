@@ -93,7 +93,7 @@ class Window(QDialog):
         self.input_ref = None
         self.closed_loop_ref = None
         self.closed_loop_ax = None
-        self.bode_plot_ref = None
+        self.bode_plot_ref = []
         self.pz_plot_refs = []
         self.file_name = None
         self.is_system_identified = False
@@ -213,7 +213,7 @@ class Window(QDialog):
         self.model_ref = None
         self.input_ref = None
         self.closed_loop_ref = None
-        self.bode_plot_ref = None
+        self.bode_plot_ref = []
         self.pz_plot_refs = []
         self.is_system_identified = False
 
@@ -538,7 +538,7 @@ class Window(QDialog):
         poles = self.Gz.poles()
         zeros = self.Gz.zeros()
         if not self.pz_plot_refs:
-            ax = self.figure.add_subplot(3, 3, 6)
+            ax = self.figure.add_subplot(3, 3, 4)
             plot_ref = ax.plot(poles.real, poles.imag, "rx", markersize=10)
             self.pz_plot_refs.append(plot_ref[0])
             plot_ref = ax.plot(zeros.real, zeros.imag, "ro", markersize=10)
@@ -737,11 +737,27 @@ class Window(QDialog):
         y_out += y_d
 
         self.plotClosedLoop(t_out, y_out)
-        w = np.logspace(-1, 3, 40).tolist()
-        (mag_cl, phase_cl, omega_cl) = ctrl.frequency_response(
-            closed_loop, omega=np.asarray(w)
+
+        sum_feedback = ctrl.summing_junction(inputs=["rd"], output="e")
+        open_loop = ctrl.interconnect(
+            [
+                delays,
+                sampler,
+                sum_feedback,
+                feedforward,
+                sum_control,
+                p_control,
+                i_control,
+                d_control,
+                id_control,
+                out_sign,
+                plant,
+            ],
+            inputs="r",
+            outputs="y",
         )
-        self.plotBode(omega_cl, mag_cl)
+
+        self.plotBode(open_loop, closed_loop)
 
     def plotClosedLoop(self, t, y):
         if self.closed_loop_ref is None:
@@ -760,21 +776,72 @@ class Window(QDialog):
 
         self.canvas.draw()
 
-    def plotBode(self, w_cl, mag_cl):
-        if self.bode_plot_ref is None:
-            ax = self.figure.add_subplot(3, 3, (8, 9))
-            f = w_cl / (2 * np.pi)
-            plot_ref = ax.semilogx(f, 20 * np.log10(mag_cl))
+    def plotBode(self, open_loop, closed_loop):
+
+        (
+            gain_margin,
+            phase_margin,
+            stab_margin,
+            phase_crossover,
+            gain_crossover,
+            stab_margin_w,
+        ) = ctrl.stability_margins(open_loop)
+        stability_margins_text = f"Gain margin: {20 * np.log10(gain_margin):.2f}dB (@{phase_crossover / (2 * np.pi):.1f}Hz)\nPhase margin: {phase_margin:.1f}deg (@{gain_crossover / (2 * np.pi):.1f}Hz)"
+
+        w = np.logspace(-1, 3, 40).tolist()
+        (mag_ol, phase_ol, omega_ol) = ctrl.frequency_response(
+            open_loop, omega=np.asarray(w)
+        )
+
+        (mag_cl, phase_cl, omega_cl) = ctrl.frequency_response(
+            closed_loop, omega=np.asarray(w)
+        )
+        f = omega_cl / (2 * np.pi)
+
+        if not self.bode_plot_ref:
+            ax = self.figure.add_subplot(3, 3, (5, 6))
+            plot_ref = ax.semilogx(f, 20 * np.log10(mag_ol), label="Open-loop")
+            self.bode_plot_ref.append(plot_ref[0])
+            plot_ref = ax.semilogx(f, 20 * np.log10(mag_cl), label="Closed-loop")
+            self.bode_plot_ref.append(plot_ref[0])
+            ax.set_ylim(-20, 20)
             ax.plot([f[0], f[-1]], [0, 0], "k--")
             ax.plot([f[0], f[-1]], [-3, -3], "g--")
-            self.bode_plot_ref = plot_ref[0]
+
             ax.set_title("Bode")
-            ax.set_xlabel("Frequency (Hz)")
             ax.set_ylabel("Magnitude (dB)")
+            ax.legend()
+
+            ax = self.figure.add_subplot(3, 3, (8, 9))
+            plot_ref = ax.semilogx(f, phase_ol * 180 / np.pi, label="Open-loop")
+            self.bode_plot_ref.append(plot_ref[0])
+            plot_ref = ax.semilogx(f, phase_cl * 180 / np.pi, label="Closed-loop")
+            self.bode_plot_ref.append(plot_ref[0])
+            ax.set_ylim(-180, 180)
+
+            ax.set_xlabel("Frequency (Hz)")
+            ax.set_ylabel("Phase (deg)")
+            self.gain_margin_text_ref = ax.text(
+                0.01,
+                0.9,
+                stability_margins_text,
+                verticalalignment="top",
+                transform=ax.transAxes,
+            )
+
         else:
-            f = w_cl / (2 * np.pi)
-            self.bode_plot_ref.set_xdata(f)
-            self.bode_plot_ref.set_ydata(20 * np.log10(mag_cl))
+            self.bode_plot_ref[0].set_xdata(f)
+            mag_ol_db = 20 * np.log10(mag_ol)
+            self.bode_plot_ref[0].set_ydata(mag_ol_db)
+            self.bode_plot_ref[1].set_xdata(f)
+            mag_cl_db = 20 * np.log10(mag_cl)
+            self.bode_plot_ref[1].set_ydata(mag_cl_db)
+            self.gain_margin_text_ref.set_text(stability_margins_text)
+
+            self.bode_plot_ref[2].set_xdata(f)
+            self.bode_plot_ref[2].set_ydata(phase_ol * 180 / np.pi)
+            self.bode_plot_ref[3].set_xdata(f)
+            self.bode_plot_ref[3].set_ydata(phase_cl * 180 / np.pi)
 
         self.canvas.draw()
 
