@@ -77,6 +77,28 @@ from scipy.signal import detrend
 from system_identification import SystemIdentification
 
 
+def create2ndOrderLpf(fc, zeta, fs):
+    T = 1.0 / fs
+    wn = 2.0 * np.pi * fc
+    K = wn / np.tan(wn * T / 2.0)
+    K2 = K**2
+    b2a = wn**2
+    a0a = 1.0
+    a1a = 2.0 * zeta * wn
+    a2a = wn**2
+    D = a0a * K2 + a1a * K + a2a
+    b0_prime = b2a
+    b1_prime = 2.0 * b2a
+    b2_prime = b2a
+    a0_prime = D
+    a1_prime = 2.0 * a2a - 2.0 * K2
+    a2_prime = a0a * K2 - a1a * K + a2a
+
+    b = [b0_prime / D, b1_prime / D, b2_prime / D]
+    a = [a0_prime / D, a1_prime / D, a2_prime / D]
+    return b, a
+
+
 def isNumber(value):
     try:
         float(value)
@@ -110,6 +132,8 @@ class Window(QDialog):
         self.sys_id_delays = 1
         self.sys_id_n_zeros = 2
         self.sys_id_n_poles = 2
+        self.cutoff_freq = 0.0
+        self.damping_ratio = 0.0
 
         # this is the Canvas Widget that displays the `figure`
         # it takes the `figure` instance as a parameter to __init__
@@ -197,6 +221,10 @@ class Window(QDialog):
         self.tab_gmvc = QWidget()
         self.tab_gmvc.setLayout(self.createGmvcLayout())
         self.tuning_tabs.addTab(self.tab_gmvc, "GMVC")
+
+        self.tab_mode = QWidget()
+        self.tab_mode.setLayout(self.createModeLayout())
+        self.tuning_tabs.addTab(self.tab_mode, "Mode")
 
         layout_plot = QVBoxLayout()
         layout_h.addLayout(left_menu)
@@ -480,6 +508,47 @@ class Window(QDialog):
         if self.slider_detune.isSliderDown():
             self.computeController()
 
+    def createModeLayout(self):
+        layout_mode = QFormLayout()
+
+        layout_cutoff_freq = QHBoxLayout()
+        self.slider_cutoff_freq = DoubleSlider(Qt.Horizontal)
+        self.slider_cutoff_freq.setMinimum(0.0)
+        self.slider_cutoff_freq.setMaximum(100.0)
+        self.slider_cutoff_freq.setInterval(0.1)
+        self.slider_cutoff_freq.setValue(0.0)
+        self.lbl_cutoff_freq = QLabel("{:.1f}".format(self.cutoff_freq))
+        layout_cutoff_freq.addWidget(self.slider_cutoff_freq)
+        layout_cutoff_freq.addWidget(self.lbl_cutoff_freq)
+        self.slider_cutoff_freq.valueChanged.connect(self.updateLabelCutoffFreq)
+        layout_mode.addRow(QLabel("Cutoff frequency"), layout_cutoff_freq)
+
+        layout_damping_ratio = QHBoxLayout()
+        self.slider_damping_ratio = DoubleSlider(Qt.Horizontal)
+        self.slider_damping_ratio.setMinimum(0.0)
+        self.slider_damping_ratio.setMaximum(0.1)
+        self.slider_damping_ratio.setInterval(0.001)
+        self.slider_damping_ratio.setValue(0.0)
+        self.lbl_damping_ratio = QLabel("{:.3f}".format(self.damping_ratio))
+        layout_damping_ratio.addWidget(self.slider_damping_ratio)
+        layout_damping_ratio.addWidget(self.lbl_damping_ratio)
+        self.slider_damping_ratio.valueChanged.connect(self.updateLabelDampingRatio)
+        layout_mode.addRow(QLabel("Damping ratio"), layout_damping_ratio)
+
+        return layout_mode
+
+    def updateLabelCutoffFreq(self):
+        self.cutoff_freq = self.slider_cutoff_freq.value()
+        self.lbl_cutoff_freq.setText("{:.1f}".format(self.cutoff_freq))
+        if self.slider_cutoff_freq.isSliderDown():
+            self.updateClosedLoop()
+
+    def updateLabelDampingRatio(self):
+        self.damping_ratio = self.slider_damping_ratio.value()
+        self.lbl_damping_ratio.setText("{:.3f}".format(self.damping_ratio))
+        if self.slider_damping_ratio.isSliderDown():
+            self.updateClosedLoop()
+
     def runIdentification(self):
         n_steps = len(self.t)
 
@@ -635,9 +704,18 @@ class Window(QDialog):
             outputs="rd",
         )
         plant = ctrl.TransferFunction(num, den, dt, inputs="u", outputs="plant_out")
-        sampler = ctrl.TransferFunction(
-            [1], [1, 0], dt, inputs="plant_out", outputs="y"
-        )
+
+        if self.cutoff_freq > 0.0:
+            b, a = create2ndOrderLpf(
+                fc=self.cutoff_freq, zeta=self.damping_ratio, fs=1 / dt
+            )
+        else:
+            b = 1.0
+            a = 1.0
+
+        mode = ctrl.TransferFunction(b, a, dt, inputs="plant_out", outputs="mode_out")
+
+        sampler = ctrl.TransferFunction([1], [1, 0], dt, inputs="mode_out", outputs="y")
         sum_feedback = ctrl.summing_junction(inputs=["rd", "-y"], output="e")
 
         # Default is standard PID
@@ -704,6 +782,7 @@ class Window(QDialog):
                 id_control,
                 out_sign,
                 plant,
+                mode,
             ],
             inputs="r",
             outputs="y",
@@ -727,6 +806,7 @@ class Window(QDialog):
                 id_control,
                 out_sign,
                 plant,
+                mode,
             ],
             inputs="disturbance",
             outputs="y",
@@ -752,6 +832,7 @@ class Window(QDialog):
                 id_control,
                 out_sign,
                 plant,
+                mode,
             ],
             inputs="r",
             outputs="y",
@@ -788,7 +869,7 @@ class Window(QDialog):
         ) = ctrl.stability_margins(open_loop)
         stability_margins_text = f"Gain margin: {20 * np.log10(gain_margin):.2f}dB (@{phase_crossover / (2 * np.pi):.1f}Hz)\nPhase margin: {phase_margin:.1f}deg (@{gain_crossover / (2 * np.pi):.1f}Hz)"
 
-        w = np.logspace(-1, 3, 40).tolist()
+        w = np.logspace(-1, 3, 500).tolist()
         (mag_ol, phase_ol, omega_ol) = ctrl.frequency_response(
             open_loop, omega=np.asarray(w)
         )
