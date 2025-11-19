@@ -738,13 +738,17 @@ class Window(QDialog):
 
         self.plotClosedLoop(t_out, y_out)
 
+        # Remove feedback
         sum_feedback = ctrl.summing_junction(inputs=["rd"], output="e")
+
+        # Remove feedforward
+        sum_control = ctrl.summing_junction(inputs=["pid_out"], output="control_out")
+
         open_loop = ctrl.interconnect(
             [
                 delays,
                 sampler,
                 sum_feedback,
-                feedforward,
                 sum_control,
                 p_control,
                 i_control,
