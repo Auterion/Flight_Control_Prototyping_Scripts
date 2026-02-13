@@ -63,8 +63,11 @@ class SystemIdentification(object):
         self.lbda = 1.0 - self.dt / tau
 
     def fit(self, u, y):
-        n_steps = len(u)
+        u = np.asarray(u).flatten()
+        y = np.asarray(y).flatten()
 
+        n_steps = len(u)
+        
         # High-pass filter parameters
         if self.f_hp > 0.0:
             tau_hp = 1 / (2 * np.pi * self.f_hp)
@@ -112,7 +115,7 @@ class SystemIdentification(object):
                 # Update model
                 rls.update(u_lp[k], y_lp[k])
 
-                theta_hat = rls._theta_hat
+                theta_hat = np.array(rls._theta_hat).flatten()
 
                 # Save for plotting
                 for i in range(self.n):
