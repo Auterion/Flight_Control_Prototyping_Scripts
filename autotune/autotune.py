@@ -488,7 +488,7 @@ class Window(QDialog):
         d = self.sys_id_delays  # number of delays
         id = SystemIdentification(n, m, d, self.dt)
 
-        est = id.fit(self.u.reshape(-1, 1), self.y.reshape(-1, 1))
+        est = id.fit(self.u, self.y)
 
         self.num = est.G_.num_list[0][0]
         self.den = est.G_.den_list[0][0][0 : n + 1]
