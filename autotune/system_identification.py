@@ -41,7 +41,7 @@ Description:
 import control as ctrl
 import numpy as np
 from arx_rls import ArxRls
-from scipy.optimize import lsq_linear, minimize
+from scipy.optimize import lsq_linear
 
 
 class SysIdResult(object):
@@ -62,7 +62,7 @@ class SystemIdentification(object):
         tau = 60.0  # forgetting period
         self.lbda = 1.0 - self.dt / tau
 
-    def fit(self, u, y):
+    def fit(self, u, y, use_rls=True):
         n_steps = len(u)
 
         # High-pass filter parameters
@@ -101,47 +101,30 @@ class SystemIdentification(object):
                 u_lp[k] = alpha_lp * u_lp[k - 1] + (1 - alpha_lp) * u_hp[k]
                 y_lp[k] = alpha_lp * y_lp[k - 1] + (1 - alpha_lp) * y_hp[k]
 
-        use_rls = True
         if use_rls:
-            # Identification
             rls = ArxRls(
                 self.n, self.m, self.d, lbda=(1 - self.dt / self.forgetting_tc)
             )
-
             for k in range(n_steps):
-                # Update model
                 rls.update(u_lp[k], y_lp[k])
-
                 theta_hat = rls._theta_hat
-
-                # Save for plotting
                 for i in range(self.n):
                     a_coeffs[i, k] = theta_hat[i]
                 for i in range(self.m + 1):
                     b_coeffs[i, k] = theta_hat[i + self.n]
-
-        else:  # use LS
-            # Build matrix of regressors
-            A = np.zeros((n_steps, self.n + self.m + 1))
-            for row in range(n_steps):
+        else:  # OLS
+            skip = max(self.n, self.d + self.m)
+            rows = n_steps - skip
+            A = np.zeros((rows, self.n + self.m + 1))
+            B = np.zeros(rows)
+            for row in range(skip, n_steps):
                 for i in range(self.n):
-                    A[row, i] = -y_lp[row - (i + 1)]
+                    A[row - skip, i] = -y_lp[row - (i + 1)]
                 for i in range(self.m + 1):
-                    A[row, i + self.n] = u_lp[row - (self.d + i)]
-
-            B = [y_lp[i] for i in range(n_steps)]  # Measured values
-
-            res = lsq_linear(A, B, lsmr_tol="auto", verbose=1)
+                    A[row - skip, i + self.n] = u_lp[row - (self.d + i)]
+                B[row - skip] = y_lp[row]
+            res = lsq_linear(A, B, lsmr_tol="auto")
             theta_hat = res.x
-
-            # Refine model using output-error optimization
-            J = lambda x: np.sum(
-                np.power(abs(np.array(B) - self.simulateModel(x, u_lp, self.dt)), 2.0)
-            )  # cost function
-            x0 = np.append(res.x, 0)  # initial conditions
-            res = minimize(J, x0, method="nelder-mead", options={"disp": True})
-            theta_hat = res.x
-
             for i in range(self.n):
                 a_coeffs[i, -1] = theta_hat[i]
             for i in range(self.m + 1):
