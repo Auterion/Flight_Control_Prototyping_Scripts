@@ -46,7 +46,7 @@ from data_selection_window import DataSelectionWindow
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from pid_design import computePidGmvc
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -75,6 +75,93 @@ from PyQt5.QtWidgets import (
 )
 from scipy.signal import detrend
 from system_identification import SystemIdentification
+
+
+def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, use_rls=True):
+    try:
+        sys_id = SystemIdentification(n_poles, n_zeros, delay, dt)
+        sys_id.f_hp = f_hp
+        sys_id.f_lp = f_lp
+        est = sys_id.fit(u.reshape(-1, 1), y.reshape(-1, 1), use_rls=use_rls)
+        Gz = ctrl.TransferFunction(
+            est.G_.num_list[0][0], est.G_.den_list[0][0][: n_poles + 1], dt
+        )
+        u_detrended = detrend(u)
+        u_delayed = np.concatenate(
+            ([0] * delay, u_detrended[: len(u_detrended) - delay])
+        )
+        _, y_est = ctrl.forced_response(Gz, T=t, U=u_delayed)
+        y_detrended = detrend(y[: len(y_est)])
+        y_est_detrended = detrend(y_est)
+        norm_ref = np.linalg.norm(y_detrended - np.mean(y_detrended))
+        if norm_ref < 1e-10:
+            return -np.inf
+        return 100.0 * (1.0 - np.linalg.norm(y_detrended - y_est_detrended) / norm_ref)
+    except Exception:
+        return -np.inf
+
+
+class ParamSearchWorker(QThread):
+    finished = pyqtSignal(dict, float)
+    progress = pyqtSignal(int, int)
+
+    def __init__(self, u, y, t, dt, use_rls):
+        super().__init__()
+        self.u = u
+        self.y = y
+        self.t = t
+        self.dt = dt
+        self.use_rls = use_rls
+
+    def run(self):
+        n_poles_range = [2, 3, 4, 5, 6]
+        n_zeros_range = [2, 3, 4, 5, 6]
+        delay_range = [0, 1, 2, 3]
+        f_hp_range = [0.0, 0.5, 1.0, 2.0]
+        f_lp_range = [10.0, 20.0, 30.0, 50.0]
+
+        combos = [
+            (n_poles, n_zeros, delay, f_hp, f_lp)
+            for n_poles in n_poles_range
+            for n_zeros in n_zeros_range
+            for delay in delay_range
+            for f_hp in f_hp_range
+            for f_lp in f_lp_range
+            if n_poles >= n_zeros
+        ]
+        total = len(combos)
+        best_fit = -np.inf
+        best_params = {}
+
+        for i, (n_poles, n_zeros, delay, f_hp, f_lp) in enumerate(combos):
+            fit = compute_fit(
+                self.u,
+                self.y,
+                self.t,
+                self.dt,
+                n_poles,
+                n_zeros,
+                delay,
+                f_hp,
+                f_lp,
+                self.use_rls,
+            )
+            new_order = n_poles + n_zeros
+            best_order = best_params.get("n_poles", 0) + best_params.get("n_zeros", 0)
+            # Prefer lower-order models: a higher-order model must improve fit
+            # by more than 1% to be accepted, avoiding overfitting.
+            if fit > best_fit and (new_order <= best_order or fit > best_fit + 1.0):
+                best_fit = fit
+                best_params = {
+                    "n_poles": n_poles,
+                    "n_zeros": n_zeros,
+                    "delay": delay,
+                    "f_hp": f_hp,
+                    "f_lp": f_lp,
+                }
+            self.progress.emit(i + 1, total)
+
+        self.finished.emit(best_params, best_fit)
 
 
 def isNumber(value):
@@ -213,7 +300,14 @@ class Window(QDialog):
         self.btn_run_sys_id.clicked.connect(self.onSysIdClicked)
         self.btn_run_sys_id.setEnabled(False)
 
-        id_params_group.addRow(self.btn_run_sys_id)
+        self.btn_find_params = QPushButton("Find parameters")
+        self.btn_find_params.clicked.connect(self.onFindParamsClicked)
+        self.btn_find_params.setEnabled(False)
+
+        run_row = QHBoxLayout()
+        run_row.addWidget(self.btn_run_sys_id)
+        run_row.addWidget(self.btn_find_params)
+        id_params_group.addRow(run_row)
 
         self.lbl_fit = QLabel("—")
         id_params_group.addRow(QLabel("Fit"), self.lbl_fit)
@@ -378,6 +472,30 @@ class Window(QDialog):
             self.sys_id_n_poles = n_poles
             self.runIdentification()
             self.computeController()
+
+    def onFindParamsClicked(self):
+        self.btn_find_params.setEnabled(False)
+        self.btn_find_params.setText("Searching... (0%)")
+        use_rls = self.id_method_combo.currentText() == "RLS"
+        self._param_search_worker = ParamSearchWorker(
+            self.u.copy(), self.y.copy(), self.t.copy(), self.dt, use_rls
+        )
+        self._param_search_worker.progress.connect(self.onParamSearchProgress)
+        self._param_search_worker.finished.connect(self.onParamSearchFinished)
+        self._param_search_worker.start()
+
+    def onParamSearchProgress(self, current, total):
+        self.btn_find_params.setText(f"Searching... ({100 * current // total}%)")
+
+    def onParamSearchFinished(self, best_params, best_fit):
+        self.line_edit_poles.setValue(best_params["n_poles"])
+        self.line_edit_zeros.setValue(best_params["n_zeros"])
+        self.line_edit_delays.setValue(best_params["delay"])
+        self.f_hp_spinbox.setValue(best_params["f_hp"])
+        self.f_lp_spinbox.setValue(best_params["f_lp"])
+        self.btn_find_params.setText("Find parameters")
+        self.btn_find_params.setEnabled(True)
+        self.onSysIdClicked()
 
     def printImproperTfError(self):
         msg = QMessageBox()
@@ -1121,6 +1239,7 @@ class Window(QDialog):
                 self.line_edit_trim.setValue(trim_airspeed)
 
             self.refreshInputOutputData()
+            self.btn_find_params.setEnabled(True)
             self.runIdentification()
             self.computeController()
 
