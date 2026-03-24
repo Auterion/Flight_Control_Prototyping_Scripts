@@ -153,6 +153,14 @@ class Window(QDialog):
         self.line_edit_delays.setRange(0, 1000)
         self.line_edit_delays.valueChanged.connect(self.onDelaysChanged)
         id_params_group.addRow(QLabel("Delays"), self.line_edit_delays)
+
+        self.id_method_combo = QComboBox()
+        self.id_method_combo.addItems(["RLS", "OLS"])
+        self.id_method_combo.currentIndexChanged.connect(
+            lambda: self.btn_run_sys_id.setEnabled(True)
+        )
+        id_params_group.addRow(QLabel("Method"), self.id_method_combo)
+
         input_scale_group = QGroupBox("Input scaling")
         input_scale_group.setToolTip(
             "Scale the input to identify a model at trim airspeed (requires true airspeed data)"
@@ -600,7 +608,8 @@ class Window(QDialog):
         d = self.sys_id_delays  # number of delays
         id = SystemIdentification(n, m, d, self.dt)
 
-        est = id.fit(self.u.reshape(-1, 1), self.y.reshape(-1, 1))
+        use_rls = self.id_method_combo.currentText() == "RLS"
+        est = id.fit(self.u.reshape(-1, 1), self.y.reshape(-1, 1), use_rls=use_rls)
 
         self.num = est.G_.num_list[0][0]
         self.den = est.G_.den_list[0][0][0 : n + 1]
