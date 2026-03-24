@@ -183,6 +183,9 @@ class Window(QDialog):
 
         id_params_group.addRow(self.btn_run_sys_id)
 
+        self.lbl_fit = QLabel("—")
+        id_params_group.addRow(QLabel("Fit"), self.lbl_fit)
+
         left_menu.addLayout(id_params_group)
 
         layout_tf = self.createTfLayout()
@@ -227,6 +230,8 @@ class Window(QDialog):
         self.closed_loop_ref = None
         self.measured_step_info = None
         self.step_info_patches = []
+        self.lbl_fit.setText("—")
+        self.lbl_fit.setStyleSheet("")
         self.bode_plot_ref = []
         self.pz_plot_refs = []
         self.is_system_identified = False
@@ -621,6 +626,22 @@ class Window(QDialog):
         self.t_est, self.y_est = ctrl.forced_response(self.Gz, T=self.t, U=u_delayed)
         if len(self.t_est) > len(self.y_est):
             self.t_est = self.t_est[0 : len(self.y_est - 1)]
+
+        y_detrended = detrend(self.y[: len(self.y_est)])
+        y_est_detrended = detrend(self.y_est)
+        fit = 100 * (
+            1
+            - np.linalg.norm(y_detrended - y_est_detrended)
+            / np.linalg.norm(y_detrended - np.mean(y_detrended))
+        )
+        self.lbl_fit.setText(f"{fit:.1f}%")
+        if fit >= 80:
+            self.lbl_fit.setStyleSheet("color: green")
+        elif fit >= 60:
+            self.lbl_fit.setStyleSheet("color: orange")
+        else:
+            self.lbl_fit.setStyleSheet("color: red")
+
         self.plotInputOutput()
 
     def updateTfDisplay(self, a_coeffs, b_coeffs):
