@@ -218,6 +218,18 @@ class Window(QDialog):
         self.lbl_fit = QLabel("—")
         id_params_group.addRow(QLabel("Fit"), self.lbl_fit)
 
+        self.lbl_stability = QLabel("—")
+        self.btn_stabilize = QPushButton("Stabilize")
+        self.btn_stabilize.setVisible(False)
+        self.btn_stabilize.setToolTip(
+            "Reflects unstable poles inside the unit circle (p → 1/p*)"
+        )
+        self.btn_stabilize.clicked.connect(self.stabilizeModel)
+        stability_row = QHBoxLayout()
+        stability_row.addWidget(self.lbl_stability)
+        stability_row.addWidget(self.btn_stabilize)
+        id_params_group.addRow(QLabel("Stability"), stability_row)
+
         left_menu.addLayout(id_params_group)
 
         layout_tf = self.createTfLayout()
@@ -264,6 +276,9 @@ class Window(QDialog):
         self.step_info_patches = []
         self.lbl_fit.setText("—")
         self.lbl_fit.setStyleSheet("")
+        self.lbl_stability.setText("—")
+        self.lbl_stability.setStyleSheet("")
+        self.btn_stabilize.setVisible(False)
         self.bode_plot_ref = []
         self.pz_plot_refs = []
         self.is_system_identified = False
@@ -678,6 +693,28 @@ class Window(QDialog):
             self.lbl_fit.setStyleSheet("color: red")
 
         self.plotInputOutput()
+        self.checkStability()
+
+    def checkStability(self):
+        unstable = np.any(np.abs(self.Gz.poles()) > 1)
+        if unstable:
+            self.lbl_stability.setText("⚠ Unstable")
+            self.lbl_stability.setStyleSheet("color: red")
+            self.btn_stabilize.setVisible(True)
+        else:
+            self.lbl_stability.setText("✓ Stable")
+            self.lbl_stability.setStyleSheet("color: green")
+            self.btn_stabilize.setVisible(False)
+
+    def stabilizeModel(self):
+        poles = self.Gz.poles()
+        stable_poles = np.where(np.abs(poles) > 1, 1.0 / np.conj(poles), poles)
+        self.den = np.real(np.poly(stable_poles))
+        self.Gz = ctrl.TransferFunction(self.num, self.den, self.dt)
+        self.updateTfDisplay(self.den[1:], self.num)
+        self.plotPolesZeros()
+        self.replayInputData()
+        self.computeController()
 
     def updateTfDisplay(self, a_coeffs, b_coeffs):
 
