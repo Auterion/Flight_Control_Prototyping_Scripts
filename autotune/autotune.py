@@ -328,7 +328,7 @@ class Window(QDialog):
             "P": {"min": 0.001, "max": 4.0, "step": 0.001},
             "I": {"min": 0.0, "max": 20.0, "step": 0.1},
             "D": {"min": 0.0, "max": 0.2, "step": 0.001},
-            "FF": {"min": 0.0, "max": 1.0, "step": 0.001},
+            "FF": {"min": -1.0, "max": 1.0, "step": 0.001},
         }
 
         def make_slider_callback(gain):
@@ -365,6 +365,7 @@ class Window(QDialog):
             self.gain_slider[gain].setMinimum(slider_props[gain]["min"])
             self.gain_slider[gain].setMaximum(slider_props[gain]["max"])
             self.gain_slider[gain].setInterval(slider_props[gain]["step"])
+            self.gain_slider[gain].setValue(self.gains[gain])
             self.gain_slider[gain].valueChanged.connect(make_slider_callback(gain))
             layout_pid.addWidget(self.gain_slider[gain], row, 1)
 
