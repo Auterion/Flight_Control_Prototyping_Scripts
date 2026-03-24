@@ -97,7 +97,7 @@ class SystemIdentification(object):
         tau = 60.0  # forgetting period
         self.lbda = 1.0 - self.dt / tau
 
-    def fit(self, u, y, use_rls=True):
+    def fit(self, u, y, method="RLS"):
         n_steps = len(u)
 
         a_coeffs = np.zeros((self.n, n_steps))
@@ -105,7 +105,7 @@ class SystemIdentification(object):
 
         u_lp, y_lp = apply_filters(u, y, self.f_hp, self.f_lp, self.dt)
 
-        if use_rls:
+        if method == "RLS":
             rls = ArxRls(
                 self.n, self.m, self.d, lbda=(1 - self.dt / self.forgetting_tc)
             )
@@ -116,7 +116,7 @@ class SystemIdentification(object):
                     a_coeffs[i, k] = theta_hat[i]
                 for i in range(self.m + 1):
                     b_coeffs[i, k] = theta_hat[i + self.n]
-        else:  # OLS
+        elif method == "OLS":
             skip = max(self.n, self.d + self.m)
             rows = n_steps - skip
             A = np.zeros((rows, self.n + self.m + 1))
