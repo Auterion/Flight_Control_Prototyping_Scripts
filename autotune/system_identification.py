@@ -44,6 +44,41 @@ from arx_rls import ArxRls
 from scipy.optimize import lsq_linear
 
 
+def apply_filters(u, y, f_hp, f_lp, dt):
+    n_steps = len(u)
+
+    if f_hp > 0.0:
+        tau_hp = 1 / (2 * np.pi * f_hp)
+        alpha_hp = tau_hp / (tau_hp + dt)
+    else:
+        alpha_hp = 0.0
+
+    tau_lp = 1 / (2 * np.pi * f_lp)
+    alpha_lp = tau_lp / (tau_lp + dt)
+
+    u_hp = np.zeros(n_steps)
+    y_hp = np.zeros(n_steps)
+    u_hp[0] = u[0]
+    y_hp[0] = y[0]
+    u_lp = np.zeros(n_steps)
+    y_lp = np.zeros(n_steps)
+    u_lp[0] = u[0]
+    y_lp[0] = y[0]
+
+    for k in range(1, n_steps):
+        if alpha_hp > 0.0:
+            u_hp[k] = alpha_hp * u_hp[k - 1] + alpha_hp * (u[k] - u[k - 1])
+            y_hp[k] = alpha_hp * y_hp[k - 1] + alpha_hp * (y[k] - y[k - 1])
+        else:
+            u_hp[k] = u[k]
+            y_hp[k] = y[k]
+
+        u_lp[k] = alpha_lp * u_lp[k - 1] + (1 - alpha_lp) * u_hp[k]
+        y_lp[k] = alpha_lp * y_lp[k - 1] + (1 - alpha_lp) * y_hp[k]
+
+    return u_lp, y_lp
+
+
 class SysIdResult(object):
     def __init__(self, num, den, dt):
         self.G_ = ctrl.TransferFunction(num, den, dt)
@@ -65,41 +100,10 @@ class SystemIdentification(object):
     def fit(self, u, y, use_rls=True):
         n_steps = len(u)
 
-        # High-pass filter parameters
-        if self.f_hp > 0.0:
-            tau_hp = 1 / (2 * np.pi * self.f_hp)
-            alpha_hp = tau_hp / (tau_hp + self.dt)
-        else:
-            alpha_hp = 0.0
-
-        u_hp = np.zeros(n_steps)
-        y_hp = np.zeros(n_steps)
-        u_hp[0] = u[0]
-        y_hp[0] = y[0]
-
-        # Low-pass filter parameters
-        tau_lp = 1 / (2 * np.pi * self.f_lp)
-        alpha_lp = tau_lp / (tau_lp + self.dt)
-        u_lp = np.zeros(n_steps)
-        y_lp = np.zeros(n_steps)
-        u_lp[0] = u[0]
-        y_lp[0] = y[0]
-
         a_coeffs = np.zeros((self.n, n_steps))
         b_coeffs = np.zeros((self.m + 1, n_steps))
 
-        # Apply high and low-pass filters
-        for k in range(n_steps):
-            if k > 0:
-                if alpha_hp > 0.0:
-                    u_hp[k] = alpha_hp * u_hp[k - 1] + alpha_hp * (u[k] - u[k - 1])
-                    y_hp[k] = alpha_hp * y_hp[k - 1] + alpha_hp * (y[k] - y[k - 1])
-                else:
-                    u_hp[k] = u[k]
-                    y_hp[k] = y[k]
-
-                u_lp[k] = alpha_lp * u_lp[k - 1] + (1 - alpha_lp) * u_hp[k]
-                y_lp[k] = alpha_lp * y_lp[k - 1] + (1 - alpha_lp) * y_hp[k]
+        u_lp, y_lp = apply_filters(u, y, self.f_hp, self.f_lp, self.dt)
 
         if use_rls:
             rls = ArxRls(
