@@ -93,6 +93,15 @@ class Window(QDialog):
         self.input_ref = None
         self.closed_loop_ref = None
         self.closed_loop_ax = None
+        self.measured_step_info = None
+        self.step_info_patches = []
+        self.step_info_spinbox = {}
+        self.step_info_measured_lbl = {}
+        self.step_info = {
+            "rise_time": 0.12,
+            "overshoot": 10.0,
+            "settling_time": 0.4,
+        }
         self.bode_plot_ref = []
         self.pz_plot_refs = []
         self.file_name = None
@@ -206,13 +215,18 @@ class Window(QDialog):
         layout_plot.addWidget(self.canvas)
         layout_v.addLayout(layout_h)
         layout_v.setStretch(0, 1)
-        layout_v.addWidget(self.tuning_tabs)
+        bottom_row = QHBoxLayout()
+        bottom_row.addWidget(self.tuning_tabs, stretch=1)
+        bottom_row.addWidget(self.createStepInfoGroup())
+        layout_v.addLayout(bottom_row)
         self.setLayout(layout_v)
 
     def reset(self):
         self.model_ref = None
         self.input_ref = None
         self.closed_loop_ref = None
+        self.measured_step_info = None
+        self.step_info_patches = []
         self.bode_plot_ref = []
         self.pz_plot_refs = []
         self.is_system_identified = False
@@ -391,6 +405,98 @@ class Window(QDialog):
             row += 1
 
         return layout_pid
+
+    def createStepInfoGroup(self):
+        specs = {
+            "rise_time": ("Rise time", 0.12, 0.01, 2.0, 0.01, "s"),
+            "overshoot": ("Overshoot", 10.0, 0.0, 100.0, 0.5, "%"),
+            "settling_time": ("Settling time", 0.4, 0.01, 5.0, 0.01, "s"),
+        }
+        group = QGroupBox("Step info")
+        grid = QGridLayout()
+        grid.addWidget(QLabel("Max"), 0, 1)
+        grid.addWidget(QLabel("Measured"), 0, 2)
+        for row, (key, (label, default, lo, hi, step, unit)) in enumerate(
+            specs.items(), start=1
+        ):
+            sb = QDoubleSpinBox()
+            sb.setRange(lo, hi)
+            sb.setSingleStep(step)
+            sb.setDecimals(
+                len(str(step).rstrip("0").split(".")[-1]) if "." in str(step) else 0
+            )
+            sb.setValue(default)
+            sb.valueChanged.connect(self.onStepInfoChanged)
+            self.step_info_spinbox[key] = sb
+
+            measured_lbl = QLabel("—")
+            self.step_info_measured_lbl[key] = measured_lbl
+
+            grid.addWidget(QLabel(label + " (" + unit + ")"), row, 0)
+            grid.addWidget(sb, row, 1)
+            grid.addWidget(measured_lbl, row, 2)
+
+        group.setLayout(grid)
+        return group
+
+    def onStepInfoChanged(self):
+        for key in self.step_info:
+            self.step_info[key] = self.step_info_spinbox[key].value()
+        self.updateStepInfoEnvelope()
+
+    def checkStepInfoViolated(self):
+        info = self.measured_step_info
+        step_info = self.step_info
+        if info["RiseTime"] > step_info["rise_time"]:
+            return True
+        if info["Overshoot"] > step_info["overshoot"]:
+            return True
+        if info["SettlingTime"] > step_info["settling_time"]:
+            return True
+        return False
+
+    def updateStepInfoEnvelope(self):
+        if self.closed_loop_ax is None:
+            return
+
+        for patch in self.step_info_patches:
+            patch.remove()
+        self.step_info_patches = []
+
+        ax = self.closed_loop_ax
+        step_info = self.step_info
+        kw = dict(color="#ff4444", linestyle="--", linewidth=1)
+
+        y_limit = 1.0 + step_info["overshoot"] / 100.0
+        p = ax.axhline(y_limit, **kw)
+        self.step_info_patches.append(p)
+
+        p = ax.plot(
+            [step_info["settling_time"], step_info["settling_time"]], [0, 1.0], **kw
+        )[0]
+        self.step_info_patches.append(p)
+
+        measured_map = {
+            "rise_time": ("RiseTime", lambda v: f"{v:.3f}"),
+            "overshoot": ("Overshoot", lambda v: f"{v:.1f}"),
+            "settling_time": ("SettlingTime", lambda v: f"{v:.3f}"),
+        }
+        for key, (info_key, fmt) in measured_map.items():
+            lbl = self.step_info_measured_lbl[key]
+            if self.measured_step_info is None:
+                lbl.setText("—")
+                lbl.setStyleSheet("")
+            else:
+                measured = self.measured_step_info[info_key]
+                lbl.setText(fmt(measured))
+                if np.isnan(measured):
+                    lbl.setStyleSheet("")
+                elif measured > self.step_info[key]:
+                    lbl.setStyleSheet("color: red")
+                else:
+                    lbl.setStyleSheet("color: green")
+
+        self.canvas.draw()
 
     def updateGainFromSlider(self, gain: str):
         if self.gain_slider[gain].hasFocus():
@@ -765,6 +871,15 @@ class Window(QDialog):
         self.plotBode(open_loop, closed_loop)
 
     def plotClosedLoop(self, t, y):
+        # Compute metrics on pre-disturbance portion only
+        mask = t < 1.0
+        try:
+            self.measured_step_info = ctrl.step_info(
+                y[mask], timepts=t[mask], final_output=1.0
+            )
+        except (IndexError, ValueError):
+            self.measured_step_info = None
+
         if self.closed_loop_ref is None:
             ax = self.figure.add_subplot(3, 3, 7)
             ax.step(t, [1 if i > 0 else 0 for i in t], "k--")
@@ -779,7 +894,7 @@ class Window(QDialog):
             self.closed_loop_ref.set_ydata(y)
             self.closed_loop_ax.set_ylim(np.min(y), np.max([1.5, np.max(y)]))
 
-        self.canvas.draw()
+        self.updateStepInfoEnvelope()
 
     def plotBode(self, open_loop, closed_loop):
 
