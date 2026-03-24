@@ -161,6 +161,27 @@ class Window(QDialog):
         )
         id_params_group.addRow(QLabel("Method"), self.id_method_combo)
 
+        preproc_group = QGroupBox("Pre-processing")
+        preproc_form = QFormLayout()
+        self.f_hp_spinbox = QDoubleSpinBox()
+        self.f_hp_spinbox.setRange(0.0, 50.0)
+        self.f_hp_spinbox.setSingleStep(0.1)
+        self.f_hp_spinbox.setDecimals(1)
+        self.f_hp_spinbox.setValue(0.5)
+        self.f_hp_spinbox.valueChanged.connect(
+            lambda: self.btn_run_sys_id.setEnabled(True)
+        )
+        preproc_form.addRow(QLabel("HP cutoff (Hz)"), self.f_hp_spinbox)
+        self.f_lp_spinbox = QDoubleSpinBox()
+        self.f_lp_spinbox.setRange(1.0, 200.0)
+        self.f_lp_spinbox.setSingleStep(1.0)
+        self.f_lp_spinbox.setDecimals(1)
+        self.f_lp_spinbox.setValue(30.0)
+        self.f_lp_spinbox.valueChanged.connect(
+            lambda: self.btn_run_sys_id.setEnabled(True)
+        )
+        preproc_form.addRow(QLabel("LP cutoff (Hz)"), self.f_lp_spinbox)
+
         input_scale_group = QGroupBox("Input scaling")
         input_scale_group.setToolTip(
             "Scale the input to identify a model at trim airspeed (requires true airspeed data)"
@@ -183,7 +204,10 @@ class Window(QDialog):
         self.line_edit_trim.setEnabled(False)
         input_scale_form.addRow(QLabel("Trim airspeed"), self.line_edit_trim)
         input_scale_group.setLayout(input_scale_form)
-        id_params_group.addRow(input_scale_group)
+        preproc_form.addRow(input_scale_group)
+
+        preproc_group.setLayout(preproc_form)
+        id_params_group.addRow(preproc_group)
 
         self.btn_run_sys_id = QPushButton("Run identification")
         self.btn_run_sys_id.clicked.connect(self.onSysIdClicked)
@@ -607,6 +631,8 @@ class Window(QDialog):
         m = self.sys_id_n_zeros  # order of the numerator (b_0,...,b_m)
         d = self.sys_id_delays  # number of delays
         id = SystemIdentification(n, m, d, self.dt)
+        id.f_hp = self.f_hp_spinbox.value()
+        id.f_lp = self.f_lp_spinbox.value()
 
         use_rls = self.id_method_combo.currentText() == "RLS"
         est = id.fit(self.u.reshape(-1, 1), self.y.reshape(-1, 1), use_rls=use_rls)
