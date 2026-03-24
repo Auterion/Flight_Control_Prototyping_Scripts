@@ -77,12 +77,12 @@ from scipy.signal import detrend
 from system_identification import SystemIdentification
 
 
-def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, use_rls=True):
+def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, method="RLS"):
     try:
         sys_id = SystemIdentification(n_poles, n_zeros, delay, dt)
         sys_id.f_hp = f_hp
         sys_id.f_lp = f_lp
-        est = sys_id.fit(u.reshape(-1, 1), y.reshape(-1, 1), use_rls=use_rls)
+        est = sys_id.fit(u.reshape(-1, 1), y.reshape(-1, 1), method=method)
         Gz = ctrl.TransferFunction(
             est.G_.num_list[0][0], est.G_.den_list[0][0][: n_poles + 1], dt
         )
@@ -105,13 +105,13 @@ class ParamSearchWorker(QThread):
     finished = pyqtSignal(dict, float)
     progress = pyqtSignal(int, int)
 
-    def __init__(self, u, y, t, dt, use_rls):
+    def __init__(self, u, y, t, dt, method):
         super().__init__()
         self.u = u
         self.y = y
         self.t = t
         self.dt = dt
-        self.use_rls = use_rls
+        self.method = method
 
     def run(self):
         n_poles_range = [2, 3, 4, 5, 6]
@@ -144,7 +144,7 @@ class ParamSearchWorker(QThread):
                 delay,
                 f_hp,
                 f_lp,
-                self.use_rls,
+                self.method,
             )
             new_order = n_poles + n_zeros
             best_order = best_params.get("n_poles", 0) + best_params.get("n_zeros", 0)
@@ -242,7 +242,7 @@ class Window(QDialog):
         id_params_group.addRow(QLabel("Delays"), self.line_edit_delays)
 
         self.id_method_combo = QComboBox()
-        self.id_method_combo.addItems(["RLS", "OLS"])
+        self.id_method_combo.addItems(["OLS", "RLS"])
         self.id_method_combo.currentIndexChanged.connect(
             lambda: self.btn_run_sys_id.setEnabled(True)
         )
@@ -476,9 +476,12 @@ class Window(QDialog):
     def onFindParamsClicked(self):
         self.btn_find_params.setEnabled(False)
         self.btn_find_params.setText("Searching... (0%)")
-        use_rls = self.id_method_combo.currentText() == "RLS"
         self._param_search_worker = ParamSearchWorker(
-            self.u.copy(), self.y.copy(), self.t.copy(), self.dt, use_rls
+            self.u.copy(),
+            self.y.copy(),
+            self.t.copy(),
+            self.dt,
+            self.id_method_combo.currentText(),
         )
         self._param_search_worker.progress.connect(self.onParamSearchProgress)
         self._param_search_worker.finished.connect(self.onParamSearchFinished)
@@ -767,8 +770,11 @@ class Window(QDialog):
         id.f_hp = self.f_hp_spinbox.value()
         id.f_lp = self.f_lp_spinbox.value()
 
-        use_rls = self.id_method_combo.currentText() == "RLS"
-        est = id.fit(self.u.reshape(-1, 1), self.y.reshape(-1, 1), use_rls=use_rls)
+        est = id.fit(
+            self.u.reshape(-1, 1),
+            self.y.reshape(-1, 1),
+            method=self.id_method_combo.currentText(),
+        )
 
         self.num = est.G_.num_list[0][0]
         self.den = est.G_.den_list[0][0][0 : n + 1]
