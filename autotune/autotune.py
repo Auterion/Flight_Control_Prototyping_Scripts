@@ -77,6 +77,14 @@ from scipy.signal import detrend
 from system_identification import SystemIdentification
 
 
+def computeNRMSE(y, y_est):
+    # Normalized Root Mean Square Error (NRMSE) expressed as a percentage.
+    norm_ref = np.linalg.norm(y - np.mean(y))
+    if norm_ref < 1e-10:
+        return -np.inf
+    return 100.0 * (1.0 - np.linalg.norm(y - y_est) / norm_ref)
+
+
 def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, method="RLS"):
     try:
         sys_id = SystemIdentification(n_poles, n_zeros, delay, dt)
@@ -93,10 +101,7 @@ def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, method="RLS"):
         _, y_est = ctrl.forced_response(Gz, T=t, U=u_delayed)
         y_detrended = detrend(y[: len(y_est)])
         y_est_detrended = detrend(y_est)
-        norm_ref = np.linalg.norm(y_detrended - np.mean(y_detrended))
-        if norm_ref < 1e-10:
-            return -np.inf
-        return 100.0 * (1.0 - np.linalg.norm(y_detrended - y_est_detrended) / norm_ref)
+        return computeNRMSE(y_detrended, y_est_detrended)
     except Exception:
         return -np.inf
 
@@ -794,11 +799,7 @@ class Window(QDialog):
 
         y_detrended = detrend(self.y[: len(self.y_est)])
         y_est_detrended = detrend(self.y_est)
-        fit = 100 * (
-            1
-            - np.linalg.norm(y_detrended - y_est_detrended)
-            / np.linalg.norm(y_detrended - np.mean(y_detrended))
-        )
+        fit = computeNRMSE(y_detrended, y_est_detrended)
         self.lbl_fit.setText(f"{fit:.1f}%")
         if fit >= 80:
             self.lbl_fit.setStyleSheet("color: green")
