@@ -231,104 +231,13 @@ class Window(QDialog):
         left_menu.addWidget(self.btn_open_log)
 
         id_params_group = QFormLayout()
-        self.line_edit_zeros = QSpinBox()
-        self.line_edit_zeros.setValue(self.sys_id_n_zeros)
-        self.line_edit_zeros.setRange(0, 6)
-        self.line_edit_zeros.valueChanged.connect(self.onZerosChanged)
-        id_params_group.addRow(QLabel("Zeros"), self.line_edit_zeros)
-        self.line_edit_poles = QSpinBox()
-        self.line_edit_poles.setValue(self.sys_id_n_poles)
-        self.line_edit_poles.setRange(0, 6)
-        self.line_edit_poles.valueChanged.connect(self.onPolesChanged)
-        id_params_group.addRow(QLabel("Poles"), self.line_edit_poles)
-        self.line_edit_delays = QSpinBox()
-        self.line_edit_delays.setValue(self.sys_id_delays)
-        self.line_edit_delays.setRange(0, 1000)
-        self.line_edit_delays.valueChanged.connect(self.onDelaysChanged)
-        id_params_group.addRow(QLabel("Delays"), self.line_edit_delays)
-
-        self.id_method_combo = QComboBox()
-        self.id_method_combo.addItems(["OLS", "RLS"])
-        self.id_method_combo.currentIndexChanged.connect(
-            lambda: self.btn_run_sys_id.setEnabled(True)
-        )
-        id_params_group.addRow(QLabel("Method"), self.id_method_combo)
-
-        preproc_group = QGroupBox("Pre-processing")
-        preproc_form = QFormLayout()
-        self.f_hp_spinbox = QDoubleSpinBox()
-        self.f_hp_spinbox.setRange(0.0, 50.0)
-        self.f_hp_spinbox.setSingleStep(0.1)
-        self.f_hp_spinbox.setDecimals(1)
-        self.f_hp_spinbox.setValue(0.5)
-        self.f_hp_spinbox.valueChanged.connect(
-            lambda: self.btn_run_sys_id.setEnabled(True)
-        )
-        preproc_form.addRow(QLabel("HP cutoff (Hz)"), self.f_hp_spinbox)
-        self.f_lp_spinbox = QDoubleSpinBox()
-        self.f_lp_spinbox.setRange(1.0, 200.0)
-        self.f_lp_spinbox.setSingleStep(1.0)
-        self.f_lp_spinbox.setDecimals(1)
-        self.f_lp_spinbox.setValue(30.0)
-        self.f_lp_spinbox.valueChanged.connect(
-            lambda: self.btn_run_sys_id.setEnabled(True)
-        )
-        preproc_form.addRow(QLabel("LP cutoff (Hz)"), self.f_lp_spinbox)
-
-        input_scale_group = QGroupBox("Input scaling")
-        input_scale_group.setToolTip(
-            "Scale the input to identify a model at trim airspeed (requires true airspeed data)"
-        )
-
-        input_scale_form = QFormLayout()
-        self.input_scale_combo = QComboBox()
-        self.input_scale_combo.setEditable(False)
-        self.input_scale_choices = ["True airspeed^2", "True airspeed", "None"]
-        self.input_scale_combo.addItems(self.input_scale_choices)
-        self.input_scale_combo.setEnabled(False)
-        self.input_scale_combo.currentIndexChanged.connect(self.selectInputScale)
-        input_scale_form.addRow(self.input_scale_combo)
-
-        self.line_edit_trim = QDoubleSpinBox()
-        self.trim_airspeed = 20.0
-        self.line_edit_trim.setValue(self.trim_airspeed)
-        self.line_edit_trim.setRange(0.0, 100.0)
-        self.line_edit_trim.textChanged.connect(self.onTrimChanged)
-        self.line_edit_trim.setEnabled(False)
-        input_scale_form.addRow(QLabel("Trim airspeed"), self.line_edit_trim)
-        input_scale_group.setLayout(input_scale_form)
-        preproc_form.addRow(input_scale_group)
-
-        preproc_group.setLayout(preproc_form)
-        id_params_group.addRow(preproc_group)
-
-        self.btn_run_sys_id = QPushButton("Run identification")
-        self.btn_run_sys_id.clicked.connect(self.onSysIdClicked)
-        self.btn_run_sys_id.setEnabled(False)
-
-        self.btn_find_params = QPushButton("Find parameters")
-        self.btn_find_params.clicked.connect(self.onFindParamsClicked)
-        self.btn_find_params.setEnabled(False)
-
-        run_row = QHBoxLayout()
-        run_row.addWidget(self.btn_run_sys_id)
-        run_row.addWidget(self.btn_find_params)
-        id_params_group.addRow(run_row)
-
-        self.lbl_fit = QLabel("—")
-        id_params_group.addRow(QLabel("Fit"), self.lbl_fit)
-
-        self.lbl_stability = QLabel("—")
-        self.btn_stabilize = QPushButton("Stabilize")
-        self.btn_stabilize.setVisible(False)
-        self.btn_stabilize.setToolTip(
-            "Reflects unstable poles inside the unit circle (p → 1/p*)"
-        )
-        self.btn_stabilize.clicked.connect(self.stabilizeModel)
-        stability_row = QHBoxLayout()
-        stability_row.addWidget(self.lbl_stability)
-        stability_row.addWidget(self.btn_stabilize)
-        id_params_group.addRow(QLabel("Stability"), stability_row)
+        self.createModelOrderWidgets(id_params_group)
+        self.createMethodWidget(id_params_group)
+        self.createPreprocessingWidget(id_params_group)
+        self.createRunSysIdButton(id_params_group)
+        self.createFindParamsButton(id_params_group)
+        self.createFitWidget(id_params_group)
+        self.createStabilityWidget(id_params_group)
 
         left_menu.addLayout(id_params_group)
 
@@ -382,6 +291,105 @@ class Window(QDialog):
         self.bode_plot_ref = []
         self.pz_plot_refs = []
         self.is_system_identified = False
+
+    def createModelOrderWidgets(self, layout):
+        self.line_edit_zeros = QSpinBox()
+        self.line_edit_zeros.setValue(self.sys_id_n_zeros)
+        self.line_edit_zeros.setRange(0, 6)
+        self.line_edit_zeros.valueChanged.connect(self.onZerosChanged)
+        layout.addRow(QLabel("Zeros"), self.line_edit_zeros)
+        self.line_edit_poles = QSpinBox()
+        self.line_edit_poles.setValue(self.sys_id_n_poles)
+        self.line_edit_poles.setRange(0, 6)
+        self.line_edit_poles.valueChanged.connect(self.onPolesChanged)
+        layout.addRow(QLabel("Poles"), self.line_edit_poles)
+        self.line_edit_delays = QSpinBox()
+        self.line_edit_delays.setValue(self.sys_id_delays)
+        self.line_edit_delays.setRange(0, 1000)
+        self.line_edit_delays.valueChanged.connect(self.onDelaysChanged)
+        layout.addRow(QLabel("Delays"), self.line_edit_delays)
+
+    def createMethodWidget(self, layout):
+        self.id_method_combo = QComboBox()
+        self.id_method_combo.addItems(["OLS", "RLS"])
+        self.id_method_combo.currentIndexChanged.connect(
+            lambda: self.btn_run_sys_id.setEnabled(True)
+        )
+        layout.addRow(QLabel("Method"), self.id_method_combo)
+
+    def createPreprocessingWidget(self, layout):
+        preproc_group = QGroupBox("Pre-processing")
+        preproc_form = QFormLayout()
+        self.f_hp_spinbox = QDoubleSpinBox()
+        self.f_hp_spinbox.setRange(0.0, 50.0)
+        self.f_hp_spinbox.setSingleStep(0.1)
+        self.f_hp_spinbox.setDecimals(1)
+        self.f_hp_spinbox.setValue(0.5)
+        self.f_hp_spinbox.valueChanged.connect(
+            lambda: self.btn_run_sys_id.setEnabled(True)
+        )
+        preproc_form.addRow(QLabel("HP cutoff (Hz)"), self.f_hp_spinbox)
+        self.f_lp_spinbox = QDoubleSpinBox()
+        self.f_lp_spinbox.setRange(1.0, 200.0)
+        self.f_lp_spinbox.setSingleStep(1.0)
+        self.f_lp_spinbox.setDecimals(1)
+        self.f_lp_spinbox.setValue(30.0)
+        self.f_lp_spinbox.valueChanged.connect(
+            lambda: self.btn_run_sys_id.setEnabled(True)
+        )
+        preproc_form.addRow(QLabel("LP cutoff (Hz)"), self.f_lp_spinbox)
+        input_scale_group = QGroupBox("Input scaling")
+        input_scale_group.setToolTip(
+            "Scale the input to identify a model at trim airspeed (requires true airspeed data)"
+        )
+        input_scale_form = QFormLayout()
+        self.input_scale_combo = QComboBox()
+        self.input_scale_combo.setEditable(False)
+        self.input_scale_choices = ["True airspeed^2", "True airspeed", "None"]
+        self.input_scale_combo.addItems(self.input_scale_choices)
+        self.input_scale_combo.setEnabled(False)
+        self.input_scale_combo.currentIndexChanged.connect(self.selectInputScale)
+        input_scale_form.addRow(self.input_scale_combo)
+        self.line_edit_trim = QDoubleSpinBox()
+        self.trim_airspeed = 20.0
+        self.line_edit_trim.setValue(self.trim_airspeed)
+        self.line_edit_trim.setRange(0.0, 100.0)
+        self.line_edit_trim.textChanged.connect(self.onTrimChanged)
+        self.line_edit_trim.setEnabled(False)
+        input_scale_form.addRow(QLabel("Trim airspeed"), self.line_edit_trim)
+        input_scale_group.setLayout(input_scale_form)
+        preproc_form.addRow(input_scale_group)
+        preproc_group.setLayout(preproc_form)
+        layout.addRow(preproc_group)
+
+    def createRunSysIdButton(self, layout):
+        self.btn_run_sys_id = QPushButton("Run identification")
+        self.btn_run_sys_id.clicked.connect(self.onSysIdClicked)
+        self.btn_run_sys_id.setEnabled(False)
+        layout.addRow(self.btn_run_sys_id)
+
+    def createFindParamsButton(self, layout):
+        self.btn_find_params = QPushButton("Find parameters")
+        self.btn_find_params.clicked.connect(self.onFindParamsClicked)
+        self.btn_find_params.setEnabled(False)
+        layout.addRow(self.btn_find_params)
+
+    def createFitWidget(self, layout):
+        self.lbl_fit = QLabel("—")
+        layout.addRow(QLabel("Fit"), self.lbl_fit)
+
+    def createStabilityWidget(self, layout):
+        self.lbl_stability = QLabel("—")
+        self.btn_stabilize = QPushButton("Stabilize")
+        self.btn_stabilize.setVisible(False)
+        self.btn_stabilize.setToolTip(
+            "Reflects unstable poles inside the unit circle (p → 1/p*)"
+        )
+        self.btn_stabilize.clicked.connect(self.stabilizeModel)
+        stability_row = QHBoxLayout()
+        stability_row.addWidget(self.lbl_stability)
+        stability_row.addWidget(self.btn_stabilize)
+        layout.addRow(QLabel("Stability"), stability_row)
 
     def createTfLayout(self):
         layout_tf = QVBoxLayout()
