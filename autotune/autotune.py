@@ -207,6 +207,8 @@ class Window(QDialog):
         self.sys_id_n_zeros = 2
         self.sys_id_n_poles = 2
 
+        self.kDisturbanceTime = 1.0
+
         # this is the Canvas Widget that displays the `figure`
         # it takes the `figure` instance as a parameter to __init__
         self.canvas = FigureCanvas(self.figure)
@@ -1045,7 +1047,7 @@ class Window(QDialog):
             outputs="y",
         )
         d = np.zeros_like(t_out)
-        d[t_out >= 1.0] = -0.05  # TODO: parameterize
+        d[t_out >= self.kDisturbanceTime] = -0.05  # TODO: parameterize
         _, y_d = ctrl.forced_response(disturbance_loop, t_out, d)
         y_out += y_d
 
@@ -1078,7 +1080,7 @@ class Window(QDialog):
 
     def plotClosedLoop(self, t, y):
         # Compute metrics on pre-disturbance portion only
-        mask = t < 1.0
+        mask = t < self.kDisturbanceTime
         try:
             self.measured_step_info = ctrl.step_info(
                 y[mask], timepts=t[mask], final_output=1.0
