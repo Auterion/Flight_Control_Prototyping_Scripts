@@ -139,25 +139,6 @@ class SystemIdentification(object):
         estimate = SysIdResult(self.getNum(), self.getDen(), self.dt)
         return estimate
 
-    def simulateModel(self, x, u, dt):
-        a_coeffs = np.ones(self.n + 1)
-        b_coeffs = np.zeros(self.m + 1)
-
-        for i in range(self.n):
-            a_coeffs[i + 1] = x[i]
-        for i in range(self.m + 1):
-            b_coeffs[i] = x[i + self.n]
-
-        delays = ctrl.TransferFunction(
-            [1], np.append([1], np.zeros(self.d)), dt, inputs="r", outputs="rd"
-        )
-        plant = ctrl.TransferFunction(b_coeffs, a_coeffs, dt, inputs="rd", outputs="y")
-
-        system = ctrl.interconnect([delays, plant], inputs="r", outputs="y")
-
-        _, y = ctrl.forced_response(system, U=u)
-        return y
-
     def getNum(self):
         num = [
             self.theta_hat.item(i) for i in range(self.n, self.n + self.m + 1)

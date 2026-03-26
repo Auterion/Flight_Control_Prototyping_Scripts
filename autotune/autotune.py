@@ -617,17 +617,6 @@ class Window(QDialog):
             self.step_info[key] = self.step_info_spinbox[key].value()
         self.updateStepInfoEnvelope()
 
-    def checkStepInfoViolated(self):
-        info = self.measured_step_info
-        step_info = self.step_info
-        if info["RiseTime"] > step_info["rise_time"]:
-            return True
-        if info["Overshoot"] > step_info["overshoot"]:
-            return True
-        if info["SettlingTime"] > step_info["settling_time"]:
-            return True
-        return False
-
     def updateStepInfoEnvelope(self):
         if self.closed_loop_ax is None:
             return
