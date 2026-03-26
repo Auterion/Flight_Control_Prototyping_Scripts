@@ -231,11 +231,11 @@ class Window(QDialog):
         left_menu.addWidget(self.btn_open_log)
 
         id_params_group = QFormLayout()
+        self.createPreprocessingWidget(id_params_group)
+        self.createFindParamsButton(id_params_group)
         self.createModelOrderWidgets(id_params_group)
         self.createMethodWidget(id_params_group)
-        self.createPreprocessingWidget(id_params_group)
         self.createRunSysIdButton(id_params_group)
-        self.createFindParamsButton(id_params_group)
         self.createFitWidget(id_params_group)
         self.createStabilityWidget(id_params_group)
 
