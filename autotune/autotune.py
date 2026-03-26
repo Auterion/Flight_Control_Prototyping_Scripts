@@ -110,35 +110,33 @@ class ParamSearchWorker(QThread):
     finished = pyqtSignal(dict, float)
     progress = pyqtSignal(int, int)
 
-    def __init__(self, u, y, t, dt, method):
+    def __init__(self, u, y, t, dt, f_hp, f_lp, method):
         super().__init__()
         self.u = u
         self.y = y
         self.t = t
         self.dt = dt
+        self.f_hp = f_hp
+        self.f_lp = f_lp
         self.method = method
 
     def run(self):
         n_poles_range = [2, 3, 4, 5, 6]
         n_zeros_range = [2, 3, 4, 5, 6]
         delay_range = [0, 1, 2, 3]
-        f_hp_range = [0.0, 0.5, 1.0, 2.0]
-        f_lp_range = [10.0, 20.0, 30.0, 50.0]
 
         combos = [
-            (n_poles, n_zeros, delay, f_hp, f_lp)
+            (n_poles, n_zeros, delay)
             for n_poles in n_poles_range
             for n_zeros in n_zeros_range
             for delay in delay_range
-            for f_hp in f_hp_range
-            for f_lp in f_lp_range
             if n_poles >= n_zeros
         ]
         total = len(combos)
         best_fit = -np.inf
         best_params = {}
 
-        for i, (n_poles, n_zeros, delay, f_hp, f_lp) in enumerate(combos):
+        for i, (n_poles, n_zeros, delay) in enumerate(combos):
             fit = compute_fit(
                 self.u,
                 self.y,
@@ -147,8 +145,8 @@ class ParamSearchWorker(QThread):
                 n_poles,
                 n_zeros,
                 delay,
-                f_hp,
-                f_lp,
+                self.f_hp,
+                self.f_lp,
                 self.method,
             )
             new_order = n_poles + n_zeros
@@ -161,8 +159,6 @@ class ParamSearchWorker(QThread):
                     "n_poles": n_poles,
                     "n_zeros": n_zeros,
                     "delay": delay,
-                    "f_hp": f_hp,
-                    "f_lp": f_lp,
                 }
             self.progress.emit(i + 1, total)
 
@@ -488,6 +484,8 @@ class Window(QDialog):
             self.y.copy(),
             self.t.copy(),
             self.dt,
+            self.f_hp_spinbox.value(),
+            self.f_lp_spinbox.value(),
             self.id_method_combo.currentText(),
         )
         self._param_search_worker.progress.connect(self.onParamSearchProgress)
@@ -501,8 +499,6 @@ class Window(QDialog):
         self.line_edit_poles.setValue(best_params["n_poles"])
         self.line_edit_zeros.setValue(best_params["n_zeros"])
         self.line_edit_delays.setValue(best_params["delay"])
-        self.f_hp_spinbox.setValue(best_params["f_hp"])
-        self.f_lp_spinbox.setValue(best_params["f_lp"])
         self.btn_find_params.setText("Find parameters")
         self.btn_find_params.setEnabled(True)
         self.onSysIdClicked()
