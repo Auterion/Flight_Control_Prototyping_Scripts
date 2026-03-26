@@ -112,6 +112,7 @@ class ParamSearchWorker(QThread):
 
     def __init__(self, u, y, t, dt, f_hp, f_lp, method):
         super().__init__()
+        self._cancel = False
         self.u = u
         self.y = y
         self.t = t
@@ -121,9 +122,9 @@ class ParamSearchWorker(QThread):
         self.method = method
 
     def run(self):
-        n_poles_range = [2, 3, 4, 5, 6]
-        n_zeros_range = [2, 3, 4, 5, 6]
-        delay_range = [0, 1, 2, 3]
+        n_poles_range = range(2, 8)
+        n_zeros_range = range(2, 8)
+        delay_range = range(0, 6)
 
         combos = [
             (n_poles, n_zeros, delay)
@@ -161,6 +162,8 @@ class ParamSearchWorker(QThread):
                     "delay": delay,
                 }
             self.progress.emit(i + 1, total)
+            if self._cancel:
+                break
 
         self.finished.emit(best_params, best_fit)
 
@@ -477,8 +480,13 @@ class Window(QDialog):
             self.computeController()
 
     def onFindParamsClicked(self):
-        self.btn_find_params.setEnabled(False)
-        self.btn_find_params.setText("Searching... (0%)")
+        if (
+            hasattr(self, "_param_search_worker")
+            and self._param_search_worker.isRunning()
+        ):
+            self._param_search_worker._cancel = True
+            return
+        self.btn_find_params.setText("Cancel (0%)")
         self._param_search_worker = ParamSearchWorker(
             self.u.copy(),
             self.y.copy(),
@@ -493,7 +501,7 @@ class Window(QDialog):
         self._param_search_worker.start()
 
     def onParamSearchProgress(self, current, total):
-        self.btn_find_params.setText(f"Searching... ({100 * current // total}%)")
+        self.btn_find_params.setText(f"Cancel ({100 * current // total}%)")
 
     def onParamSearchFinished(self, best_params, best_fit):
         self.line_edit_poles.setValue(best_params["n_poles"])
