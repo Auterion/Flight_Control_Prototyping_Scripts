@@ -150,8 +150,8 @@ class ParamSearchWorker(QThread):
                 self.f_lp,
                 self.method,
             )
-            new_order = n_poles + n_zeros
-            best_order = best_params.get("n_poles", 0) + best_params.get("n_zeros", 0)
+            new_order = n_poles
+            best_order = best_params.get("n_poles", 0)
             # Prefer lower-order models: a higher-order model must improve fit
             # by more than 1% to be accepted, avoiding overfitting.
             if (fit > best_fit + 1.0) or (fit > best_fit and new_order == best_order):
