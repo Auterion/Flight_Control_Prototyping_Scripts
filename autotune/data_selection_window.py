@@ -67,6 +67,30 @@ class DataSelectionWindow(QDialog):
                 "input": "vehicle_rates_setpoint/yaw.0",
                 "output": "vehicle_angular_velocity/xyz[2].0",
             },
+            "GimbalRollRate": {
+                "input": "motor_state/roll.effort_cmd.0",
+                "output": "motor_angular_rates/roll.angular_rate.0",
+            },
+            "GimbalPitchRate": {
+                "input": "motor_state/pitch.effort_cmd.0",
+                "output": "motor_angular_rates/pitch.angular_rate.0",
+            },
+            "GimbalYawRate": {
+                "input": "motor_state/yaw.effort_cmd.0",
+                "output": "motor_angular_rates/yaw.angular_rate.0",
+            },
+            "GimbalRollAtt": {
+                "input": "motor_control/motor_commands.roll.angular_rate_setpoint.0",
+                "output": "attitude_info/roll.0",
+            },
+            "GimbalPitchAtt": {
+                "input": "motor_control/motor_commands.pitch.angular_rate_setpoint.0",
+                "output": "attitude_info/pitch.0",
+            },
+            "GimbalYawAtt": {
+                "input": "motor_control/motor_commands.yaw.angular_rate_setpoint.0",
+                "output": "attitude_info/yaw.0",
+            },
         }
 
         self.presets = {}
