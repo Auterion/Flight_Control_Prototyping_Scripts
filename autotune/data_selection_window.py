@@ -192,10 +192,12 @@ class DataSelectionWindow(QDialog):
             self.combo_y.clear()
             self.combo_y.addItems(list_names)
 
-            # Trigger preset selection
+            # Trigger preset selection. If no preset matches the available
+            # topics, leave the input/output combos for manual configuration.
             self.fillPresets()
-            self.combo_preset.setCurrentIndex(0)
-            self.selectPreset(0)
+            if self.presets:
+                self.combo_preset.setCurrentIndex(0)
+                self.selectPreset(0)
 
     def fillPresets(self):
         self.combo_preset.clear()
@@ -218,7 +220,10 @@ class DataSelectionWindow(QDialog):
         msg.exec_()
 
     def selectPreset(self, index):
-        preset_key = list(self.presets.keys())[index]
+        preset_keys = list(self.presets.keys())
+        if index < 0 or index >= len(preset_keys):
+            return
+        preset_key = preset_keys[index]
         preset = self.presets[preset_key]
         (index_u, index_y) = self.findInputOutputIndex(preset)
 
