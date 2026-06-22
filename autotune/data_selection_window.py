@@ -4,6 +4,9 @@ from data_extractor import DataExtractor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.widgets import SpanSelector
 from pid_analyse_window import PIDAnalyseWindow
+from preset_dialogs import PresetEditDialog
+from presets import load_presets, save_presets
+from PyQt5.QtGui import QBrush, QColor
 from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
@@ -13,7 +16,6 @@ from PyQt5.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QRadioButton,
     QVBoxLayout,
 )
 from scipy import signal
@@ -24,76 +26,10 @@ class DataSelectionWindow(QDialog):
     def __init__(self, filename):
         QDialog.__init__(self)
 
-        self.preset_candidates = {
-            "Rollrate": {
-                "input": "vehicle_torque_setpoint/xyz[0].0",
-                "output": "vehicle_angular_velocity/xyz[0].0",
-                "input_legacy": "actuator_controls_0/control[0].0",
-            },
-            "Pitchrate": {
-                "input": "vehicle_torque_setpoint/xyz[1].0",
-                "output": "vehicle_angular_velocity/xyz[1].0",
-                "input_legacy": "actuator_controls_0/control[1].0",
-            },
-            "Yawrate": {
-                "input": "vehicle_torque_setpoint/xyz[2].0",
-                "output": "vehicle_angular_velocity/xyz[2].0",
-                "input_legacy": "actuator_controls_0/control[2].0",
-            },
-            "Rollrate(FW)": {
-                "input": "vehicle_torque_setpoint/xyz[0].1",
-                "output": "vehicle_angular_velocity/xyz[0].0",
-                "input_legacy": "actuator_controls_1/control[0].0",
-            },
-            "Pitchrate(FW)": {
-                "input": "vehicle_torque_setpoint/xyz[1].1",
-                "output": "vehicle_angular_velocity/xyz[1].0",
-                "input_legacy": "actuator_controls_1/control[1].0",
-            },
-            "Yawrate(FW)": {
-                "input": "vehicle_torque_setpoint/xyz[2].1",
-                "output": "vehicle_angular_velocity/xyz[2].0",
-                "input_legacy": "actuator_controls_1/control[2].0",
-            },
-            "Rollrate(closed-loop)": {
-                "input": "vehicle_rates_setpoint/roll.0",
-                "output": "vehicle_angular_velocity/xyz[0].0",
-            },
-            "Pitchrate(closed-loop)": {
-                "input": "vehicle_rates_setpoint/pitch.0",
-                "output": "vehicle_angular_velocity/xyz[1].0",
-            },
-            "Yawrate(closed-loop)": {
-                "input": "vehicle_rates_setpoint/yaw.0",
-                "output": "vehicle_angular_velocity/xyz[2].0",
-            },
-            "GimbalRollRate": {
-                "input": "motor_state/roll.effort_cmd.0",
-                "output": "motor_angular_rates/roll.angular_rate.0",
-            },
-            "GimbalPitchRate": {
-                "input": "motor_state/pitch.effort_cmd.0",
-                "output": "motor_angular_rates/pitch.angular_rate.0",
-            },
-            "GimbalYawRate": {
-                "input": "motor_state/yaw.effort_cmd.0",
-                "output": "motor_angular_rates/yaw.angular_rate.0",
-            },
-            "GimbalRollAtt": {
-                "input": "motor_control/motor_commands.roll.angular_rate_setpoint.0",
-                "output": "attitude_info/roll.0",
-            },
-            "GimbalPitchAtt": {
-                "input": "motor_control/motor_commands.pitch.angular_rate_setpoint.0",
-                "output": "attitude_info/pitch.0",
-            },
-            "GimbalYawAtt": {
-                "input": "motor_control/motor_commands.yaw.angular_rate_setpoint.0",
-                "output": "attitude_info/yaw.0",
-            },
-        }
+        self.preset_candidates = load_presets()
 
         self.presets = {}
+        self.topic_names = []
 
         self.t = []
         self.u = []
@@ -121,7 +57,15 @@ class DataSelectionWindow(QDialog):
         self.combo_preset.setEditable(False)
 
         self.combo_preset.currentIndexChanged.connect(self.selectPreset)
-        in_out_group.addRow(QLabel("Preset:"), self.combo_preset)
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(self.combo_preset)
+        self.btn_add_preset = QPushButton("Add")
+        self.btn_add_preset.clicked.connect(self.addPreset)
+        preset_row.addWidget(self.btn_add_preset)
+        self.btn_edit_preset = QPushButton("Edit")
+        self.btn_edit_preset.clicked.connect(self.editPreset)
+        preset_row.addWidget(self.btn_edit_preset)
+        in_out_group.addRow(QLabel("Preset:"), preset_row)
 
         self.combo_u = SearchableComboBox()
         self.combo_u.currentIndexChanged.connect(self.selectUData)
@@ -187,30 +131,43 @@ class DataSelectionWindow(QDialog):
                 f"{topic.topic_name}/{topic.variable_name}.{topic.instance}"
                 for topic in self.topics
             ]
+            self.topic_names = list_names
             self.combo_u.clear()
             self.combo_u.addItems(list_names)
             self.combo_y.clear()
             self.combo_y.addItems(list_names)
 
-            # Trigger preset selection. If no preset matches the available
-            # topics, leave the input/output combos for manual configuration.
+            # Show all presets, then select the first one that matches the
+            # available topics. Presets that don't match are still listed (and
+            # editable) but greyed out and won't auto-fill the input/output.
             self.fillPresets()
-            if self.presets:
-                self.combo_preset.setCurrentIndex(0)
-                self.selectPreset(0)
+            for i in range(self.combo_preset.count()):
+                if self.combo_preset.itemText(i) in self.presets:
+                    self.combo_preset.setCurrentIndex(i)
+                    self.selectPreset(i)
+                    break
 
     def fillPresets(self):
+        self.combo_preset.blockSignals(True)
         self.combo_preset.clear()
         self.presets = {}
 
-        for candidate in self.preset_candidates:
+        # List every preset so the user can see and edit all of them. Track
+        # which ones match the loaded log's topics in self.presets.
+        for index, candidate in enumerate(self.preset_candidates):
+            self.combo_preset.addItem(candidate)
             (index_u, index_y) = self.findInputOutputIndex(
                 self.preset_candidates[candidate]
             )
             if index_u > -1 and index_y > -1:
                 self.presets[candidate] = self.preset_candidates[candidate]
+            else:
+                # Grey out presets that don't match the current log.
+                item = self.combo_preset.model().item(index)
+                if item is not None:
+                    item.setForeground(QBrush(QColor("gray")))
 
-        self.combo_preset.addItems(list(self.presets.keys()))
+        self.combo_preset.blockSignals(False)
 
     def printRangeError(self):
         msg = QMessageBox()
@@ -220,11 +177,10 @@ class DataSelectionWindow(QDialog):
         msg.exec_()
 
     def selectPreset(self, index):
-        preset_keys = list(self.presets.keys())
-        if index < 0 or index >= len(preset_keys):
+        name = self.combo_preset.itemText(index)
+        if name not in self.preset_candidates:
             return
-        preset_key = preset_keys[index]
-        preset = self.presets[preset_key]
+        preset = self.preset_candidates[name]
         (index_u, index_y) = self.findInputOutputIndex(preset)
 
         if index_u > -1:
@@ -245,6 +201,62 @@ class DataSelectionWindow(QDialog):
             index_y = self.combo_u.findText(preset["output_legacy"])
 
         return (index_u, index_y)
+
+    def addPreset(self):
+        self._openPresetDialog(create=True)
+
+    def editPreset(self):
+        self._openPresetDialog(create=False)
+
+    def _openPresetDialog(self, create):
+        if not self.topic_names:
+            QMessageBox.information(
+                self, "No log loaded", "Open a log file before editing presets."
+            )
+            return
+
+        # The currently selected preset (from the topic-matched subset shown in
+        # the combo); may be empty if no preset matched the log.
+        selected_name = self.combo_preset.currentText()
+        if selected_name not in self.preset_candidates:
+            selected_name = None
+
+        if not create and selected_name is None:
+            QMessageBox.information(
+                self, "No preset selected", "Select a preset to edit first."
+            )
+            return
+
+        dialog = PresetEditDialog(
+            self,
+            create,
+            selected_name,
+            self.preset_candidates,
+            self.topic_names,
+            self.combo_u.currentText(),
+            self.combo_y.currentText(),
+        )
+        dialog.exec_()
+
+        if dialog.result_action == "save":
+            if dialog.remove_name and dialog.remove_name != dialog.name:
+                self.preset_candidates.pop(dialog.remove_name, None)
+            self.preset_candidates[dialog.name] = dialog.preset
+            target = dialog.name
+        elif dialog.result_action == "delete":
+            self.preset_candidates.pop(dialog.remove_name, None)
+            target = None
+        else:
+            return
+
+        save_presets(self.preset_candidates)
+        self.fillPresets()
+
+        # Reselect the affected preset if it is still present and matches.
+        if target is not None:
+            index = self.combo_preset.findText(target)
+            if index > -1:
+                self.combo_preset.setCurrentIndex(index)
 
     def selectUData(self, index):
         self.index_u = index
