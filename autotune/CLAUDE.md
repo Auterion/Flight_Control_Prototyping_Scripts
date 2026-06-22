@@ -28,6 +28,16 @@ python3 autotune.py
 poetry run python3 simulated_autotune.py
 ```
 
+**Run the unit/functional tests:**
+```bash
+# pytest is in the dev group; the GUI tests need Qt's offscreen platform
+QT_QPA_PLATFORM=offscreen poetry run pytest -v
+```
+`test_presets.py` covers preset load/save (seed, round-trip, order, corrupt-file
+fallback); `test_preset_dialogs.py` drives `PresetEditDialog` headlessly to verify
+the add/edit/rename/create/delete behavior. These run in CI via
+`.github/workflows/autotune_tests.yml`.
+
 ## Code Quality
 
 The root repo uses pre-commit hooks with **black** (formatting) and **isort** (imports, Black profile). Run manually:
