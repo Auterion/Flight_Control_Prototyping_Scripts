@@ -37,6 +37,9 @@ from PyQt5.QtWidgets import (
 
 COL_SHOW, COL_SUMMARY, COL_EDIT, COL_REMOVE = range(4)
 
+EDIT_LABEL = "⚙"
+REMOVE_LABEL = "✕"
+
 # Combined trace is always black; individual filters cycle through this palette
 # by their position in the chain (red is reserved for the cursor).
 COMBINED_COLOR = "black"
@@ -73,11 +76,10 @@ class FilterChainWidget(QWidget):
         self.btn_add = QPushButton("＋ Add filter")
         self.btn_add.clicked.connect(self._on_add)
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel("Sampling freq:"))
-        top.addWidget(self.spin_fs)
-        top.addStretch()
-        top.addWidget(self.btn_add)
+        fs_row = QHBoxLayout()
+        fs_row.addWidget(QLabel("Sampling freq:"))
+        fs_row.addWidget(self.spin_fs)
+        fs_row.addStretch()
 
         # --- table ---
         self.table = QTableWidget(0, 4)
@@ -85,27 +87,41 @@ class FilterChainWidget(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(COL_SUMMARY, QHeaderView.Stretch)
-        header.setSectionResizeMode(COL_SHOW, QHeaderView.ResizeToContents)
-        # ResizeToContents measures cell *items*, not embedded widgets, so it
-        # clips the buttons. Give the button columns fixed widths sized to the
-        # widest button label instead.
-        for col in (COL_EDIT, COL_REMOVE):
+        header.setStretchLastSection(False)
+        # Default minimum (~36px) would keep the compact icon columns too wide.
+        header.setMinimumSectionSize(10)
+        # Summary column follows its text; the others are fixed. ResizeToContents
+        # measures cell *items* (the summary text) but not embedded widgets, so
+        # the widget columns get fixed widths sized to their content instead.
+        header.setSectionResizeMode(COL_SUMMARY, QHeaderView.ResizeToContents)
+        for col in (COL_SHOW, COL_EDIT, COL_REMOVE):
             header.setSectionResizeMode(col, QHeaderView.Fixed)
-        self.table.setColumnWidth(COL_EDIT, make_button_cell("Edit").minimumWidth() + 8)
         self.table.setColumnWidth(
-            COL_REMOVE, make_button_cell("Remove").minimumWidth() + 8
+            COL_SHOW, self.table.fontMetrics().horizontalAdvance("Show") + 16
         )
-        self.table.setMaximumHeight(220)
+        self.table.setColumnWidth(
+            COL_EDIT, make_button_cell(EDIT_LABEL, compact=True).width() + 2
+        )
+        self.table.setColumnWidth(
+            COL_REMOVE, make_button_cell(REMOVE_LABEL, compact=True).width() + 2
+        )
+
+        # --- left panel: fs on top, table, then add button ---
+        left = QVBoxLayout()
+        left.addLayout(fs_row)
+        left.addWidget(self.table)
+        left.addWidget(self.btn_add)
+        left.addStretch(1)
 
         # --- plot ---
         self.canvas = FilterResponseCanvas(figsize=(6, 6))
 
-        layout = QVBoxLayout(self)
-        layout.addLayout(top)
-        layout.addWidget(self.table)
-        layout.addWidget(self.canvas, 1)
+        main = QHBoxLayout(self)
+        main.addLayout(left)
+        main.addWidget(self.canvas, 1)
 
         self._rebuild_table()
         self._replot()
@@ -127,15 +143,22 @@ class FilterChainWidget(QWidget):
             )
             self.table.setCellWidget(row, COL_SHOW, self._center(show))
 
-            self.table.setItem(row, COL_SUMMARY, QTableWidgetItem(flt.summary()))
+            # Type name on the first line, parameters on the second.
+            self.table.setItem(
+                row, COL_SUMMARY, QTableWidgetItem(f"{flt.name}\n{flt.params_text()}")
+            )
 
-            edit = make_button_cell("Edit")
+            edit = make_button_cell(EDIT_LABEL, compact=True)
+            edit.setToolTip("Edit this filter")
             edit.clicked.connect(lambda _, r=row: self._on_edit(r))
             self.table.setCellWidget(row, COL_EDIT, edit)
 
-            remove = make_button_cell("Remove", danger=True)
+            remove = make_button_cell(REMOVE_LABEL, danger=True, compact=True)
+            remove.setToolTip("Remove this filter")
             remove.clicked.connect(lambda _, r=row: self._on_remove(r))
             self.table.setCellWidget(row, COL_REMOVE, remove)
+
+        self._fit_table_size()
 
     @staticmethod
     def _center(widget):
@@ -145,6 +168,19 @@ class FilterChainWidget(QWidget):
         lay.setAlignment(Qt.AlignCenter)
         lay.addWidget(widget)
         return wrap
+
+    def _fit_table_size(self):
+        """Size the table to exactly fit its columns and rows (no empty frame)."""
+        self.table.resizeColumnToContents(COL_SUMMARY)
+        self.table.resizeRowsToContents()
+        frame = 2 * self.table.frameWidth()
+
+        width = sum(self.table.columnWidth(c) for c in range(self.table.columnCount()))
+        self.table.setFixedWidth(width + frame)
+
+        height = self.table.horizontalHeader().height()
+        height += sum(self.table.rowHeight(r) for r in range(self.table.rowCount()))
+        self.table.setFixedHeight(height + frame)
 
     # --- callbacks -----------------------------------------------------
     def _on_fs_changed(self, *_):

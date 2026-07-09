@@ -56,13 +56,17 @@ class FilterType:
         b, a = self.func(params, fs)
         return np.asarray(b, dtype=float), np.asarray(a, dtype=float)
 
-    def summary(self, params: Dict[str, float]) -> str:
+    def params_text(self, params: Dict[str, float]) -> str:
         parts = []
         for spec in self.params:
             value = params.get(spec.key, spec.default)
             unit = f" {spec.unit}" if spec.unit else ""
-            parts.append(f"{spec.label.lower()}: {_fmt(value)}{unit}")
-        return f"{self.name} — " + ", ".join(parts)
+            parts.append(f"{spec.label}: {_fmt(value)}{unit}")
+        return ", ".join(parts)
+
+    def summary(self, params: Dict[str, float]) -> str:
+        text = self.params_text(params)
+        return f"{self.name} — {text}" if text else self.name
 
 
 def _fmt(value: float) -> str:
@@ -199,9 +203,9 @@ def _bandstop2_butter(p, fs):
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
-_FC = ParamSpec("fc", "Cutoff freq", 20.0, "Hz", minimum=0.01, maximum=1e6)
-_FC_NOTCH = ParamSpec("fc", "Center freq", 80.0, "Hz", minimum=0.01, maximum=1e6)
-_BW = ParamSpec("bw", "Bandwidth", 30.0, "Hz", minimum=0.01, maximum=1e6)
+_FC = ParamSpec("fc", "f_c", 20.0, "Hz", minimum=0.01, maximum=1e6)
+_FC_NOTCH = ParamSpec("fc", "f_c", 80.0, "Hz", minimum=0.01, maximum=1e6)
+_BW = ParamSpec("bw", "BW", 30.0, "Hz", minimum=0.01, maximum=1e6)
 _ZETA = ParamSpec("zeta", "Damping", 1.0, "", minimum=0.01, maximum=10.0)
 
 FILTER_TYPES: Dict[str, FilterType] = {
@@ -254,8 +258,15 @@ class Filter:
     def type(self) -> FilterType:
         return FILTER_TYPES[self.type_id]
 
+    @property
+    def name(self) -> str:
+        return self.type.name
+
     def coefficients(self, fs: float) -> Coefficients:
         return self.type.coefficients(self.params, fs)
+
+    def params_text(self) -> str:
+        return self.type.params_text(self.params)
 
     def summary(self) -> str:
         return self.type.summary(self.params)
