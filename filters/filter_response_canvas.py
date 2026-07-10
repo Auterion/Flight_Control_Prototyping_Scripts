@@ -21,7 +21,6 @@ from filter_library import frequency_response, group_delay_ms
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.transforms import blended_transform_factory
-from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QVBoxLayout, QWidget
 
 CURSOR_COLOR = "red"
@@ -132,15 +131,15 @@ class FilterResponseCanvas(QWidget):
     # Cursor
     # ------------------------------------------------------------------
     def _on_press(self, event):
+        # Any left-click (with or without shift) places the cursor and starts
+        # a drag.
         if event.button != 1 or event.inaxes is None or event.xdata is None:
-            return
-        if not self._is_shift(event):
             return
         self._dragging = True
         self._set_cursor(event.xdata)
 
     def _on_motion(self, event):
-        # Keep tracking while the button is held (shift may be released mid-drag).
+        # Keep tracking while the button is held.
         if not self._dragging or event.inaxes is None or event.xdata is None:
             return
         self._set_cursor(event.xdata)
@@ -155,17 +154,6 @@ class FilterResponseCanvas(QWidget):
             return
         self._cursor_freq = freq
         self._draw_cursor()
-
-    @staticmethod
-    def _is_shift(event):
-        # Prefer the Qt event (reliable across backends); fall back to mpl key.
-        gui = getattr(event, "guiEvent", None)
-        if gui is not None:
-            try:
-                return bool(gui.modifiers() & Qt.ShiftModifier)
-            except (AttributeError, TypeError):
-                pass
-        return event.key in ("shift", "shift+shift")
 
     def _remove_cursor_artists(self):
         for art in self._cursor_artists:
