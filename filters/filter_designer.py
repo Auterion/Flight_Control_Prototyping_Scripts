@@ -29,7 +29,7 @@ class FilterDesigner(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Digital filter designer")
-        self.widget = FilterChainWidget(fs=1000.0)
+        self.widget = FilterChainWidget(fs=800.0)
         self.setCentralWidget(self.widget)
         self.resize(1000, 800)
 
