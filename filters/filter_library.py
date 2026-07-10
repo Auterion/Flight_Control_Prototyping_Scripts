@@ -325,10 +325,12 @@ def frequency_response(b, a, fs, n=2048):
 
 def group_delay_ms(b, a, fs, n=2048):
     """Return (freq_hz, group_delay_ms)."""
-    with warnings.catch_warnings():
-        # High-pass / band-stop chains are near-singular at DC (0 Hz), which we
-        # discard when plotting on a log axis anyway.
-        warnings.filterwarnings("ignore", message=".*singularity may be present.*")
+    with warnings.catch_warnings(), np.errstate(divide="ignore", invalid="ignore"):
+        # High-pass / band-stop chains are singular at DC (0 Hz), which we
+        # discard when plotting on a log axis anyway. scipy phrases this either
+        # as "singularity may be present" or "group delay is singular", plus a
+        # numpy divide warning (silenced via errstate).
+        warnings.filterwarnings("ignore", message=".*singular.*")
         w, gd = signal.group_delay((b, a), w=n, fs=fs)
     return w, gd / fs * 1e3
 

@@ -120,7 +120,7 @@ def test_remove_filter(qapp):
     assert len(w.chain) == 1
     assert w.chain[0].type_id == "notch2"
     assert w.table.rowCount() == 1
-    assert len(w._show_flags) == 1
+    assert len(w._enabled) == 1
 
 
 # --- plotting ---------------------------------------------------------------
@@ -130,32 +130,45 @@ def test_combined_trace_always_present_and_black(qapp):
     assert colors.get("Combined") == COMBINED_COLOR
 
 
-def test_show_toggle_overlays_individual_filter(qapp):
+def test_disable_removes_filter_from_graphs(qapp):
     w = _make(Filter("lpf2_butter", {"fc": 20.0}))
-    # Rows are shown by default: combined + the one filter.
+    # Enabled by default: combined + the one filter.
     assert "Combined" in _line_colors(w)
     assert len(_line_colors(w)) == 2
 
-    w._on_show_toggled(0, False)
-    assert len(_line_colors(w)) == 1  # only combined once the row is hidden
+    w._on_enabled_toggled(0, False)
+    # Disabling the only filter leaves no combined trace and no overlay.
+    assert len(_line_colors(w)) == 0
 
 
-def test_rows_shown_by_default(qapp):
+def test_disable_excludes_filter_from_combined(qapp):
+    lpf = Filter("lpf2_butter", {"fc": 20.0})
+    notch = Filter("notch2", {"fc": 80.0, "bw": 30.0})
+    w = _make(lpf, notch)
+
+    w._on_enabled_toggled(1, False)  # disable the notch
+
+    # The combined chain now equals just the enabled (low-pass) filter.
+    b, a = w.enabled_chain().coefficients(w.fs)
+    b_lpf, a_lpf = FilterChain([lpf]).coefficients(w.fs)
+    assert list(b) == list(b_lpf)
+    assert list(a) == list(a_lpf)
+
+
+def test_rows_enabled_by_default(qapp):
     w = _make(Filter("lpf1_butter"), Filter("notch2"))
-    assert w._show_flags == [True, True]
+    assert w._enabled == [True, True]
 
 
-def test_colors_stable_across_show_toggles(qapp):
+def test_colors_stable_across_enable_toggles(qapp):
     w = _make(
         Filter("lpf2_butter", {"fc": 20.0}),
         Filter("notch2", {"fc": 80.0, "bw": 30.0}),
         Filter("hpf1_butter", {"fc": 5.0}),
     )
-    for r in range(3):
-        w._on_show_toggled(r, True)
     all_shown = _line_colors(w)
 
-    w._on_show_toggled(1, False)  # hide the middle filter
+    w._on_enabled_toggled(1, False)  # disable the middle filter
     reduced = _line_colors(w)
 
     common = set(all_shown) & set(reduced)

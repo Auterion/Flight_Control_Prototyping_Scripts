@@ -35,7 +35,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-COL_SHOW, COL_SUMMARY, COL_EDIT, COL_REMOVE = range(4)
+COL_ENABLE, COL_SUMMARY, COL_EDIT, COL_REMOVE = range(4)
 
 EDIT_LABEL = "⚙"
 REMOVE_LABEL = "✕"
@@ -63,7 +63,7 @@ class FilterChainWidget(QWidget):
     def __init__(self, parent=None, fs=1000.0, chain: FilterChain = None):
         super().__init__(parent)
         self.chain = chain if chain is not None else FilterChain()
-        self._show_flags = [True] * len(self.chain)
+        self._enabled = [True] * len(self.chain)
 
         # --- top row: fs + add ---
         self.spin_fs = QDoubleSpinBox()
@@ -83,7 +83,7 @@ class FilterChainWidget(QWidget):
 
         # --- table ---
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Show", "Filter", "", ""])
+        self.table.setHorizontalHeaderLabels(["EN", "Filter", "", ""])
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -97,10 +97,10 @@ class FilterChainWidget(QWidget):
         # measures cell *items* (the summary text) but not embedded widgets, so
         # the widget columns get fixed widths sized to their content instead.
         header.setSectionResizeMode(COL_SUMMARY, QHeaderView.ResizeToContents)
-        for col in (COL_SHOW, COL_EDIT, COL_REMOVE):
+        for col in (COL_ENABLE, COL_EDIT, COL_REMOVE):
             header.setSectionResizeMode(col, QHeaderView.Fixed)
         self.table.setColumnWidth(
-            COL_SHOW, self.table.fontMetrics().horizontalAdvance("Show") + 16
+            COL_ENABLE, self.table.fontMetrics().horizontalAdvance("EN") + 16
         )
         self.table.setColumnWidth(
             COL_EDIT, make_button_cell(EDIT_LABEL, compact=True).width() + 2
@@ -137,11 +137,12 @@ class FilterChainWidget(QWidget):
         for row, flt in enumerate(self.chain):
             self.table.insertRow(row)
 
-            show = make_checkbox_cell(self._show_flags[row])
-            show.toggled.connect(
-                lambda checked, r=row: self._on_show_toggled(r, checked)
+            enable = make_checkbox_cell(self._enabled[row])
+            enable.setToolTip("Enable this filter in the chain")
+            enable.toggled.connect(
+                lambda checked, r=row: self._on_enabled_toggled(r, checked)
             )
-            self.table.setCellWidget(row, COL_SHOW, self._center(show))
+            self.table.setCellWidget(row, COL_ENABLE, self._center(enable))
 
             # Type name on the first line, parameters on the second.
             self.table.setItem(
@@ -191,7 +192,7 @@ class FilterChainWidget(QWidget):
         dlg = FilterEditDialog(self, fs=self.fs)
         if dlg.exec_() == FilterEditDialog.Accepted and dlg.result_filter:
             self.chain.add(dlg.result_filter)
-            self._show_flags.append(True)
+            self._enabled.append(True)
             self._rebuild_table()
             self._replot()
             self.changed.emit()
@@ -206,27 +207,38 @@ class FilterChainWidget(QWidget):
 
     def _on_remove(self, row):
         self.chain.remove(row)
-        del self._show_flags[row]
+        del self._enabled[row]
         self._rebuild_table()
         self._replot()
         self.changed.emit()
 
-    def _on_show_toggled(self, row, checked):
-        self._show_flags[row] = checked
+    def _on_enabled_toggled(self, row, checked):
+        self._enabled[row] = checked
         self._replot()
+        self.changed.emit()
+
+    def enabled_chain(self):
+        """The chain restricted to the filters currently enabled."""
+        return FilterChain(
+            [flt for row, flt in enumerate(self.chain) if self._enabled[row]]
+        )
 
     # --- plotting ------------------------------------------------------
     def _replot(self):
         traces = []
         for row, flt in enumerate(self.chain):
-            if self._show_flags[row]:
-                b, a = flt.coefficients(self.fs)
-                # Colour is tied to the filter's position in the chain so it
-                # stays stable regardless of which filters are shown/hidden.
-                color = FILTER_COLORS[row % len(FILTER_COLORS)]
-                traces.append(Trace(b, a, label=flt.summary(), bold=False, color=color))
-        if len(self.chain) > 0:
-            b, a = self.chain.coefficients(self.fs)
+            # Disabled filters are removed from the chain and hidden entirely.
+            if not self._enabled[row]:
+                continue
+            b, a = flt.coefficients(self.fs)
+            # Colour is tied to the filter's position in the chain so it
+            # stays stable regardless of which filters are enabled.
+            color = FILTER_COLORS[row % len(FILTER_COLORS)]
+            traces.append(Trace(b, a, label=flt.summary(), bold=False, color=color))
+
+        enabled = self.enabled_chain()
+        if len(enabled) > 0:
+            b, a = enabled.coefficients(self.fs)
             traces.append(
                 Trace(b, a, label="Combined", bold=True, color=COMBINED_COLOR)
             )
