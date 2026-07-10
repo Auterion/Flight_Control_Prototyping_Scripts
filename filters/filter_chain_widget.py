@@ -63,7 +63,7 @@ class FilterChainWidget(QWidget):
     def __init__(self, parent=None, fs=1000.0, chain: FilterChain = None):
         super().__init__(parent)
         self.chain = chain if chain is not None else FilterChain()
-        self._show_flags = [False] * len(self.chain)
+        self._show_flags = [True] * len(self.chain)
 
         # --- top row: fs + add ---
         self.spin_fs = QDoubleSpinBox()
@@ -191,7 +191,7 @@ class FilterChainWidget(QWidget):
         dlg = FilterEditDialog(self, fs=self.fs)
         if dlg.exec_() == FilterEditDialog.Accepted and dlg.result_filter:
             self.chain.add(dlg.result_filter)
-            self._show_flags.append(False)
+            self._show_flags.append(True)
             self._rebuild_table()
             self._replot()
             self.changed.emit()

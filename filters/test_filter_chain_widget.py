@@ -132,12 +132,17 @@ def test_combined_trace_always_present_and_black(qapp):
 
 def test_show_toggle_overlays_individual_filter(qapp):
     w = _make(Filter("lpf2_butter", {"fc": 20.0}))
+    # Rows are shown by default: combined + the one filter.
     assert "Combined" in _line_colors(w)
-    assert len(_line_colors(w)) == 1  # only combined until a row is shown
+    assert len(_line_colors(w)) == 2
 
-    w._on_show_toggled(0, True)
-    labels = _line_colors(w)
-    assert len(labels) == 2  # combined + the shown filter
+    w._on_show_toggled(0, False)
+    assert len(_line_colors(w)) == 1  # only combined once the row is hidden
+
+
+def test_rows_shown_by_default(qapp):
+    w = _make(Filter("lpf1_butter"), Filter("notch2"))
+    assert w._show_flags == [True, True]
 
 
 def test_colors_stable_across_show_toggles(qapp):
