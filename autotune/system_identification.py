@@ -45,6 +45,8 @@ from scipy.optimize import lsq_linear
 
 
 def apply_filters(u, y, f_hp, f_lp, dt):
+    u = np.asarray(u).ravel()
+    y = np.asarray(y).ravel()
     n_steps = len(u)
 
     if f_hp > 0.0:
