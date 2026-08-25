@@ -61,6 +61,7 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QRadioButton,
@@ -72,6 +73,7 @@ from PyQt5.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 from scipy.signal import detrend
 from system_identification import SystemIdentification
@@ -183,6 +185,7 @@ class Window(QDialog):
         self.model_ref = None
         self.input_ref = None
         self.closed_loop_ref = None
+        self.closed_loop_step_ref = None
         self.closed_loop_ax = None
         self.measured_step_info = None
         self.step_info_patches = []
@@ -212,6 +215,9 @@ class Window(QDialog):
         self.sys_id_n_poles = 2
 
         self.kDisturbanceTime = 1.0
+        self.step_duration = 2.0
+        self.disturbance_amplitude = -0.05
+        self.step_sim_spinbox = {}
 
         # this is the Canvas Widget that displays the `figure`
         # it takes the `figure` instance as a parameter to __init__
@@ -281,6 +287,7 @@ class Window(QDialog):
         self.model_ref = None
         self.input_ref = None
         self.closed_loop_ref = None
+        self.closed_loop_step_ref = None
         self.measured_step_info = None
         self.step_info_patches = []
         self.lbl_fit.setText("—")
@@ -628,8 +635,70 @@ class Window(QDialog):
             grid.addWidget(sb, row, 1)
             grid.addWidget(measured_lbl, row, 2)
 
+        btn_plot_options = QPushButton("Plot options")
+        btn_plot_options.setMenu(self.createPlotOptionsMenu(btn_plot_options))
+        grid.addWidget(btn_plot_options, len(specs) + 1, 0, 1, 3)
+
         group.setLayout(grid)
         return group
+
+    def createPlotOptionsMenu(self, parent):
+        sim_specs = {
+            "step_duration": (
+                "Plot duration",
+                self.step_duration,
+                0.1,
+                20.0,
+                1.0,
+                1,
+                "s",
+            ),
+            "disturbance_time": (
+                "Disturbance time",
+                self.kDisturbanceTime,
+                0.0,
+                20.0,
+                1.0,
+                1,
+                "s",
+            ),
+            "disturbance_amplitude": (
+                "Disturbance ampl.",
+                self.disturbance_amplitude,
+                -1.0,
+                1.0,
+                0.1,
+                2,
+                "",
+            ),
+        }
+        menu = QMenu(parent)
+        content = QWidget(menu)
+        form = QFormLayout(content)
+        for key, (label, default, lo, hi, step, decimals, unit) in sim_specs.items():
+            sb = QDoubleSpinBox()
+            sb.setRange(lo, hi)
+            sb.setSingleStep(step)
+            sb.setDecimals(decimals)
+            sb.setValue(default)
+            sb.valueChanged.connect(self.onStepSimChanged)
+            self.step_sim_spinbox[key] = sb
+
+            unit_str = " (" + unit + ")" if unit else ""
+            form.addRow(label + unit_str, sb)
+
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(content)
+        menu.addAction(action)
+        return menu
+
+    def onStepSimChanged(self):
+        self.step_duration = self.step_sim_spinbox["step_duration"].value()
+        self.kDisturbanceTime = self.step_sim_spinbox["disturbance_time"].value()
+        self.disturbance_amplitude = self.step_sim_spinbox[
+            "disturbance_amplitude"
+        ].value()
+        self.updateClosedLoop()
 
     def onStepInfoChanged(self):
         for key in self.step_info:
@@ -1037,7 +1106,9 @@ class Window(QDialog):
             outputs="y",
         )
 
-        t_out, y_out = ctrl.step_response(closed_loop, T=np.arange(0, 2, dt))
+        t_out, y_out = ctrl.step_response(
+            closed_loop, T=np.arange(0, self.step_duration, dt)
+        )
 
         # Add disturbance
         sum_feedback_no_ref = ctrl.summing_junction(inputs=["-y"], output="e")
@@ -1060,7 +1131,7 @@ class Window(QDialog):
             outputs="y",
         )
         d = np.zeros_like(t_out)
-        d[t_out >= self.kDisturbanceTime] = -0.05  # TODO: parameterize
+        d[t_out >= self.kDisturbanceTime] = self.disturbance_amplitude
         _, y_d = ctrl.forced_response(disturbance_loop, t_out, d)
         y_out += y_d
 
@@ -1101,9 +1172,10 @@ class Window(QDialog):
         except (IndexError, ValueError):
             self.measured_step_info = None
 
+        step_ref = [1 if i > 0 else 0 for i in t]
         if self.closed_loop_ref is None:
             ax = self.figure.add_subplot(3, 3, 7)
-            ax.step(t, [1 if i > 0 else 0 for i in t], "k--")
+            self.closed_loop_step_ref = ax.step(t, step_ref, "k--")[0]
             plot_ref = ax.plot(t, y)
             self.closed_loop_ref = plot_ref[0]
             self.closed_loop_ax = ax
@@ -1111,9 +1183,11 @@ class Window(QDialog):
             ax.set_xlabel("Time (s)")
             ax.set_ylabel("Amplitude (rad/s)")
         else:
+            self.closed_loop_step_ref.set_data(t, step_ref)
             self.closed_loop_ref.set_xdata(t)
             self.closed_loop_ref.set_ydata(y)
             self.closed_loop_ax.set_ylim(np.min(y), np.max([1.5, np.max(y)]))
+        self.closed_loop_ax.set_xlim(t[0], t[-1])
 
         self.updateStepInfoEnvelope()
 
