@@ -170,6 +170,14 @@ class ParamSearchWorker(QThread):
         self.finished.emit(best_params, best_fit)
 
 
+def thresholdColor(value, limit, limit_is_minimum):
+    """Green when `value` respects `limit`, red when it violates it, None if unknown."""
+    if value is None or not np.isfinite(value):
+        return None
+    respected = value >= limit if limit_is_minimum else value <= limit
+    return "green" if respected else "red"
+
+
 def isNumber(value):
     try:
         float(value)
@@ -197,6 +205,7 @@ class Window(QDialog):
             "settling_time": 0.4,
         }
         self.bode_plot_ref = []
+        self.margin_text_refs = {}
         self.pz_plot_refs = []
         self.file_name = None
         self.is_system_identified = False
@@ -215,6 +224,8 @@ class Window(QDialog):
         self.sys_id_n_poles = 2
 
         self.kDisturbanceTime = 1.0
+        self.kMinGainMarginDb = 6.0
+        self.kMinPhaseMarginDeg = 45.0
         self.step_duration = 2.0
         self.disturbance_amplitude = -0.05
         self.step_sim_spinbox = {}
@@ -296,6 +307,7 @@ class Window(QDialog):
         self.lbl_stability.setStyleSheet("")
         self.btn_stabilize.setVisible(False)
         self.bode_plot_ref = []
+        self.margin_text_refs = {}
         self.pz_plot_refs = []
         self.is_system_identified = False
 
@@ -739,12 +751,10 @@ class Window(QDialog):
             else:
                 measured = self.measured_step_info[info_key]
                 lbl.setText(fmt(measured))
-                if np.isnan(measured):
-                    lbl.setStyleSheet("")
-                elif measured > self.step_info[key]:
-                    lbl.setStyleSheet("color: red")
-                else:
-                    lbl.setStyleSheet("color: green")
+                color = thresholdColor(
+                    measured, self.step_info[key], limit_is_minimum=False
+                )
+                lbl.setStyleSheet(f"color: {color}" if color else "")
 
         self.canvas.draw()
 
@@ -1201,7 +1211,21 @@ class Window(QDialog):
             gain_crossover,
             stab_margin_w,
         ) = ctrl.stability_margins(open_loop)
-        stability_margins_text = f"Gain margin: {20 * np.log10(gain_margin):.2f}dB (@{phase_crossover / (2 * np.pi):.1f}Hz)\nPhase margin: {phase_margin:.1f}deg (@{gain_crossover / (2 * np.pi):.1f}Hz)"
+        gain_margin_db = 20 * np.log10(gain_margin)
+        margins = {
+            "gain": (
+                f"Gain margin: {gain_margin_db:.2f}dB (@{phase_crossover / (2 * np.pi):.1f}Hz)",
+                thresholdColor(
+                    gain_margin_db, self.kMinGainMarginDb, limit_is_minimum=True
+                ),
+            ),
+            "phase": (
+                f"Phase margin: {phase_margin:.1f}deg (@{gain_crossover / (2 * np.pi):.1f}Hz)",
+                thresholdColor(
+                    phase_margin, self.kMinPhaseMarginDeg, limit_is_minimum=True
+                ),
+            ),
+        }
 
         w = np.logspace(-1, 3, 40).tolist()
         (mag_ol, phase_ol, omega_ol) = ctrl.frequency_response(
@@ -1236,13 +1260,14 @@ class Window(QDialog):
 
             ax.set_xlabel("Frequency (Hz)")
             ax.set_ylabel("Phase (deg)")
-            self.gain_margin_text_ref = ax.text(
-                0.01,
-                0.9,
-                stability_margins_text,
-                verticalalignment="top",
-                transform=ax.transAxes,
-            )
+            for row, key in enumerate(margins):
+                self.margin_text_refs[key] = ax.text(
+                    0.01,
+                    0.9 - 0.12 * row,
+                    "",
+                    verticalalignment="top",
+                    transform=ax.transAxes,
+                )
 
         else:
             self.bode_plot_ref[0].set_xdata(f)
@@ -1251,12 +1276,15 @@ class Window(QDialog):
             self.bode_plot_ref[1].set_xdata(f)
             mag_cl_db = 20 * np.log10(mag_cl)
             self.bode_plot_ref[1].set_ydata(mag_cl_db)
-            self.gain_margin_text_ref.set_text(stability_margins_text)
 
             self.bode_plot_ref[2].set_xdata(f)
             self.bode_plot_ref[2].set_ydata(phase_ol * 180 / np.pi)
             self.bode_plot_ref[3].set_xdata(f)
             self.bode_plot_ref[3].set_ydata(phase_cl * 180 / np.pi)
+
+        for key, (text, color) in margins.items():
+            self.margin_text_refs[key].set_text(text)
+            self.margin_text_refs[key].set_color(color or "black")
 
         self.canvas.draw()
 
