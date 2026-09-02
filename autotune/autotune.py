@@ -343,7 +343,7 @@ class Window(QDialog):
         self.f_hp_spinbox.setRange(0.0, 50.0)
         self.f_hp_spinbox.setSingleStep(0.1)
         self.f_hp_spinbox.setDecimals(1)
-        self.f_hp_spinbox.setValue(0.5)
+        self.f_hp_spinbox.setValue(0.0)
         self.f_hp_spinbox.valueChanged.connect(
             lambda: self.btn_run_sys_id.setEnabled(True)
         )
