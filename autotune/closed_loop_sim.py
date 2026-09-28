@@ -39,6 +39,7 @@ import control as ctrl
 import matplotlib.pylab as plt
 import numpy as np
 from pid_design import computePidGmvc, gainsToNumDen
+from system_identification import arx_transfer_function
 
 # Discrete-time model given by system identification
 ## jMavsim
@@ -86,7 +87,7 @@ p1 = -2 * np.exp(-rho / (2 * mu)) * np.cos((np.sqrt(4 * mu - 1) * rho / (2 * mu)
 p2 = np.exp(-rho / mu)
 P = ctrl.TransferFunction([1 + p1 + p2], [1, p1, p2], dt)
 
-Gz2 = ctrl.TransferFunction(num, den, dt)
+Gz2 = arx_transfer_function(num, den, dt)
 (pid_num, pid_den) = gainsToNumDen(kc, ki, kd, dt)
 PID = ctrl.TransferFunction(pid_num, pid_den, dt)
 Gcl = ctrl.feedback(PID * Gz2, 1)

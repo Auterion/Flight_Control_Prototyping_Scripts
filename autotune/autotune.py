@@ -76,7 +76,7 @@ from PyQt5.QtWidgets import (
     QWidgetAction,
 )
 from scipy.signal import detrend
-from system_identification import SystemIdentification
+from system_identification import SystemIdentification, arx_transfer_function
 
 
 def computeNRMSE(y, y_est):
@@ -93,9 +93,7 @@ def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, method="RLS"):
         sys_id.f_hp = f_hp
         sys_id.f_lp = f_lp
         est = sys_id.fit(u.reshape(-1, 1), y.reshape(-1, 1), method=method)
-        Gz = ctrl.TransferFunction(
-            est.G_.num_list[0][0], est.G_.den_list[0][0][: n_poles + 1], dt
-        )
+        Gz = est.G_
         u_detrended = detrend(u)
         u_delayed = np.concatenate(
             ([0] * delay, u_detrended[: len(u_detrended) - delay])
@@ -863,9 +861,9 @@ class Window(QDialog):
             method=self.id_method_combo.currentText(),
         )
 
-        self.num = est.G_.num_list[0][0]
-        self.den = est.G_.den_list[0][0][0 : n + 1]
-        self.Gz = ctrl.TransferFunction(self.num, self.den, self.dt)
+        self.num = id.getNum()
+        self.den = id.getDen()
+        self.Gz = arx_transfer_function(self.num, self.den, self.dt)
 
         num_coeffs = self.num
         den_coeffs = self.den[1 : n + 1]
@@ -917,7 +915,7 @@ class Window(QDialog):
         poles = self.Gz.poles()
         stable_poles = np.where(np.abs(poles) > 1, 1.0 / np.conj(poles), poles)
         self.den = np.real(np.poly(stable_poles))
-        self.Gz = ctrl.TransferFunction(self.num, self.den, self.dt)
+        self.Gz = arx_transfer_function(self.num, self.den, self.dt)
         self.updateTfDisplay(self.den[1:], self.num)
         self.plotPolesZeros()
         self.replayInputData()
@@ -986,7 +984,7 @@ class Window(QDialog):
 
         dt = float(self.line_edit_dt.text())
         self.dt = dt
-        self.Gz = ctrl.TransferFunction(self.num, self.den, self.dt)
+        self.Gz = arx_transfer_function(self.num, self.den, self.dt)
         self.resampleData(dt)
         self.is_system_identified = True
         self.plotPolesZeros()
@@ -1041,7 +1039,7 @@ class Window(QDialog):
             inputs="r",
             outputs="rd",
         )
-        plant = ctrl.TransferFunction(num, den, dt, inputs="u", outputs="plant_out")
+        plant = arx_transfer_function(num, den, dt, inputs="u", outputs="plant_out")
         sampler = ctrl.TransferFunction(
             [1], [1, 0], dt, inputs="plant_out", outputs="y"
         )

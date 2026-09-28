@@ -79,9 +79,17 @@ def apply_filters(u, y, f_hp, f_lp, dt):
     return u_lp, y_lp
 
 
+def arx_transfer_function(num, den, dt, **kwargs):
+    # num and den hold coefficients in powers of z^-1 (b0..bm, 1..an) while
+    # ctrl.TransferFunction expects powers of z: right-pad num to the order of
+    # den, otherwise n - m spurious samples of delay are added.
+    num = np.concatenate((num, np.zeros(max(len(den) - len(num), 0))))
+    return ctrl.TransferFunction(num, den, dt, **kwargs)
+
+
 class SysIdResult(object):
     def __init__(self, num, den, dt):
-        self.G_ = ctrl.TransferFunction(num, den, dt)
+        self.G_ = arx_transfer_function(num, den, dt)
 
 
 class SystemIdentification(object):
