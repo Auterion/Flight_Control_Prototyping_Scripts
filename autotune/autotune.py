@@ -1216,7 +1216,7 @@ class Window(QDialog):
             ),
         }
 
-        w = np.logspace(-1, 3, 40).tolist()
+        w = np.geomspace(0.1, np.pi / self.dt, 40).tolist()
         (mag_ol, phase_ol, omega_ol) = ctrl.frequency_response(
             open_loop, omega=np.asarray(w)
         )
