@@ -92,7 +92,7 @@ def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, method="RLS"):
         sys_id = SystemIdentification(n_poles, n_zeros, delay, dt)
         sys_id.f_hp = f_hp
         sys_id.f_lp = f_lp
-        est = sys_id.fit(u.reshape(-1, 1), y.reshape(-1, 1), method=method)
+        est = sys_id.fit(u, y, method=method)
         Gz = est.G_
         u_detrended = detrend(u)
         u_delayed = np.concatenate(
@@ -855,11 +855,7 @@ class Window(QDialog):
         id.f_hp = self.f_hp_spinbox.value()
         id.f_lp = self.f_lp_spinbox.value()
 
-        est = id.fit(
-            self.u.reshape(-1, 1),
-            self.y.reshape(-1, 1),
-            method=self.id_method_combo.currentText(),
-        )
+        est = id.fit(self.u, self.y, method=self.id_method_combo.currentText())
 
         self.num = id.getNum()
         self.den = id.getDen()
