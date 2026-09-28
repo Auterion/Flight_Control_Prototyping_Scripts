@@ -1047,9 +1047,12 @@ class Window(QDialog):
         feedforward = ctrl.TransferFunction(
             [kff], [1], dt, inputs="r", outputs="ff_out"
         )
+        # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
+        integrator_num = np.array([ki * dt, ki * dt])
+        integrator_den = np.array([2, -2])
         i_control = ctrl.TransferFunction(
-            [ki * dt, ki * dt], [2, -2], dt, inputs="e", outputs="i_out"
-        )  # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
+            integrator_num, integrator_den, dt, inputs="e", outputs="i_out"
+        )
 
         # Derivative with 1st order LPF (discretized using Euler method: s = (z-1)/dt)
         derivative_cutoff_freq = 10.0  # Hz
@@ -1144,27 +1147,20 @@ class Window(QDialog):
 
         self.plotClosedLoop(t_out, y_out)
 
-        # Remove feedback
-        sum_feedback = ctrl.summing_junction(inputs=["r"], output="e")
-
-        # Remove feedforward
-        sum_control = ctrl.summing_junction(inputs=["pid_out"], output="control_out")
-
-        open_loop = ctrl.interconnect(
-            [
-                delays,
-                sampler,
-                sum_feedback,
-                sum_control,
-                p_control,
-                i_control,
-                d_control,
-                id_control,
-                out_sign,
-                plant,
-            ],
-            inputs="r",
-            outputs="y",
+        # Loop gain broken at the feedback: whether P and D act on the error or
+        # on the feedback only changes the reference path, the loop always sees
+        # the full Kp * (1 + I + D) controller
+        controller = kc * (
+            1
+            + ctrl.tf(integrator_num, integrator_den, dt)
+            + ctrl.tf(derivative_num, derivative_den, dt)
+        )
+        open_loop = (
+            output_sign
+            * controller
+            * arx_transfer_function(num, den, dt)
+            * ctrl.tf([1], delays_den, dt)
+            * ctrl.tf([1], [1, 0], dt)
         )
 
         self.plotBode(open_loop, closed_loop)
