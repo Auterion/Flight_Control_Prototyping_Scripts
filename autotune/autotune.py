@@ -1032,22 +1032,20 @@ class Window(QDialog):
         kd = self.gains["D"]
         kff = self.gains["FF"]
 
-        delays = ctrl.TransferFunction(
-            [1],
-            np.append([1], np.zeros(self.sys_id_delays)),
-            dt,
-            inputs="r",
-            outputs="rd",
-        )
         plant = arx_transfer_function(num, den, dt, inputs="u", outputs="plant_out")
-        sampler = ctrl.TransferFunction(
-            [1], [1, 0], dt, inputs="plant_out", outputs="y"
+        # The identified delay is part of the plant, so it must sit inside the loop
+        delays_den = np.append([1], np.zeros(self.sys_id_delays))
+        delays = ctrl.TransferFunction(
+            [1], delays_den, dt, inputs="plant_out", outputs="plant_delayed"
         )
-        sum_feedback = ctrl.summing_junction(inputs=["rd", "-y"], output="e")
+        sampler = ctrl.TransferFunction(
+            [1], [1, 0], dt, inputs="plant_delayed", outputs="y"
+        )
+        sum_feedback = ctrl.summing_junction(inputs=["r", "-y"], output="e")
 
         # Default is standard PID
         feedforward = ctrl.TransferFunction(
-            [kff], [1], dt, inputs="rd", outputs="ff_out"
+            [kff], [1], dt, inputs="r", outputs="ff_out"
         )
         i_control = ctrl.TransferFunction(
             [ki * dt, ki * dt], [2, -2], dt, inputs="e", outputs="i_out"
@@ -1125,6 +1123,7 @@ class Window(QDialog):
         )
         disturbance_loop = ctrl.interconnect(
             [
+                delays,
                 sampler,
                 sum_feedback_no_ref,
                 sum_control_with_disturbance,
@@ -1146,7 +1145,7 @@ class Window(QDialog):
         self.plotClosedLoop(t_out, y_out)
 
         # Remove feedback
-        sum_feedback = ctrl.summing_junction(inputs=["rd"], output="e")
+        sum_feedback = ctrl.summing_junction(inputs=["r"], output="e")
 
         # Remove feedforward
         sum_control = ctrl.summing_junction(inputs=["pid_out"], output="control_out")
