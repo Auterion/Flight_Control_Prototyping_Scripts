@@ -1191,7 +1191,8 @@ class Window(QDialog):
         self.updateStepInfoEnvelope()
 
     def plotBode(self, open_loop, closed_loop):
-
+        # Always use the frequency-response method: the polynomial method is
+        # often numerically inaccurate for these high-order discrete loops
         (
             gain_margin,
             phase_margin,
@@ -1199,7 +1200,9 @@ class Window(QDialog):
             phase_crossover,
             gain_crossover,
             stab_margin_w,
-        ) = ctrl.stability_margins(open_loop)
+        ) = ctrl.stability_margins(
+            ctrl.frd(open_loop, np.geomspace(1e-2, np.pi / self.dt, 2000), smooth=True)
+        )
         gain_margin_db = 20 * np.log10(gain_margin)
         margins = {
             "gain": (
