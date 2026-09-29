@@ -105,3 +105,25 @@ def test_peak_sensitivity_is_inverse_of_modulus_margin():
     modulus_margin = loop.stabilityMargins()[2]
 
     assert peak_sensitivity == pytest.approx(1 / modulus_margin, rel=1e-3)
+
+
+@pytest.mark.parametrize("delays", [1, 3])
+def test_gain_margin_puts_closed_loop_poles_on_unit_circle(delays):
+    loop = LoopModel(NUM, DEN, DT, delays, GAINS)
+    gain_margin = loop.stabilityMargins()[0]
+
+    assert np.max(np.abs(loop.closedLoopPoles(gain_margin))) == pytest.approx(
+        1.0, abs=1e-6
+    )
+
+
+def test_root_locus_passes_through_current_closed_loop_poles():
+    loop = LoopModel(NUM, DEN, DT, 2, GAINS)
+    loci = loop.rootLocus(np.array([0.0, 1.0]))
+
+    np.testing.assert_allclose(
+        np.sort_complex(loci[0]), np.sort_complex(ctrl.poles(loop.loop_gain))
+    )
+    np.testing.assert_allclose(
+        np.sort_complex(loci[1]), np.sort_complex(loop.closedLoopPoles()), atol=1e-9
+    )

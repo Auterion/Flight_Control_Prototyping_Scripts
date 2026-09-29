@@ -177,6 +177,42 @@ def thresholdColor(value, limit, limit_is_minimum):
     return "green" if respected else "red"
 
 
+def drawZPlaneGrid(ax, f_nyquist):
+    """Lines of constant damping ratio and natural frequency in the z-plane."""
+    style = dict(color="gray", linewidth=0.4, alpha=0.7)
+    unit_circle = np.exp(1j * np.linspace(0, 2 * np.pi, 200))
+    ax.plot(unit_circle.real, unit_circle.imag, "k:", linewidth=0.8)
+    ax.axhline(0, color="k", linewidth=0.5)
+    ax.axvline(0, color="k", linewidth=0.5)
+
+    # z = exp(s * dt) with s = wn * (-zeta + j * sqrt(1 - zeta^2)), drawn
+    # up to the Nyquist frequency where the damped angle wd * dt reaches pi
+    damped_angle = np.linspace(0, np.pi, 100)
+    for zeta in np.arange(0.1, 1.0, 0.1):
+        z = np.exp(-zeta / np.sqrt(1 - zeta**2) * damped_angle) * np.exp(
+            1j * damped_angle
+        )
+        ax.plot(z.real, z.imag, **style)
+        ax.plot(z.real, -z.imag, **style)
+        label_point = z[len(z) // 2]
+        ax.text(
+            label_point.real, label_point.imag, f"{zeta:.1f}", fontsize=6, color="gray"
+        )
+
+    zeta = np.linspace(0, 1, 100)
+    for fraction in np.arange(0.1, 1.01, 0.1):
+        z = np.exp(fraction * np.pi * (-zeta + 1j * np.sqrt(1 - zeta**2)))
+        ax.plot(z.real, z.imag, **style)
+        ax.plot(z.real, -z.imag, **style)
+        ax.text(
+            z[0].real,
+            z[0].imag,
+            f"{fraction * f_nyquist:.0f}Hz",
+            fontsize=6,
+            color="gray",
+        )
+
+
 def isNumber(value):
     try:
         float(value)
@@ -245,6 +281,7 @@ class Window(QDialog):
         self.robustness_toolbar = NavigationToolbar(self.robustness_canvas, self)
         self.nyquist_ax = None
         self.sensitivity_ax = None
+        self.root_locus_ax = None
 
         self.btn_open_log = QPushButton("Open log")
         self.btn_open_log.clicked.connect(self.loadLog)
@@ -325,6 +362,7 @@ class Window(QDialog):
         self.robustness_figure.clear()
         self.nyquist_ax = None
         self.sensitivity_ax = None
+        self.root_locus_ax = None
         self.robustness_canvas.draw()
 
     def createPlotTab(self, toolbar, canvas):
@@ -1069,6 +1107,7 @@ class Window(QDialog):
         )
         self.plotNyquist(loop.loop_gain, stability_margins, is_stable)
         self.plotSensitivities(loop, is_stable)
+        self.plotRootLocus(loop, stability_margins[0], is_stable)
         self.robustness_canvas.draw()
 
     def plotClosedLoop(self, t, y):
@@ -1190,7 +1229,7 @@ class Window(QDialog):
         loop_response = mag * np.exp(1j * phase)
 
         if self.nyquist_ax is None:
-            self.nyquist_ax = self.robustness_figure.add_subplot(1, 2, 1)
+            self.nyquist_ax = self.robustness_figure.add_subplot(1, 3, 1)
         ax = self.nyquist_ax
         ax.cla()
 
@@ -1243,7 +1282,7 @@ class Window(QDialog):
         }
 
         if self.sensitivity_ax is None:
-            self.sensitivity_ax = self.robustness_figure.add_subplot(1, 2, 2)
+            self.sensitivity_ax = self.robustness_figure.add_subplot(1, 3, 2)
         ax = self.sensitivity_ax
         ax.cla()
 
@@ -1298,6 +1337,71 @@ class Window(QDialog):
         ax.set_xlabel("Frequency (Hz)")
         ax.set_ylabel("Magnitude (dB)")
         ax.legend(loc="lower left", fontsize="small")
+
+    def plotRootLocus(self, loop, gain_margin, is_stable):
+        if self.root_locus_ax is None:
+            self.root_locus_ax = self.robustness_figure.add_subplot(1, 3, 3)
+        ax = self.root_locus_ax
+        ax.cla()
+        drawZPlaneGrid(ax, loop.nyquistFrequency() / (2 * np.pi))
+
+        kp = self.gains["P"]
+        if kp != 0:
+            max_gain_scale = 10.0
+            if is_stable and np.isfinite(gain_margin):
+                max_gain_scale = max(max_gain_scale, 2 * gain_margin)
+            gain_scales = np.concatenate(
+                ([0.0], np.geomspace(1e-3, max_gain_scale, 1000))
+            )
+            loci = loop.rootLocus(gain_scales)
+            ax.plot(loci.real, loci.imag, color="C0", linewidth=1)
+            ax.plot(
+                loci[0].real, loci[0].imag, "x", color="C0", label="Open-loop poles"
+            )
+            zeros = ctrl.zeros(loop.loop_gain)
+            ax.plot(
+                zeros.real,
+                zeros.imag,
+                "o",
+                color="C0",
+                markerfacecolor="none",
+                label="Open-loop zeros",
+            )
+
+            poles = loop.closedLoopPoles()
+            ax.plot(
+                poles.real,
+                poles.imag,
+                "s",
+                color="green" if is_stable else "red",
+                label=f"Kp = {kp:.3g}",
+            )
+            if is_stable and np.isfinite(gain_margin):
+                poles = loop.closedLoopPoles(gain_margin)
+                ax.plot(
+                    poles.real,
+                    poles.imag,
+                    "D",
+                    color="orange",
+                    markerfacecolor="none",
+                    label=f"Kp = {gain_margin * kp:.3g} (stability limit)",
+                )
+            ax.legend(loc="lower left", fontsize="small")
+        else:
+            ax.text(
+                0.01,
+                0.99,
+                "Kp = 0: the loop is open",
+                verticalalignment="top",
+                transform=ax.transAxes,
+            )
+
+        ax.set_xlim(-1.1, 1.1)
+        ax.set_ylim(-1.1, 1.1)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_title("Root locus (Kp)")
+        ax.set_xlabel("Real")
+        ax.set_ylabel("Imaginary")
 
     def annotateNyquistMargins(self, ax, open_loop, stability_margins):
         (

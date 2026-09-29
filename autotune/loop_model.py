@@ -118,10 +118,18 @@ class LoopModel:
     def reference_to_output(self):
         return self.closed_loop[0, 0]
 
-    def closedLoopPoles(self):
-        # Roots of 1 + L: unlike the poles of the closed-loop realization, they
-        # do not include the modes of C_r that the feedback cannot move
-        return ctrl.poles(ctrl.feedback(self.loop_gain, 1))
+    def closedLoopPoles(self, gain_scale=1.0):
+        # Roots of 1 + k * L: unlike the poles of the closed-loop realization,
+        # they do not include the modes of C_r that the feedback cannot move
+        return ctrl.poles(ctrl.feedback(gain_scale * self.loop_gain, 1))
+
+    def rootLocus(self, gain_scales):
+        """Closed-loop poles when the loop gain is scaled by each of gain_scales.
+
+        As the PID is in ideal form Kp * (1 + I + D), scaling the loop gain is
+        the same as scaling Kp with I and D fixed.
+        """
+        return ctrl.root_locus_map(self.loop_gain, gains=gain_scales).loci
 
     def isStable(self):
         return bool(np.all(np.abs(self.closedLoopPoles()) < 1.0))
