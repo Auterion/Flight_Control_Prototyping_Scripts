@@ -224,6 +224,8 @@ class Window(QDialog):
         self.kDisturbanceTime = 1.0
         self.kMinGainMarginDb = 6.0
         self.kMinPhaseMarginDeg = 45.0
+        # Equivalent to a peak sensitivity |S|max <= 2 (6dB)
+        self.kMinModulusMargin = 0.5
         self.step_duration = 2.0
         self.disturbance_amplitude = -0.05
         self.step_sim_spinbox = {}
@@ -235,6 +237,11 @@ class Window(QDialog):
         # this is the Navigation widget
         # it takes the Canvas widget and a parent
         self.toolbar = NavigationToolbar(self.canvas, self)
+
+        self.robustness_figure = plt.figure(2)
+        self.robustness_canvas = FigureCanvas(self.robustness_figure)
+        self.robustness_toolbar = NavigationToolbar(self.robustness_canvas, self)
+        self.nyquist_ax = None
 
         self.btn_open_log = QPushButton("Open log")
         self.btn_open_log.clicked.connect(self.loadLog)
@@ -278,12 +285,16 @@ class Window(QDialog):
         self.tab_gmvc.setLayout(self.createGmvcLayout())
         self.tuning_tabs.addTab(self.tab_gmvc, "GMVC")
 
-        layout_plot = QVBoxLayout()
+        self.plot_tabs = QTabWidget()
+        self.plot_tabs.addTab(self.createPlotTab(self.toolbar, self.canvas), "General")
+        self.plot_tabs.addTab(
+            self.createPlotTab(self.robustness_toolbar, self.robustness_canvas),
+            "Robustness",
+        )
+
         layout_h.addLayout(left_menu)
-        layout_h.addLayout(layout_plot)
+        layout_h.addWidget(self.plot_tabs)
         layout_h.setStretch(1, 1)
-        layout_plot.addWidget(self.toolbar)
-        layout_plot.addWidget(self.canvas)
         layout_v.addLayout(layout_h)
         layout_v.setStretch(0, 1)
         bottom_row = QHBoxLayout()
@@ -308,6 +319,17 @@ class Window(QDialog):
         self.margin_text_refs = {}
         self.pz_plot_refs = []
         self.is_system_identified = False
+        self.robustness_figure.clear()
+        self.nyquist_ax = None
+        self.robustness_canvas.draw()
+
+    def createPlotTab(self, toolbar, canvas):
+        tab = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(toolbar)
+        layout.addWidget(canvas)
+        tab.setLayout(layout)
+        return tab
 
     def createModelOrderWidgets(self, layout):
         self.line_edit_zeros = QSpinBox()
@@ -1159,7 +1181,14 @@ class Window(QDialog):
             * ctrl.tf([1], [1, 0], dt)
         )
 
-        self.plotBode(open_loop, closed_loop)
+        # Always use the frequency-response method: the polynomial method is
+        # often numerically inaccurate for these high-order discrete loops
+        w_margins = np.geomspace(1e-2, np.pi / dt, 2000)
+        stability_margins = ctrl.stability_margins(
+            ctrl.frd(open_loop, w_margins, smooth=True)
+        )
+        self.plotBode(open_loop, closed_loop, stability_margins)
+        self.plotNyquist(open_loop, stability_margins)
 
     def plotClosedLoop(self, t, y):
         # Compute metrics on pre-disturbance portion only
@@ -1190,18 +1219,9 @@ class Window(QDialog):
 
         self.updateStepInfoEnvelope()
 
-    def plotBode(self, open_loop, closed_loop):
-        # Always use the frequency-response method: the polynomial method is
-        # often numerically inaccurate for these high-order discrete loops
-        (
-            gain_margin,
-            phase_margin,
-            stab_margin,
-            phase_crossover,
-            gain_crossover,
-            stab_margin_w,
-        ) = ctrl.stability_margins(
-            ctrl.frd(open_loop, np.geomspace(1e-2, np.pi / self.dt, 2000), smooth=True)
+    def plotBode(self, open_loop, closed_loop, stability_margins):
+        gain_margin, phase_margin, _, phase_crossover, gain_crossover, _ = (
+            stability_margins
         )
         gain_margin_db = 20 * np.log10(gain_margin)
         margins = {
@@ -1279,6 +1299,127 @@ class Window(QDialog):
             self.margin_text_refs[key].set_color(color or "black")
 
         self.canvas.draw()
+
+    def plotNyquist(self, open_loop, stability_margins):
+        (
+            gain_margin,
+            phase_margin,
+            modulus_margin,
+            phase_crossover,
+            gain_crossover,
+            modulus_margin_w,
+        ) = stability_margins
+
+        w_nyquist = np.pi / self.dt
+        w = np.geomspace(1e-2, w_nyquist, 2000)
+        mag, phase, _ = ctrl.frequency_response(open_loop, omega=w)
+        loop_response = mag * np.exp(1j * phase)
+
+        if self.nyquist_ax is None:
+            self.nyquist_ax = self.robustness_figure.add_subplot(1, 1, 1)
+        ax = self.nyquist_ax
+        ax.cla()
+
+        circle_angle = np.linspace(0, 2 * np.pi, 200)
+        unit_circle = np.exp(1j * circle_angle)
+        ax.plot(unit_circle.real, unit_circle.imag, "k:", linewidth=0.8)
+        forbidden_region = -1 + self.kMinModulusMargin * unit_circle
+        ax.fill(
+            forbidden_region.real,
+            forbidden_region.imag,
+            color="red",
+            alpha=0.1,
+            label=f"Modulus margin < {self.kMinModulusMargin}",
+        )
+        ax.axhline(0, color="k", linewidth=0.5)
+        ax.axvline(0, color="k", linewidth=0.5)
+
+        line = ax.plot(loop_response.real, loop_response.imag, label="Open-loop")[0]
+        ax.plot(loop_response.real, -loop_response.imag, "--", color=line.get_color())
+        ax.plot(-1, 0, "r+", markersize=12, markeredgewidth=2)
+
+        margin_texts = []
+
+        if np.isfinite(gain_margin) and gain_margin > 0:
+            gain_margin_db = 20 * np.log10(gain_margin)
+            color = thresholdColor(
+                gain_margin_db, self.kMinGainMarginDb, limit_is_minimum=True
+            )
+            ax.plot([-1, -1 / gain_margin], [0, 0], color=color, linewidth=2)
+            ax.plot(-1 / gain_margin, 0, "o", color=color)
+            margin_texts.append(
+                (
+                    f"Gain margin: {gain_margin_db:.2f}dB (@{phase_crossover / (2 * np.pi):.1f}Hz)",
+                    color,
+                )
+            )
+
+        if np.isfinite(phase_margin):
+            color = thresholdColor(
+                phase_margin, self.kMinPhaseMarginDeg, limit_is_minimum=True
+            )
+            # Arc from the critical point to the gain crossover on the unit circle
+            arc_angle = np.linspace(np.pi, np.pi + np.deg2rad(phase_margin), 50)
+            ax.plot(np.cos(arc_angle), np.sin(arc_angle), color=color, linewidth=2)
+            crossover_point = np.exp(1j * arc_angle[-1])
+            ax.plot(crossover_point.real, crossover_point.imag, "o", color=color)
+            margin_texts.append(
+                (
+                    f"Phase margin: {phase_margin:.1f}deg (@{gain_crossover / (2 * np.pi):.1f}Hz)",
+                    color,
+                )
+            )
+
+        if np.isfinite(modulus_margin):
+            color = thresholdColor(
+                modulus_margin, self.kMinModulusMargin, limit_is_minimum=True
+            )
+            modulus_circle = -1 + modulus_margin * unit_circle
+            ax.plot(
+                modulus_circle.real,
+                modulus_circle.imag,
+                "--",
+                color=color,
+                linewidth=1,
+            )
+            closest_point = complex(
+                ctrl.evalfr(
+                    open_loop, np.exp(1j * min(modulus_margin_w, w_nyquist) * self.dt)
+                )
+            )
+            ax.plot(
+                [-1, closest_point.real],
+                [0, closest_point.imag],
+                color=color,
+                linewidth=2,
+            )
+            ax.plot(closest_point.real, closest_point.imag, "o", color=color)
+            margin_texts.append(
+                (
+                    f"Modulus margin: {modulus_margin:.2f} (@{modulus_margin_w / (2 * np.pi):.1f}Hz)",
+                    color,
+                )
+            )
+
+        for row, (text, color) in enumerate(margin_texts):
+            ax.text(
+                0.01,
+                0.99 - 0.05 * row,
+                text,
+                color=color or "black",
+                verticalalignment="top",
+                transform=ax.transAxes,
+            )
+
+        ax.set_xlim(-3, 1.5)
+        ax.set_ylim(-2, 2)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_title("Nyquist")
+        ax.set_xlabel("Real")
+        ax.set_ylabel("Imaginary")
+        ax.legend(loc="lower right")
+
+        self.robustness_canvas.draw()
 
     def plotInputOutput(self, redraw=False):
         if len(self.true_airspeed) == len(self.input):
