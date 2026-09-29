@@ -43,6 +43,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 from data_extractor import *
 from data_selection_window import DataSelectionWindow
+from loop_model import LoopModel
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from pid_design import computePidGmvc
@@ -1041,154 +1042,26 @@ class Window(QDialog):
     def updateClosedLoop(self):
         if not self.is_system_identified:
             return
-        # Simulate closed-loop system with generated PID
-        num = self.num
-        den = self.den
-        dt = self.dt
-        kc = self.gains["P"]
-        ki = self.gains["I"]
-        kd = self.gains["D"]
-        kff = self.gains["FF"]
-
-        plant = arx_transfer_function(num, den, dt, inputs="u", outputs="plant_out")
-        # The identified delay is part of the plant, so it must sit inside the loop
-        delays_den = np.append([1], np.zeros(self.sys_id_delays))
-        delays = ctrl.TransferFunction(
-            [1], delays_den, dt, inputs="plant_out", outputs="plant_delayed"
-        )
-        sampler = ctrl.TransferFunction(
-            [1], [1, 0], dt, inputs="plant_delayed", outputs="y"
-        )
-        sum_feedback = ctrl.summing_junction(inputs=["r", "-y"], output="e")
-
-        # Default is standard PID
-        feedforward = ctrl.TransferFunction(
-            [kff], [1], dt, inputs="r", outputs="ff_out"
-        )
-        # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
-        integrator_num = np.array([ki * dt, ki * dt])
-        integrator_den = np.array([2, -2])
-        i_control = ctrl.TransferFunction(
-            integrator_num, integrator_den, dt, inputs="e", outputs="i_out"
+        loop = LoopModel(
+            self.num,
+            self.den,
+            self.dt,
+            self.sys_id_delays,
+            self.gains,
+            negate_output=self.negate_control_box.isChecked(),
+            p_on_feedback=self.pid_no_zero_box.isChecked(),
         )
 
-        # Derivative with 1st order LPF (discretized using Euler method: s = (z-1)/dt)
-        derivative_cutoff_freq = 10.0  # Hz
-        tau = 1 / (2 * np.pi * derivative_cutoff_freq)
-        derivative_num = np.array([kd, -kd])
-        derivative_den = np.array([tau, -tau + dt])
-        d_control = ctrl.TransferFunction(
-            derivative_num, derivative_den, dt, inputs="e", outputs="d_out"
+        t = np.arange(0, self.step_duration, self.dt)
+        reference = np.ones_like(t)
+        disturbance = np.where(
+            t >= self.kDisturbanceTime, self.disturbance_amplitude, 0.0
         )
+        self.plotClosedLoop(t, loop.simulate(t, reference, disturbance))
 
-        id_control = ctrl.summing_junction(
-            inputs=["e", "i_out", "d_out"], output="id_out"
-        )
-        p_control = ctrl.TransferFunction(
-            [kc], [1], dt, inputs="id_out", outputs="pid_out"
-        )
-        sum_control = ctrl.summing_junction(
-            inputs=["pid_out", "ff_out"], output="control_out"
-        )
-
-        if self.negate_control_box.isChecked():
-            output_sign = -1.0
-        else:
-            output_sign = 1.0
-
-        out_sign = ctrl.TransferFunction(
-            output_sign, 1.0, dt, inputs="control_out", outputs="u"
-        )
-
-        remove_zero = self.pid_no_zero_box.isChecked()
-        no_derivative_kick = True
-
-        if remove_zero:
-            # P on feedback only to remove zero (3-loop autopilot style)
-            id_control = ctrl.summing_junction(
-                inputs=["-y", "i_out", "d_out"], output="id_out"
-            )
-
-        if no_derivative_kick:
-            # Derivative on feedback only to remove the "derivative kick"
-            d_control = ctrl.TransferFunction(
-                -derivative_num, derivative_den, dt, inputs="y", outputs="d_out"
-            )
-
-        closed_loop = ctrl.interconnect(
-            [
-                delays,
-                sampler,
-                sum_feedback,
-                feedforward,
-                sum_control,
-                p_control,
-                i_control,
-                d_control,
-                id_control,
-                out_sign,
-                plant,
-            ],
-            inputs="r",
-            outputs="y",
-        )
-
-        t_out, y_out = ctrl.step_response(
-            closed_loop, T=np.arange(0, self.step_duration, dt)
-        )
-
-        # Add disturbance
-        sum_feedback_no_ref = ctrl.summing_junction(inputs=["-y"], output="e")
-        sum_control_with_disturbance = ctrl.summing_junction(
-            inputs=["pid_out", "disturbance"], output="control_out"
-        )
-        disturbance_loop = ctrl.interconnect(
-            [
-                delays,
-                sampler,
-                sum_feedback_no_ref,
-                sum_control_with_disturbance,
-                p_control,
-                i_control,
-                d_control,
-                id_control,
-                out_sign,
-                plant,
-            ],
-            inputs="disturbance",
-            outputs="y",
-        )
-        d = np.zeros_like(t_out)
-        d[t_out >= self.kDisturbanceTime] = self.disturbance_amplitude
-        _, y_d = ctrl.forced_response(disturbance_loop, t_out, d)
-        y_out += y_d
-
-        self.plotClosedLoop(t_out, y_out)
-
-        # Loop gain broken at the feedback: whether P and D act on the error or
-        # on the feedback only changes the reference path, the loop always sees
-        # the full Kp * (1 + I + D) controller
-        controller = kc * (
-            1
-            + ctrl.tf(integrator_num, integrator_den, dt)
-            + ctrl.tf(derivative_num, derivative_den, dt)
-        )
-        open_loop = (
-            output_sign
-            * controller
-            * arx_transfer_function(num, den, dt)
-            * ctrl.tf([1], delays_den, dt)
-            * ctrl.tf([1], [1, 0], dt)
-        )
-
-        # Always use the frequency-response method: the polynomial method is
-        # often numerically inaccurate for these high-order discrete loops
-        w_margins = np.geomspace(1e-2, np.pi / dt, 2000)
-        stability_margins = ctrl.stability_margins(
-            ctrl.frd(open_loop, w_margins, smooth=True)
-        )
-        self.plotBode(open_loop, closed_loop, stability_margins)
-        self.plotNyquist(open_loop, stability_margins)
+        stability_margins = loop.stabilityMargins()
+        self.plotBode(loop.loop_gain, loop.reference_to_output, stability_margins)
+        self.plotNyquist(loop.loop_gain, stability_margins)
 
     def plotClosedLoop(self, t, y):
         # Compute metrics on pre-disturbance portion only

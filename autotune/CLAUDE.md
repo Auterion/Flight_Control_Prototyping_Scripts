@@ -35,7 +35,8 @@ QT_QPA_PLATFORM=offscreen poetry run pytest -v
 ```
 `test_presets.py` covers preset load/save (seed, round-trip, order, corrupt-file
 fallback); `test_preset_dialogs.py` drives `PresetEditDialog` headlessly to verify
-the add/edit/rename/create/delete behavior. These run in CI via
+the add/edit/rename/create/delete behavior; `test_loop_model.py` checks the
+closed-loop model (loop gain, closed-loop poles, sensitivities). These run in CI via
 `.github/workflows/autotune_tests.yml`.
 
 ## Code Quality
@@ -73,6 +74,8 @@ autotune.py (Bode/step response validation) → PX4 gains
 - **`arx_rls.py`** — Core recursive least-squares implementation. Assumes ARX model: `A(q⁻¹)y(k) = q⁻ᵈ B(q⁻¹)u(k) + A(q⁻¹)e(k)`. Uses matrix-inversion-free update for efficiency.
 
 - **`pid_design.py`** — Computes PX4-compatible P/I/D gains from identified model polynomials using **General Minimum Variance Control (GMVC)**. Inputs: ARX coefficients, sample time, rise time, damping ratio.
+
+- **`loop_model.py`** — `LoopModel`: the closed loop (identified plant + PX4 PID, delay inside the loop) as a two-degree-of-freedom controller `u = C_r r - C_y y`. Provides the time simulation, loop gain, closed-loop poles/stability, stability margins and gang-of-six sensitivities used by the plots in `autotune.py`.
 
 - **`pid_analyse_window.py`** — Secondary PyQt5 window with pole-zero plots, Bode diagrams, stability margins, and disturbance response for the tuned controller.
 
