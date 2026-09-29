@@ -244,6 +244,7 @@ class Window(QDialog):
         self.robustness_canvas = FigureCanvas(self.robustness_figure)
         self.robustness_toolbar = NavigationToolbar(self.robustness_canvas, self)
         self.nyquist_ax = None
+        self.sensitivity_ax = None
 
         self.btn_open_log = QPushButton("Open log")
         self.btn_open_log.clicked.connect(self.loadLog)
@@ -323,6 +324,7 @@ class Window(QDialog):
         self.is_system_identified = False
         self.robustness_figure.clear()
         self.nyquist_ax = None
+        self.sensitivity_ax = None
         self.robustness_canvas.draw()
 
     def createPlotTab(self, toolbar, canvas):
@@ -1066,6 +1068,8 @@ class Window(QDialog):
             loop.loop_gain, loop.reference_to_output, stability_margins, is_stable
         )
         self.plotNyquist(loop.loop_gain, stability_margins, is_stable)
+        self.plotSensitivities(loop, is_stable)
+        self.robustness_canvas.draw()
 
     def plotClosedLoop(self, t, y):
         # Compute metrics on pre-disturbance portion only
@@ -1186,7 +1190,7 @@ class Window(QDialog):
         loop_response = mag * np.exp(1j * phase)
 
         if self.nyquist_ax is None:
-            self.nyquist_ax = self.robustness_figure.add_subplot(1, 1, 1)
+            self.nyquist_ax = self.robustness_figure.add_subplot(1, 2, 1)
         ax = self.nyquist_ax
         ax.cla()
 
@@ -1230,7 +1234,70 @@ class Window(QDialog):
         ax.set_ylabel("Imaginary")
         ax.legend(loc="lower right")
 
-        self.robustness_canvas.draw()
+    def plotSensitivities(self, loop, is_stable):
+        omega = np.geomspace(0.1, loop.nyquistFrequency(), 500)
+        f = omega / (2 * np.pi)
+        magnitudes_db = {
+            key: 20 * np.log10(np.abs(response))
+            for key, response in loop.sensitivities(omega).items()
+        }
+
+        if self.sensitivity_ax is None:
+            self.sensitivity_ax = self.robustness_figure.add_subplot(1, 2, 2)
+        ax = self.sensitivity_ax
+        ax.cla()
+
+        labels = {
+            "S": "S: sensitivity",
+            "T": "T: complementary sensitivity",
+            "PS": "PS: load disturbance → output",
+            "CS": "CS: measurement noise → control",
+            "CSF": "CSF: setpoint → control",
+        }
+        for key, label in labels.items():
+            ax.semilogx(f, magnitudes_db[key], label=label)
+
+        max_sensitivity_db = -20 * np.log10(self.kMinModulusMargin)
+        ax.axhline(
+            max_sensitivity_db,
+            color="red",
+            linestyle="--",
+            linewidth=0.8,
+            label=f"Max |S| ({max_sensitivity_db:.0f}dB)",
+        )
+        ax.axhline(0, color="k", linewidth=0.5)
+
+        if is_stable:
+            i_peak = np.argmax(magnitudes_db["S"])
+            peak_db = magnitudes_db["S"][i_peak]
+            color = thresholdColor(peak_db, max_sensitivity_db, limit_is_minimum=False)
+            ax.plot(f[i_peak], peak_db, "o", color=color)
+            ax.text(
+                0.01,
+                0.99,
+                f"Peak sensitivity: {peak_db:.2f}dB (@{f[i_peak]:.1f}Hz)",
+                color=color,
+                verticalalignment="top",
+                transform=ax.transAxes,
+            )
+        else:
+            ax.text(
+                0.01,
+                0.99,
+                self.kUnstableLoopText,
+                color="red",
+                verticalalignment="top",
+                transform=ax.transAxes,
+            )
+
+        ax.set_xlim(f[0], f[-1])
+        highest_db = max(np.max(m) for m in magnitudes_db.values())
+        ax.set_ylim(-60, max(20, highest_db + 5))
+        ax.grid(True, which="both", linewidth=0.3)
+        ax.set_title("Sensitivity functions")
+        ax.set_xlabel("Frequency (Hz)")
+        ax.set_ylabel("Magnitude (dB)")
+        ax.legend(loc="lower left", fontsize="small")
 
     def annotateNyquistMargins(self, ax, open_loop, stability_margins):
         (
