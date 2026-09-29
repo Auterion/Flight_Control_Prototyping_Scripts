@@ -227,6 +227,7 @@ class Window(QDialog):
         self.kMinPhaseMarginDeg = 45.0
         # Equivalent to a peak sensitivity |S|max <= 2 (6dB)
         self.kMinModulusMargin = 0.5
+        self.kUnstableLoopText = "Unstable closed loop: margins do not apply"
         self.step_duration = 2.0
         self.disturbance_amplitude = -0.05
         self.step_sim_spinbox = {}
@@ -1060,8 +1061,11 @@ class Window(QDialog):
         self.plotClosedLoop(t, loop.simulate(t, reference, disturbance))
 
         stability_margins = loop.stabilityMargins()
-        self.plotBode(loop.loop_gain, loop.reference_to_output, stability_margins)
-        self.plotNyquist(loop.loop_gain, stability_margins)
+        is_stable = loop.isStable()
+        self.plotBode(
+            loop.loop_gain, loop.reference_to_output, stability_margins, is_stable
+        )
+        self.plotNyquist(loop.loop_gain, stability_margins, is_stable)
 
     def plotClosedLoop(self, t, y):
         # Compute metrics on pre-disturbance portion only
@@ -1092,7 +1096,7 @@ class Window(QDialog):
 
         self.updateStepInfoEnvelope()
 
-    def plotBode(self, open_loop, closed_loop, stability_margins):
+    def plotBode(self, open_loop, closed_loop, stability_margins, is_stable):
         gain_margin, phase_margin, _, phase_crossover, gain_crossover, _ = (
             stability_margins
         )
@@ -1111,6 +1115,8 @@ class Window(QDialog):
                 ),
             ),
         }
+        if not is_stable:
+            margins = {"gain": (self.kUnstableLoopText, "red"), "phase": ("", None)}
 
         w = np.geomspace(0.1, np.pi / self.dt, 40).tolist()
         (mag_ol, phase_ol, omega_ol) = ctrl.frequency_response(
@@ -1173,16 +1179,7 @@ class Window(QDialog):
 
         self.canvas.draw()
 
-    def plotNyquist(self, open_loop, stability_margins):
-        (
-            gain_margin,
-            phase_margin,
-            modulus_margin,
-            phase_crossover,
-            gain_crossover,
-            modulus_margin_w,
-        ) = stability_margins
-
+    def plotNyquist(self, open_loop, stability_margins, is_stable):
         w_nyquist = np.pi / self.dt
         w = np.geomspace(1e-2, w_nyquist, 2000)
         mag, phase, _ = ctrl.frequency_response(open_loop, omega=w)
@@ -1193,8 +1190,7 @@ class Window(QDialog):
         ax = self.nyquist_ax
         ax.cla()
 
-        circle_angle = np.linspace(0, 2 * np.pi, 200)
-        unit_circle = np.exp(1j * circle_angle)
+        unit_circle = np.exp(1j * np.linspace(0, 2 * np.pi, 200))
         ax.plot(unit_circle.real, unit_circle.imag, "k:", linewidth=0.8)
         forbidden_region = -1 + self.kMinModulusMargin * unit_circle
         ax.fill(
@@ -1210,6 +1206,43 @@ class Window(QDialog):
         line = ax.plot(loop_response.real, loop_response.imag, label="Open-loop")[0]
         ax.plot(loop_response.real, -loop_response.imag, "--", color=line.get_color())
         ax.plot(-1, 0, "r+", markersize=12, markeredgewidth=2)
+
+        if is_stable:
+            margin_texts = self.annotateNyquistMargins(ax, open_loop, stability_margins)
+        else:
+            margin_texts = [(self.kUnstableLoopText, "red")]
+
+        for row, (text, color) in enumerate(margin_texts):
+            ax.text(
+                0.01,
+                0.99 - 0.05 * row,
+                text,
+                color=color or "black",
+                verticalalignment="top",
+                transform=ax.transAxes,
+            )
+
+        ax.set_xlim(-3, 1.5)
+        ax.set_ylim(-2, 2)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_title("Nyquist")
+        ax.set_xlabel("Real")
+        ax.set_ylabel("Imaginary")
+        ax.legend(loc="lower right")
+
+        self.robustness_canvas.draw()
+
+    def annotateNyquistMargins(self, ax, open_loop, stability_margins):
+        (
+            gain_margin,
+            phase_margin,
+            modulus_margin,
+            phase_crossover,
+            gain_crossover,
+            modulus_margin_w,
+        ) = stability_margins
+        w_nyquist = np.pi / self.dt
+        unit_circle = np.exp(1j * np.linspace(0, 2 * np.pi, 200))
 
         margin_texts = []
 
@@ -1274,25 +1307,7 @@ class Window(QDialog):
                 )
             )
 
-        for row, (text, color) in enumerate(margin_texts):
-            ax.text(
-                0.01,
-                0.99 - 0.05 * row,
-                text,
-                color=color or "black",
-                verticalalignment="top",
-                transform=ax.transAxes,
-            )
-
-        ax.set_xlim(-3, 1.5)
-        ax.set_ylim(-2, 2)
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_title("Nyquist")
-        ax.set_xlabel("Real")
-        ax.set_ylabel("Imaginary")
-        ax.legend(loc="lower right")
-
-        self.robustness_canvas.draw()
+        return margin_texts
 
     def plotInputOutput(self, redraw=False):
         if len(self.true_airspeed) == len(self.input):
