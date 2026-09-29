@@ -1,0 +1,159 @@
+"""Closed loop made of the identified plant and a PX4 PID controller.
+
+The controller has two degrees of freedom:
+
+    u = C_r(z) r - C_y(z) y + sign * disturbance
+
+C_y, which closes the loop, is always sign * Kp * (1 + I + D). Where P and D
+act (on the error or on the feedback only) and the feedforward only change
+the reference path C_r.
+"""
+
+import control as ctrl
+import numpy as np
+from system_identification import arx_transfer_function
+
+kDerivativeCutoffFreq = 10.0  # Hz
+
+
+class LoopModel:
+    def __init__(
+        self,
+        num,
+        den,
+        dt,
+        delays,
+        gains,
+        negate_output=False,
+        p_on_feedback=False,
+        d_on_feedback=True,
+    ):
+        self.dt = dt
+        self.plant = self._buildPlant(num, den, dt, delays)
+        self.controller = self._buildController(
+            dt, gains, negate_output, p_on_feedback, d_on_feedback
+        )
+        self.closed_loop = ctrl.interconnect(
+            [self.controller, self.plant],
+            inputs=["r", "disturbance"],
+            outputs="y",
+        )
+
+        self.reference_controller = ctrl.minreal(
+            ctrl.tf(self.controller[0, 0]), verbose=False
+        )
+        self.feedback_controller = ctrl.minreal(
+            -ctrl.tf(self.controller[0, 1]), verbose=False
+        )
+        self.loop_gain = self.feedback_controller * ctrl.tf(self.plant)
+
+    @staticmethod
+    def _buildPlant(num, den, dt, delays):
+        # The identified delay is part of the plant and the measurement is
+        # available one sample later, both sit inside the loop
+        plant = (
+            arx_transfer_function(num, den, dt)
+            * ctrl.tf([1], np.append([1], np.zeros(delays)), dt)
+            * ctrl.tf([1], [1, 0], dt)
+        )
+        return ctrl.tf(plant.num, plant.den, dt, inputs="u", outputs="y")
+
+    @staticmethod
+    def _buildController(dt, gains, negate_output, p_on_feedback, d_on_feedback):
+        kc = gains["P"]
+        ki = gains["I"]
+        kd = gains["D"]
+        kff = gains["FF"]
+
+        sum_feedback = ctrl.summing_junction(inputs=["r", "-y"], output="e")
+        feedforward = ctrl.tf([kff], [1], dt, inputs="r", outputs="ff_out")
+
+        # Integrator discretized using bilinear transform: s = 2(z-1)/(dt(z+1))
+        i_control = ctrl.tf(
+            [ki * dt, ki * dt], [2, -2], dt, inputs="e", outputs="i_out"
+        )
+
+        # Derivative with 1st order LPF (discretized using Euler method: s = (z-1)/dt)
+        tau = 1 / (2 * np.pi * kDerivativeCutoffFreq)
+        derivative_num = np.array([kd, -kd])
+        derivative_den = np.array([tau, -tau + dt])
+        if d_on_feedback:
+            # Removes the "derivative kick" on setpoint changes
+            d_control = ctrl.tf(
+                -derivative_num, derivative_den, dt, inputs="y", outputs="d_out"
+            )
+        else:
+            d_control = ctrl.tf(
+                derivative_num, derivative_den, dt, inputs="e", outputs="d_out"
+            )
+
+        # P on feedback only removes the zero (3-loop autopilot style)
+        p_input = "-y" if p_on_feedback else "e"
+        id_control = ctrl.summing_junction(
+            inputs=[p_input, "i_out", "d_out"], output="id_out"
+        )
+        p_control = ctrl.tf([kc], [1], dt, inputs="id_out", outputs="pid_out")
+        sum_control = ctrl.summing_junction(
+            inputs=["pid_out", "ff_out", "disturbance"], output="control_out"
+        )
+        output_sign = -1.0 if negate_output else 1.0
+        out_sign = ctrl.tf(output_sign, 1.0, dt, inputs="control_out", outputs="u")
+
+        return ctrl.interconnect(
+            [
+                sum_feedback,
+                feedforward,
+                i_control,
+                d_control,
+                id_control,
+                p_control,
+                sum_control,
+                out_sign,
+            ],
+            inputs=["r", "y", "disturbance"],
+            outputs="u",
+        )
+
+    @property
+    def reference_to_output(self):
+        return self.closed_loop[0, 0]
+
+    def closedLoopPoles(self):
+        # Roots of 1 + L: unlike the poles of the closed-loop realization, they
+        # do not include the modes of C_r that the feedback cannot move
+        return ctrl.poles(ctrl.feedback(self.loop_gain, 1))
+
+    def isStable(self):
+        return bool(np.all(np.abs(self.closedLoopPoles()) < 1.0))
+
+    def nyquistFrequency(self):
+        return np.pi / self.dt
+
+    def stabilityMargins(self):
+        # Always use the frequency-response method: the polynomial method is
+        # often numerically inaccurate for these high-order discrete loops
+        omega = np.geomspace(1e-2, self.nyquistFrequency(), 2000)
+        return ctrl.stability_margins(ctrl.frd(self.loop_gain, omega, smooth=True))
+
+    def simulate(self, t, r, disturbance):
+        _, y = ctrl.forced_response(
+            self.closed_loop, t, np.vstack((r, disturbance)), squeeze=True
+        )
+        return y
+
+    def sensitivities(self, omega):
+        """Complex frequency responses of the gang of six, at omega (rad/s)."""
+        z = np.exp(1j * np.asarray(omega) * self.dt)
+        plant = self.plant(z)
+        feedback_controller = self.feedback_controller(z)
+        reference_controller = self.reference_controller(z)
+        loop_gain = feedback_controller * plant
+        sensitivity = 1 / (1 + loop_gain)
+        return {
+            "S": sensitivity,
+            "T": loop_gain * sensitivity,
+            "PS": plant * sensitivity,
+            "CS": feedback_controller * sensitivity,
+            "CSF": reference_controller * sensitivity,
+            "TF": reference_controller * plant * sensitivity,
+        }
