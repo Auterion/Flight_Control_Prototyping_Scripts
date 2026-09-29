@@ -137,11 +137,58 @@ class LoopModel:
     def nyquistFrequency(self):
         return np.pi / self.dt
 
+    def marginFrequencies(self):
+        return np.geomspace(1e-2, self.nyquistFrequency(), 2000)
+
     def stabilityMargins(self):
         # Always use the frequency-response method: the polynomial method is
         # often numerically inaccurate for these high-order discrete loops
-        omega = np.geomspace(1e-2, self.nyquistFrequency(), 2000)
-        return ctrl.stability_margins(ctrl.frd(self.loop_gain, omega, smooth=True))
+        return ctrl.stability_margins(
+            ctrl.frd(self.loop_gain, self.marginFrequencies(), smooth=True)
+        )
+
+    def delayMargin(self):
+        """Smallest additional loop delay (s) that destabilizes the loop.
+
+        Returns (delay_margin, crossover_frequency), the delay margin being
+        the minimum of phase_margin / crossover_frequency over all the gain
+        crossovers, (inf, nan) if the loop gain never crosses 1.
+        """
+        omega = self.marginFrequencies()
+        log_mag = np.log(np.abs(self.loop_gain(np.exp(1j * omega * self.dt))))
+        crossings = np.nonzero(np.diff(np.sign(log_mag)))[0]
+
+        delay_margin = np.inf
+        crossover_frequency = np.nan
+        for i in crossings:
+            ratio = -log_mag[i] / (log_mag[i + 1] - log_mag[i])
+            w_c = omega[i] * (omega[i + 1] / omega[i]) ** ratio
+            loop_c = self.loop_gain(np.exp(1j * w_c * self.dt))
+            phase_margin = np.mod(np.angle(loop_c) + np.pi, 2 * np.pi)
+            if phase_margin / w_c < delay_margin:
+                delay_margin = phase_margin / w_c
+                crossover_frequency = w_c
+
+        return delay_margin, crossover_frequency
+
+    def diskMargins(self):
+        """Balanced disk margin, robust to simultaneous gain and phase changes.
+
+        Returns (alpha, gain_margin_db, phase_margin_deg, frequency): the
+        loop stays stable for any simultaneous gain change within
+        +/-gain_margin_db and phase change within +/-phase_margin_deg.
+        """
+        omega = self.marginFrequencies()
+        alpha, gain_margin_db, phase_margin_deg = ctrl.disk_margins(
+            self.loop_gain, omega, returnall=True
+        )
+        i_min = np.argmin(alpha)
+        return (
+            alpha[i_min],
+            gain_margin_db[i_min],
+            phase_margin_deg[i_min],
+            omega[i_min],
+        )
 
     def simulate(self, t, r, disturbance):
         _, y = ctrl.forced_response(

@@ -263,6 +263,9 @@ class Window(QDialog):
         self.kMinPhaseMarginDeg = 45.0
         # Equivalent to a peak sensitivity |S|max <= 2 (6dB)
         self.kMinModulusMargin = 0.5
+        # The identified delay is an integer number of samples: the loop should
+        # survive it being underestimated by one
+        self.kMinDelayMarginSamples = 1.0
         self.kUnstableLoopText = "Unstable closed loop: margins do not apply"
         self.step_duration = 2.0
         self.disturbance_amplitude = -0.05
@@ -1105,7 +1108,7 @@ class Window(QDialog):
         self.plotBode(
             loop.loop_gain, loop.reference_to_output, stability_margins, is_stable
         )
-        self.plotNyquist(loop.loop_gain, stability_margins, is_stable)
+        self.plotNyquist(loop, stability_margins, is_stable)
         self.plotSensitivities(loop, is_stable)
         self.plotRootLocus(loop, stability_margins[0], is_stable)
         self.robustness_canvas.draw()
@@ -1222,7 +1225,8 @@ class Window(QDialog):
 
         self.canvas.draw()
 
-    def plotNyquist(self, open_loop, stability_margins, is_stable):
+    def plotNyquist(self, loop, stability_margins, is_stable):
+        open_loop = loop.loop_gain
         w_nyquist = np.pi / self.dt
         w = np.geomspace(1e-2, w_nyquist, 2000)
         mag, phase, _ = ctrl.frequency_response(open_loop, omega=w)
@@ -1251,7 +1255,7 @@ class Window(QDialog):
         ax.plot(-1, 0, "r+", markersize=12, markeredgewidth=2)
 
         if is_stable:
-            margin_texts = self.annotateNyquistMargins(ax, open_loop, stability_margins)
+            margin_texts = self.annotateNyquistMargins(ax, loop, stability_margins)
         else:
             margin_texts = [(self.kUnstableLoopText, "red")]
 
@@ -1403,7 +1407,8 @@ class Window(QDialog):
         ax.set_xlabel("Real")
         ax.set_ylabel("Imaginary")
 
-    def annotateNyquistMargins(self, ax, open_loop, stability_margins):
+    def annotateNyquistMargins(self, ax, loop, stability_margins):
+        open_loop = loop.loop_gain
         (
             gain_margin,
             phase_margin,
@@ -1475,6 +1480,36 @@ class Window(QDialog):
                 (
                     f"Modulus margin: {modulus_margin:.2f} (@{modulus_margin_w / (2 * np.pi):.1f}Hz)",
                     color,
+                )
+            )
+
+        delay_margin, delay_crossover = loop.delayMargin()
+        if np.isfinite(delay_margin):
+            delay_margin_samples = delay_margin / self.dt
+            margin_texts.append(
+                (
+                    f"Delay margin: {delay_margin * 1e3:.1f}ms = {delay_margin_samples:.1f} samples (@{delay_crossover / (2 * np.pi):.1f}Hz)",
+                    thresholdColor(
+                        delay_margin_samples,
+                        self.kMinDelayMarginSamples,
+                        limit_is_minimum=True,
+                    ),
+                )
+            )
+
+        alpha, disk_gain_margin_db, disk_phase_margin_deg, disk_omega = (
+            loop.diskMargins()
+        )
+        if alpha < 2:
+            # The loop tolerates any gain f in the disk D(alpha) when L avoids
+            # -1/f: a disk crossing the real axis at -a and -1/a
+            a = (1 - alpha / 2) / (1 + alpha / 2)
+            disk = -(a + 1 / a) / 2 + (1 / a - a) / 2 * unit_circle
+            ax.plot(disk.real, disk.imag, ":", color="purple", linewidth=1.2)
+            margin_texts.append(
+                (
+                    f"Disk margin: ±{disk_gain_margin_db:.2f}dB, ±{disk_phase_margin_deg:.1f}deg (@{disk_omega / (2 * np.pi):.1f}Hz)",
+                    "purple",
                 )
             )
 

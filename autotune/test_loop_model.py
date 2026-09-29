@@ -127,3 +127,42 @@ def test_root_locus_passes_through_current_closed_loop_poles():
     np.testing.assert_allclose(
         np.sort_complex(loci[1]), np.sort_complex(loop.closedLoopPoles()), atol=1e-9
     )
+
+
+@pytest.mark.parametrize("delays", [1, 3])
+def test_delay_margin_is_the_delay_that_destabilizes_the_loop(delays):
+    loop = LoopModel(NUM, DEN, DT, delays, GAINS)
+    _, phase_margin, _, _, gain_crossover, _ = loop.stabilityMargins()
+    delay_margin, crossover = loop.delayMargin()
+
+    assert delay_margin == pytest.approx(
+        np.deg2rad(phase_margin) / gain_crossover, rel=1e-4
+    )
+    assert crossover == pytest.approx(gain_crossover, rel=1e-4)
+
+    extra_samples = int(np.floor(delay_margin / DT))
+    assert LoopModel(NUM, DEN, DT, delays + extra_samples, GAINS).isStable()
+    assert not LoopModel(NUM, DEN, DT, delays + extra_samples + 1, GAINS).isStable()
+
+
+def test_disk_margin_is_between_modulus_and_classical_margins():
+    loop = LoopModel(NUM, DEN, DT, 1, GAINS)
+    gain_margin, phase_margin, _, _, _, _ = loop.stabilityMargins()
+    alpha, disk_gain_margin_db, disk_phase_margin_deg, _ = loop.diskMargins()
+
+    assert 0 < alpha < 2
+    assert disk_gain_margin_db < 20 * np.log10(gain_margin)
+    assert disk_phase_margin_deg < phase_margin
+
+
+@pytest.mark.parametrize("delays", [1, 3])
+def test_loop_gain_touches_the_disk_margin_exclusion_disk(delays):
+    loop = LoopModel(NUM, DEN, DT, delays, GAINS)
+    alpha, _, _, _ = loop.diskMargins()
+    a = (1 - alpha / 2) / (1 + alpha / 2)
+    center = -(a + 1 / a) / 2
+    radius = (1 / a - a) / 2
+    omega = np.geomspace(1e-2, loop.nyquistFrequency(), 20000)
+    distance_to_disk = np.abs(response(loop.loop_gain, omega) - center) - radius
+
+    assert np.min(distance_to_disk) == pytest.approx(0.0, abs=1e-3)
