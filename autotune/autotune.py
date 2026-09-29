@@ -46,6 +46,7 @@ from data_selection_window import DataSelectionWindow
 from loop_model import LoopModel
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, VPacker
 from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -177,6 +178,15 @@ def thresholdColor(value, limit, limit_is_minimum):
     return "green" if respected else "red"
 
 
+def excludeAnnotationsFromLayout(ax):
+    # Texts and legends are drawn inside the axes: when constrained layout
+    # makes room for them, small axes get larger margins, shrink further and
+    # collapse
+    for artist in [*ax.texts, *ax.artists, ax.get_legend()]:
+        if artist is not None:
+            artist.set_in_layout(False)
+
+
 def drawZPlaneGrid(ax, f_nyquist):
     """Lines of constant damping ratio and natural frequency in the z-plane."""
     style = dict(color="gray", linewidth=0.4, alpha=0.7)
@@ -279,7 +289,7 @@ class Window(QDialog):
         # it takes the Canvas widget and a parent
         self.toolbar = NavigationToolbar(self.canvas, self)
 
-        self.robustness_figure = plt.figure(2)
+        self.robustness_figure = plt.figure(2, layout="constrained")
         self.robustness_canvas = FigureCanvas(self.robustness_figure)
         self.robustness_toolbar = NavigationToolbar(self.robustness_canvas, self)
         self.nyquist_ax = None
@@ -1233,7 +1243,7 @@ class Window(QDialog):
         loop_response = mag * np.exp(1j * phase)
 
         if self.nyquist_ax is None:
-            self.nyquist_ax = self.robustness_figure.add_subplot(1, 3, 1)
+            self.nyquist_ax = self.robustness_figure.add_subplot(2, 2, 1)
         ax = self.nyquist_ax
         ax.cla()
 
@@ -1259,15 +1269,18 @@ class Window(QDialog):
         else:
             margin_texts = [(self.kUnstableLoopText, "red")]
 
-        for row, (text, color) in enumerate(margin_texts):
-            ax.text(
-                0.01,
-                0.99 - 0.05 * row,
-                text,
-                color=color or "black",
-                verticalalignment="top",
-                transform=ax.transAxes,
-            )
+        lines = [
+            TextArea(text, textprops=dict(color=color or "black", fontsize="small"))
+            for text, color in margin_texts
+        ]
+        margin_box = AnchoredOffsetbox(
+            loc="upper left",
+            child=VPacker(children=lines, align="left", pad=0, sep=2),
+            pad=0.3,
+            borderpad=0.3,
+        )
+        margin_box.patch.set(alpha=0.8, edgecolor="none")
+        ax.add_artist(margin_box)
 
         ax.set_xlim(-3, 1.5)
         ax.set_ylim(-2, 2)
@@ -1276,6 +1289,7 @@ class Window(QDialog):
         ax.set_xlabel("Real")
         ax.set_ylabel("Imaginary")
         ax.legend(loc="lower right")
+        excludeAnnotationsFromLayout(ax)
 
     def plotSensitivities(self, loop, is_stable):
         omega = np.geomspace(0.1, loop.nyquistFrequency(), 500)
@@ -1286,7 +1300,7 @@ class Window(QDialog):
         }
 
         if self.sensitivity_ax is None:
-            self.sensitivity_ax = self.robustness_figure.add_subplot(1, 3, 2)
+            self.sensitivity_ax = self.robustness_figure.add_subplot(2, 2, (2, 4))
         ax = self.sensitivity_ax
         ax.cla()
 
@@ -1341,10 +1355,11 @@ class Window(QDialog):
         ax.set_xlabel("Frequency (Hz)")
         ax.set_ylabel("Magnitude (dB)")
         ax.legend(loc="lower left", fontsize="small")
+        excludeAnnotationsFromLayout(ax)
 
     def plotRootLocus(self, loop, gain_margin, is_stable):
         if self.root_locus_ax is None:
-            self.root_locus_ax = self.robustness_figure.add_subplot(1, 3, 3)
+            self.root_locus_ax = self.robustness_figure.add_subplot(2, 2, 3)
         ax = self.root_locus_ax
         ax.cla()
         drawZPlaneGrid(ax, loop.nyquistFrequency() / (2 * np.pi))
@@ -1406,6 +1421,7 @@ class Window(QDialog):
         ax.set_title("Root locus (Kp)")
         ax.set_xlabel("Real")
         ax.set_ylabel("Imaginary")
+        excludeAnnotationsFromLayout(ax)
 
     def annotateNyquistMargins(self, ax, loop, stability_margins):
         open_loop = loop.loop_gain
