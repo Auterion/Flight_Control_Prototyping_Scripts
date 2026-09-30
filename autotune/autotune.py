@@ -260,8 +260,7 @@ class Window(QDialog):
         self.damping_index = 0.0
         self.detune_coeff = 0.5
         self.gains = {"P": 0.01, "I": 0.0, "D": 0.0, "FF": 0.0}
-        self.figure = plt.figure(1)
-        self.figure.subplots_adjust(hspace=0.5, wspace=1.0)
+        self.figure = plt.figure(1, layout="constrained")
         self.num = []
         self.den = []
         self.sys_id_delays = 1
@@ -1197,6 +1196,7 @@ class Window(QDialog):
             ax.set_title("Bode")
             ax.set_ylabel("Magnitude (dB)")
             ax.legend()
+            excludeAnnotationsFromLayout(ax)
 
             ax = self.figure.add_subplot(3, 3, (8, 9))
             plot_ref = ax.semilogx(f, phase_ol * 180 / np.pi, label="Open-loop")
@@ -1215,6 +1215,7 @@ class Window(QDialog):
                     verticalalignment="top",
                     transform=ax.transAxes,
                 )
+            excludeAnnotationsFromLayout(ax)
 
         else:
             self.bode_plot_ref[0].set_xdata(f)
@@ -1564,6 +1565,7 @@ class Window(QDialog):
             ax.set_xlabel("Time (s)")
             ax.set_ylabel("Amplitude")
             ax.legend(["Input", "Output", "Model"])
+            excludeAnnotationsFromLayout(ax)
         else:
             # We have a reference, we can use it to update the data for that line.
             self.model_ref.set_xdata(self.t_est)
