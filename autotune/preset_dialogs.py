@@ -1,16 +1,22 @@
 """Dialog for adding/editing/renaming/deleting input-output presets."""
 
 from PyQt5.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
 )
 from searchable_combo_box import SearchableComboBox
+
+kGainLabels = {"P": "Kp", "I": "Ki", "D": "Kd", "FF": "FF"}
 
 
 class PresetEditDialog(QDialog):
@@ -25,7 +31,8 @@ class PresetEditDialog(QDialog):
     that collides with a *different* existing preset is rejected on confirm (it
     never silently overwrites or switches target).
 
-    The "new" input/output default to the current main-window selection.
+    The "new" input/output default to the current main-window selection. The
+    controller parameters and options start from the edited preset.
 
     After ``exec_()``, read the outcome:
       - result_action == "save":   upsert ``preset`` under ``name``; if
@@ -43,6 +50,7 @@ class PresetEditDialog(QDialog):
         topic_list,
         default_input,
         default_output,
+        parameter_list=(),
     ):
         super().__init__(parent)
         self.setWindowTitle("Add preset" if create else "Edit preset")
@@ -101,6 +109,7 @@ class PresetEditDialog(QDialog):
         grid.addWidget(self.combo_new_output, 2, 3)
 
         layout.addLayout(grid)
+        layout.addWidget(self._createControllerGroup(topic_list, parameter_list))
 
         # --- buttons ---
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -125,6 +134,57 @@ class PresetEditDialog(QDialog):
         if self._creating:
             self.combo_name.setFocus()
         self._update_mode()
+
+    def _createControllerGroup(self, topic_list, parameter_list):
+        source = self._source_name()
+        src = self.existing.get(source, {}) if source else {}
+        gains = src.get("gains", {})
+
+        group = QGroupBox("Controller")
+        group.setToolTip(
+            "Parameters of the flown controller, read from the log to pre-load "
+            "the PID and replay the flown closed loop. Leave blank if unknown."
+        )
+        form = QFormLayout()
+
+        self.combo_reference = self._optionalCombo(topic_list, src.get("reference", ""))
+        form.addRow(QLabel("Reference"), self.combo_reference)
+
+        self.combo_gain = {}
+        for gain, label in kGainLabels.items():
+            self.combo_gain[gain] = self._optionalCombo(
+                parameter_list, gains.get(gain, "")
+            )
+            form.addRow(QLabel(label), self.combo_gain[gain])
+
+        form_row = QHBoxLayout()
+        self.radio_ideal = QRadioButton("Ideal/Standard: Kp * [1 + Ki + Kd]")
+        self.radio_parallel = QRadioButton("Parallel: Kp + Ki + Kd")
+        is_ideal = src.get("gain_form", "parallel") == "ideal"
+        self.radio_ideal.setChecked(is_ideal)
+        self.radio_parallel.setChecked(not is_ideal)
+        form_row.addWidget(self.radio_ideal)
+        form_row.addWidget(self.radio_parallel)
+        form.addRow(QLabel("Form"), form_row)
+
+        options_row = QHBoxLayout()
+        self.check_pi_no_zero = QCheckBox("PI no-zero")
+        self.check_pi_no_zero.setChecked(src.get("pi_no_zero", False))
+        self.check_negate_output = QCheckBox("Negate control output")
+        self.check_negate_output.setChecked(src.get("negate_output", False))
+        options_row.addWidget(self.check_pi_no_zero)
+        options_row.addWidget(self.check_negate_output)
+        form.addRow(QLabel("Options"), options_row)
+
+        group.setLayout(form)
+        return group
+
+    def _optionalCombo(self, items, text):
+        combo = SearchableComboBox()
+        combo.addItems(items)
+        combo.setCurrentIndex(-1)
+        self._select(combo, text)
+        return combo
 
     def _select(self, combo, text):
         if not text:
@@ -197,6 +257,16 @@ class PresetEditDialog(QDialog):
             )
             return
 
+        gains = {
+            gain: combo.currentText().strip() for gain, combo in self.combo_gain.items()
+        }
+        gains = {gain: param for gain, param in gains.items() if param}
+        if gains and "P" not in gains:
+            QMessageBox.warning(
+                self, "Invalid gains", "Kp must be set to use the controller gains."
+            )
+            return
+
         mode = self._mode()
         if mode in ("create", "rename") and name in self.existing:
             QMessageBox.warning(
@@ -206,13 +276,24 @@ class PresetEditDialog(QDialog):
             )
             return
 
-        # Preserve legacy fallbacks from the source preset.
+        # Preserve the keys this dialog does not edit from the source preset.
         source = self._source_name()
         src = self.existing.get(source, {}) if source else {}
         preset = {"input": new_input, "output": new_output}
         for key in ("input_legacy", "output_legacy"):
             if key in src:
                 preset[key] = src[key]
+        reference = self.combo_reference.currentText().strip()
+        if reference:
+            preset["reference"] = reference
+        if gains:
+            preset["gains"] = gains
+        # Also selects the form of the PID tab, gains or not
+        preset["gain_form"] = "ideal" if self.radio_ideal.isChecked() else "parallel"
+        if self.check_pi_no_zero.isChecked():
+            preset["pi_no_zero"] = True
+        if self.check_negate_output.isChecked():
+            preset["negate_output"] = True
 
         self.name = name
         self.preset = preset

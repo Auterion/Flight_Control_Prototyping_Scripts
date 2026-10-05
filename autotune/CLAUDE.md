@@ -36,7 +36,10 @@ QT_QPA_PLATFORM=offscreen poetry run pytest -v
 `test_presets.py` covers preset load/save (seed, round-trip, order, corrupt-file
 fallback); `test_preset_dialogs.py` drives `PresetEditDialog` headlessly to verify
 the add/edit/rename/create/delete behavior; `test_loop_model.py` checks the
-closed-loop model (loop gain, closed-loop poles, sensitivities). These run in CI via
+closed-loop model (loop gain, closed-loop poles, sensitivities); `test_fit_metrics.py`
+checks the gain-form conversion, the loading of the flown controller from a preset
+(and its pre-loading in the main window) and the closed-loop replay fit;
+`test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection. These run in CI via
 `.github/workflows/autotune_tests.yml`.
 
 ## Code Quality
@@ -65,9 +68,9 @@ autotune.py (Bode/step response validation) → PX4 gains
 
 - **`data_selection_window.py`** — Interactive matplotlib window for selecting the maneuver time window and inspecting signal quality/coherence before running identification. Loads input/output presets via `presets.py` and lets the user add/edit/delete them through `preset_dialogs.py`.
 
-- **`presets.py`** — Loads/saves input/output presets from the user-editable `presets.yaml` (next to the code). Seeds the file with `DEFAULT_PRESETS` on first run; falls back to defaults if the file is missing or unparseable.
+- **`presets.py`** — Loads/saves input/output presets from the user-editable `presets.yaml` (next to the code). Seeds the file with `DEFAULT_PRESETS` on first run; falls back to defaults if the file is missing or unparseable. A preset can also describe the flown controller (reference signal, gain parameter names, ideal/parallel form, PID options), which pre-loads the PID and drives the closed-loop replay fit.
 
-- **`preset_dialogs.py`** — `PresetEditDialog`: a Qt dialog to add, edit, or delete a preset, with an old→new signal diff that switches to "create" mode when the preset is renamed.
+- **`preset_dialogs.py`** — `PresetEditDialog`: a Qt dialog to add, edit, or delete a preset, with an old→new signal diff that switches to "create" mode when the preset is renamed, and the controller reference, gain parameters, form and PID options.
 
 - **`system_identification.py`** — Preprocesses signals (bias removal, filtering) and runs weighted RLS to fit an ARX model. Returns numerator/denominator polynomial coefficients.
 

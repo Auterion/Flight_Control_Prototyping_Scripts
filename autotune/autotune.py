@@ -43,7 +43,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 from data_extractor import *
 from data_selection_window import DataSelectionWindow
-from loop_model import LoopModel
+from loop_model import LoopModel, idealGains, parallelGains
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, VPacker
@@ -106,6 +106,55 @@ def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, method="RLS"):
         return computeNRMSE(y_detrended, y_est_detrended)
     except Exception:
         return -np.inf
+
+
+kGainFormLabels = {
+    "ideal": "Ideal/Standard\nKp * [1 + Ki + Kd]",
+    "parallel": "Parallel\nKp + Ki + Kd",
+}
+kGainFormat = {"ideal": "{:.3f}", "parallel": "{:.4f}"}
+# Loaded when the log gives no flown gains: the lowest slider values, except
+# FF left at 0 (no feedforward) rather than its -1 slider end
+kMinimumGains = {"P": 0.001, "I": 0.0, "D": 0.0, "FF": 0.0}
+# (min, max, step) of each slider. Parallel Ki and Kd are the ideal ones
+# scaled by Kp, typically below 1: finer steps keep them from rounding to 0
+kGainSliderRanges = {
+    "ideal": {
+        "P": (0.001, 4.0, 0.001),
+        "I": (0.0, 20.0, 0.1),
+        "D": (0.0, 0.2, 0.001),
+        "FF": (-1.0, 1.0, 0.001),
+    },
+    "parallel": {
+        "P": (0.001, 4.0, 0.001),
+        "I": (0.0, 20.0, 0.01),
+        "D": (0.0, 0.05, 0.0001),
+        "FF": (-1.0, 1.0, 0.001),
+    },
+}
+
+
+def compute_closed_loop_fit(num, den, dt, delays, gains, t, r, y, **pid_options):
+    """Fit of the logged output replayed from the logged reference in closed loop.
+
+    pid_options are the LoopModel options of the controller. Returns None when
+    the replayed loop is unstable.
+    """
+    loop = LoopModel(num, den, dt, delays, gains, **pid_options)
+    if not loop.isStable():
+        return None
+    y_replay = loop.simulate(t, r, np.zeros_like(t))
+    return computeNRMSE(detrend(y), detrend(y_replay))
+
+
+def showFit(label, fit):
+    label.setText(f"{fit:.1f}%")
+    if fit >= 80:
+        label.setStyleSheet("color: green")
+    elif fit >= 60:
+        label.setStyleSheet("color: orange")
+    else:
+        label.setStyleSheet("color: red")
 
 
 class ParamSearchWorker(QThread):
@@ -259,7 +308,12 @@ class Window(QDialog):
         self.rise_time = 0.13
         self.damping_index = 0.0
         self.detune_coeff = 0.5
-        self.gains = {"P": 0.01, "I": 0.0, "D": 0.0, "FF": 0.0}
+        self.gains = {"P": 0.01, "I": 0.0, "D": 0.0, "FF": 0.0}  # ideal form
+        self.gain_form = "ideal"
+        self.reference = None
+        self.flown_gains = None
+        self.flown_gain_form = None
+        self.flown_options = {}
         self.figure = plt.figure(1, layout="constrained")
         self.num = []
         self.den = []
@@ -364,6 +418,8 @@ class Window(QDialog):
         self.step_info_patches = []
         self.lbl_fit.setText("—")
         self.lbl_fit.setStyleSheet("")
+        self.lbl_closed_loop_fit.setText("—")
+        self.lbl_closed_loop_fit.setStyleSheet("")
         self.lbl_stability.setText("—")
         self.lbl_stability.setStyleSheet("")
         self.btn_stabilize.setVisible(False)
@@ -469,7 +525,31 @@ class Window(QDialog):
 
     def createFitWidget(self, layout):
         self.lbl_fit = QLabel("—")
-        layout.addRow(QLabel("Fit"), self.lbl_fit)
+        self.addHintedRow(
+            layout,
+            "Open-loop fit",
+            self.lbl_fit,
+            "Model driven by the logged input, compared with the logged output "
+            "(100% is a perfect match).",
+        )
+        self.lbl_closed_loop_fit = QLabel("—")
+        self.addHintedRow(
+            layout,
+            "Closed-loop fit",
+            self.lbl_closed_loop_fit,
+            "Logged reference replayed through the model and the controller "
+            "gains flown in the log, compared with the logged output (100% is a "
+            "perfect match).<br><br>"
+            "Needs a preset with a <i>reference</i> and <i>gains</i> whose "
+            "parameters are in the log, otherwise shows —.",
+        )
+
+    @staticmethod
+    def addHintedRow(layout, name, value_label, hint):
+        name_label = QLabel(f"{name} ⓘ")
+        for label in (name_label, value_label):
+            label.setToolTip(hint)
+        layout.addRow(name_label, value_label)
 
     def createStabilityWidget(self, layout):
         self.lbl_stability = QLabel("—")
@@ -620,21 +700,17 @@ class Window(QDialog):
         msg.exec_()
 
     def createPidLayout(self):
-        self.gain_line_edit = {}
         self.gain_slider = {}
-        self.parallel_gain_lbl = {}
-        slider_props = {
-            "P": {"min": 0.001, "max": 4.0, "step": 0.001},
-            "I": {"min": 0.0, "max": 20.0, "step": 0.1},
-            "D": {"min": 0.0, "max": 0.2, "step": 0.001},
-            "FF": {"min": -1.0, "max": 1.0, "step": 0.001},
-        }
+        self.gain_edit = {form: {} for form in kGainFormLabels}
 
         def make_slider_callback(gain):
             return lambda: self.updateGainFromSlider(gain)
 
-        def make_line_edit_callback(gain):
-            return lambda: self.updateGainFromLineEdit(gain)
+        def make_edit_callback(form, gain):
+            return lambda: self.updateGainFromEdit(form, gain)
+
+        def make_form_callback(form):
+            return lambda checked: checked and self.setGainForm(form)
 
         layout_pid = QGridLayout()
 
@@ -650,44 +726,32 @@ class Window(QDialog):
         layout_options.addWidget(self.negate_control_box)
         layout_pid.addLayout(layout_options, 0, 1)
 
-        layout_pid.addWidget(QLabel("Ideal/Standard\nKp * [1 + Ki + Kd]"), 0, 2)
-        layout_pid.addWidget(QLabel("Parallel\nKp + Ki + Kd"), 0, 3)
+        self.gain_form_radio = {}
+        for column, (form, label) in enumerate(kGainFormLabels.items(), start=2):
+            self.gain_form_radio[form] = QRadioButton(label)
+            layout_pid.addWidget(self.gain_form_radio[form], 0, column)
 
-        row = 1
-        for gain in self.gains.keys():
-            if gain == "FF":
-                layout_pid.addWidget(QLabel("{}".format(gain)), row, 0)
-            else:
-                layout_pid.addWidget(QLabel("K{}".format(gain.lower())), row, 0)
+        for row, gain in enumerate(self.gains.keys(), start=1):
+            label = gain if gain == "FF" else f"K{gain.lower()}"
+            layout_pid.addWidget(QLabel(label), row, 0)
 
             self.gain_slider[gain] = DoubleSlider(Qt.Horizontal)
-            self.gain_slider[gain].setMinimum(slider_props[gain]["min"])
-            self.gain_slider[gain].setMaximum(slider_props[gain]["max"])
-            self.gain_slider[gain].setInterval(slider_props[gain]["step"])
-            self.gain_slider[gain].setValue(self.gains[gain])
             self.gain_slider[gain].valueChanged.connect(make_slider_callback(gain))
             layout_pid.addWidget(self.gain_slider[gain], row, 1)
 
-            self.gain_line_edit[gain] = QLineEdit("{:.3f}".format(self.gains[gain]))
-            self.gain_line_edit[gain].setSizePolicy(
-                QSizePolicy.Minimum, QSizePolicy.Fixed
-            )
-            self.gain_line_edit[gain].setMinimumWidth(0)
-            self.gain_line_edit[gain].setMinimumSize(0, 0)
-            self.gain_line_edit[gain].setAlignment(Qt.AlignCenter)
-            self.gain_line_edit[gain].textChanged.connect(make_line_edit_callback(gain))
-            layout_pid.addWidget(self.gain_line_edit[gain], row, 2)
+            for column, form in enumerate(kGainFormLabels, start=2):
+                edit = QLineEdit()
+                edit.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+                edit.setMinimumWidth(0)
+                edit.setMinimumSize(0, 0)
+                edit.setAlignment(Qt.AlignCenter)
+                edit.textChanged.connect(make_edit_callback(form, gain))
+                layout_pid.addWidget(edit, row, column)
+                self.gain_edit[form][gain] = edit
 
-            if gain == "P" or gain == "FF":
-                self.parallel_gain_lbl[gain] = QLabel("{:.4f}".format(self.gains[gain]))
-            else:
-                self.parallel_gain_lbl[gain] = QLabel(
-                    "{:.4f}".format(self.gains["P"] * self.gains[gain])
-                )
-            self.parallel_gain_lbl[gain].setAlignment(Qt.AlignCenter)
-            layout_pid.addWidget(self.parallel_gain_lbl[gain], row, 3)
-
-            row += 1
+        for form, radio in self.gain_form_radio.items():
+            radio.toggled.connect(make_form_callback(form))
+        self.gain_form_radio["ideal"].setChecked(True)
 
         return layout_pid
 
@@ -832,36 +896,57 @@ class Window(QDialog):
 
         self.canvas.draw()
 
+    def setGainForm(self, form):
+        """Make the gains of form editable and driven by the sliders."""
+        self.gain_form = form
+        for edit_form, edits in self.gain_edit.items():
+            for edit in edits.values():
+                edit.setReadOnly(edit_form != form)
+                edit.setFrame(edit_form == form)
+        for gain, slider in self.gain_slider.items():
+            minimum, maximum, step = kGainSliderRanges[form][gain]
+            slider.setInterval(step)
+            slider.setMinimum(minimum)
+            slider.setMaximum(maximum)
+        self.updateKIDSliders()
+
+    def gainsInForm(self, form):
+        return dict(self.gains) if form == "ideal" else parallelGains(self.gains)
+
+    def setGainInActiveForm(self, gain, value):
+        """Returns False when the gains have no ideal form (parallel Kp = 0)."""
+        gains = self.gainsInForm(self.gain_form)
+        gains[gain] = value
+        ideal = idealGains(gains, self.gain_form)
+        if ideal is None:
+            return False
+        self.gains = ideal
+        return True
+
     def updateGainFromSlider(self, gain: str):
         if self.gain_slider[gain].hasFocus():
-            self.gains[gain] = self.gain_slider[gain].value()
-            self.gain_line_edit[gain].setText("{:.3f}".format(self.gains[gain]))
-            self.updateGainLabels(gain)
+            self.setGainInActiveForm(gain, self.gain_slider[gain].value())
+            self.showGains()
             if self.gain_slider[gain].isSliderDown():
                 self.updateClosedLoop()
 
-    def updateGainFromLineEdit(self, gain: str):
-        if (
-            isNumber(self.gain_line_edit[gain].text())
-            and self.gain_line_edit[gain].hasFocus()
-        ):
-            self.gains[gain] = float(self.gain_line_edit[gain].text())
-            self.gain_slider[gain].setValue(self.gains[gain])
-            self.updateGainLabels(gain)
+    def updateGainFromEdit(self, form, gain):
+        edit = self.gain_edit[form][gain]
+        if form != self.gain_form or not edit.hasFocus() or not isNumber(edit.text()):
+            return
+        value = float(edit.text())
+        if self.setGainInActiveForm(gain, value):
+            self.gain_slider[gain].setValue(value)
+            # Rewriting the edit being typed in would move its cursor
+            self.showGains(skip=edit)
             self.updateClosedLoop()
 
-    def updateGainLabels(self, gain: str):
-        if gain == "FF":
-            self.parallel_gain_lbl[gain].setText("{:.4f}".format(self.gains[gain]))
-        else:
-            # Kp also modifies the Ki and Kd gains of the parallel form
-            self.parallel_gain_lbl["P"].setText("{:.4f}".format(self.gains["P"]))
-            self.parallel_gain_lbl["I"].setText(
-                "{:.4f}".format(self.gains["P"] * self.gains["I"])
-            )
-            self.parallel_gain_lbl["D"].setText(
-                "{:.4f}".format(self.gains["P"] * self.gains["D"])
-            )
+    def showGains(self, skip=None):
+        for form, edits in self.gain_edit.items():
+            gains = self.gainsInForm(form)
+            for gain, edit in edits.items():
+                if edit is not skip:
+                    edit.setText(kGainFormat[form].format(gains[gain]))
 
     def createGmvcLayout(self):
         layout_gmvc = QFormLayout()
@@ -960,17 +1045,33 @@ class Window(QDialog):
 
         y_detrended = detrend(self.y[: len(self.y_est)])
         y_est_detrended = detrend(self.y_est)
-        fit = computeNRMSE(y_detrended, y_est_detrended)
-        self.lbl_fit.setText(f"{fit:.1f}%")
-        if fit >= 80:
-            self.lbl_fit.setStyleSheet("color: green")
-        elif fit >= 60:
-            self.lbl_fit.setStyleSheet("color: orange")
-        else:
-            self.lbl_fit.setStyleSheet("color: red")
+        showFit(self.lbl_fit, computeNRMSE(y_detrended, y_est_detrended))
+        self.updateClosedLoopFit()
 
         self.plotInputOutput()
         self.checkStability()
+
+    def updateClosedLoopFit(self):
+        if self.reference is None or self.flown_gains is None:
+            self.lbl_closed_loop_fit.setText("—")
+            self.lbl_closed_loop_fit.setStyleSheet("")
+            return
+        fit = compute_closed_loop_fit(
+            self.num,
+            self.den,
+            self.dt,
+            self.sys_id_delays,
+            self.flown_gains,
+            self.t,
+            self.reference,
+            self.y,
+            **self.flown_options,
+        )
+        if fit is None:
+            self.lbl_closed_loop_fit.setText("unstable")
+            self.lbl_closed_loop_fit.setStyleSheet("color: red")
+        else:
+            showFit(self.lbl_closed_loop_fit, fit)
 
     def checkStability(self):
         unstable = np.any(np.abs(self.Gz.poles()) > 1)
@@ -1087,10 +1188,10 @@ class Window(QDialog):
         self.updateClosedLoop()
 
     def updateKIDSliders(self):
-        for gain in self.gains.keys():
-            self.gain_line_edit[gain].setText("{:.3f}".format(self.gains[gain]))
-            self.gain_slider[gain].setValue(self.gains[gain])
-            self.updateGainLabels(gain)
+        gains = self.gainsInForm(self.gain_form)
+        for gain, slider in self.gain_slider.items():
+            slider.setValue(gains[gain])
+        self.showGains()
 
     def updateClosedLoop(self):
         if not self.is_system_identified:
@@ -1270,18 +1371,21 @@ class Window(QDialog):
         else:
             margin_texts = [(self.kUnstableLoopText, "red")]
 
-        lines = [
-            TextArea(text, textprops=dict(color=color or "black", fontsize="small"))
-            for text, color in margin_texts
-        ]
-        margin_box = AnchoredOffsetbox(
-            loc="upper left",
-            child=VPacker(children=lines, align="left", pad=0, sep=2),
-            pad=0.3,
-            borderpad=0.3,
-        )
-        margin_box.patch.set(alpha=0.8, edgecolor="none")
-        ax.add_artist(margin_box)
+        # A zero loop gain (Kp = 0) has no margin to show, and matplotlib
+        # cannot lay out an empty box
+        if margin_texts:
+            lines = [
+                TextArea(text, textprops=dict(color=color or "black", fontsize="small"))
+                for text, color in margin_texts
+            ]
+            margin_box = AnchoredOffsetbox(
+                loc="upper left",
+                child=VPacker(children=lines, align="left", pad=0, sep=2),
+                pad=0.3,
+                borderpad=0.3,
+            )
+            margin_box.patch.set(alpha=0.8, edgecolor="none")
+            ax.add_artist(margin_box)
 
         ax.set_xlim(-3, 1.5)
         ax.set_ylim(-2, 2)
@@ -1590,6 +1694,11 @@ class Window(QDialog):
             self.u = self.input
             self.y = select.y
             self.true_airspeed = select.v
+            self.reference = select.r
+            self.flown_gains = select.flown_gains
+            self.flown_gain_form = select.flown_gain_form
+            self.flown_options = select.flown_options or {}
+            self.loadFlownController()
             trim_airspeed = select.getTrimAirspeed()
 
             if trim_airspeed is not None:
@@ -1599,6 +1708,18 @@ class Window(QDialog):
             self.btn_find_params.setEnabled(True)
             self.runIdentification()
             self.computeController()
+
+    def loadFlownController(self):
+        if "p_on_feedback" in self.flown_options:
+            self.pid_no_zero_box.setChecked(self.flown_options["p_on_feedback"])
+            self.negate_control_box.setChecked(self.flown_options["negate_output"])
+        if self.flown_gains is not None:
+            self.gains = dict(self.flown_gains)
+        else:
+            self.gains = dict(kMinimumGains)
+        self.updateKIDSliders()
+        if self.flown_gain_form is not None:
+            self.gain_form_radio[self.flown_gain_form].setChecked(True)
 
     def refreshInputOutputData(self):
         self.reset()
@@ -1613,6 +1734,8 @@ class Window(QDialog):
         self.u = resample_interp(self.t, self.u, t_new)
         self.y = resample_interp(self.t, self.y, t_new)
         self.input = resample_interp(self.t, self.input, t_new)
+        if self.reference is not None:
+            self.reference = resample_interp(self.t, self.reference, t_new)
 
         if len(self.true_airspeed) > 0:
             self.true_airspeed = resample_interp(self.t, self.true_airspeed, t_new)

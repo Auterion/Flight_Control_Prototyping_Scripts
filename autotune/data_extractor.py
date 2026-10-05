@@ -102,6 +102,21 @@ class DataExtractor:
 
         return (t_aligned, u_aligned, y_aligned, v_aligned)
 
+    def getAlignedData(self, field_def, t_aligned):
+        (t_data, data) = self.getData(field_def)
+        return resample_interp(t_data, data, t_aligned)
+
+    def getParameterList(self):
+        return sorted(self.log.initial_parameters.keys())
+
+    def getParameter(self, name, t):
+        """Value of the parameter at log time t (s), None if it is not logged."""
+        value = self.log.initial_parameters.get(name)
+        for timestamp, changed_name, changed_value in self.log.changed_parameters:
+            if changed_name == name and us2s(timestamp) <= t:
+                value = changed_value
+        return value
+
 
 def get_data(log, topic_name, variable_name, instance=0):
     variable_data = np.array([])

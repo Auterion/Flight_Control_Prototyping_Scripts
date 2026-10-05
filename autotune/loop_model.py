@@ -16,6 +16,33 @@ from system_identification import arx_transfer_function
 kDerivativeCutoffFreq = 10.0  # Hz
 
 
+def idealGains(gains, form="parallel"):
+    """Gains P, I, D and FF to the ideal form Kp * (1 + I + D) used here.
+
+    form is "parallel" (P + I + D) or "ideal". Returns None for parallel gains
+    without P, which have no ideal form.
+    """
+    p = gains.get("P", 0.0)
+    i = gains.get("I", 0.0)
+    d = gains.get("D", 0.0)
+    if form == "parallel":
+        if p == 0.0:
+            return None
+        i /= p
+        d /= p
+    return {"P": p, "I": i, "D": d, "FF": gains.get("FF", 0.0)}
+
+
+def parallelGains(ideal_gains):
+    p = ideal_gains["P"]
+    return {
+        "P": p,
+        "I": p * ideal_gains["I"],
+        "D": p * ideal_gains["D"],
+        "FF": ideal_gains["FF"],
+    }
+
+
 class LoopModel:
     def __init__(
         self,
