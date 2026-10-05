@@ -36,6 +36,8 @@ Description:
     rate controller auto-tuning algorithm test on real data
 """
 
+import json
+
 import numpy as np
 from pyulog import ULog
 from scipy import signal
@@ -52,6 +54,7 @@ class FieldDefinition:
 class DataExtractor:
     def __init__(self, logfile_name):
         self.log = ULog(logfile_name)
+        self.aos_settings = get_aos_settings(self.log)
 
     def get_topics_list(self):
         fields = []
@@ -107,15 +110,31 @@ class DataExtractor:
         return resample_interp(t_data, data, t_aligned)
 
     def getParameterList(self):
-        return sorted(self.log.initial_parameters.keys())
+        return sorted(self.log.initial_parameters.keys()) + sorted(self.aos_settings)
 
     def getParameter(self, name, t):
-        """Value of the parameter at log time t (s), None if it is not logged."""
+        """Value of the parameter at log time t (s), None if it is not logged.
+
+        AOS settings are only logged once, so their value does not depend on t.
+        """
+        if name in self.aos_settings:
+            return self.aos_settings[name]
         value = self.log.initial_parameters.get(name)
         for timestamp, changed_name, changed_value in self.log.changed_parameters:
             if changed_name == name and us2s(timestamp) <= t:
                 value = changed_value
         return value
+
+
+def get_aos_settings(log):
+    """Numeric AOS settings, as shown by `ulog_info -m aos_settings`."""
+    settings = {}
+    # Each entry is a JSON list of settings split into string chunks
+    for chunks in log.msg_info_multiple_dict.get("aos_settings", []):
+        for setting in json.loads("".join(chunks)):
+            if setting["type"] in ("float64", "int64"):
+                settings[setting["name"]] = setting["value"]
+    return settings
 
 
 def get_data(log, topic_name, variable_name, instance=0):
