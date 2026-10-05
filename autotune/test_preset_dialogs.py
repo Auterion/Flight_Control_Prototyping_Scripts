@@ -15,11 +15,30 @@ from preset_dialogs import PresetEditDialog  # noqa: E402
 from PyQt5.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 EXISTING = {
-    "Rollrate": {"input": "a/in.0", "output": "a/out.0", "input_legacy": "a/leg.0"},
+    "Rollrate": {
+        "input": "a/in.0",
+        "output": "a/out.0",
+        "input_legacy": "a/leg.0",
+        "reference": "a/ref.0",
+        "gains": {"P": "A_P", "I": "A_I"},
+        "gain_form": "ideal",
+        "negate_output": True,
+    },
     "Pitchrate": {"input": "b/in.0", "output": "b/out.0"},
 }
-TOPICS = ["a/in.0", "a/out.0", "b/in.0", "b/out.0", "c/in.0", "c/out.0", "a/leg.0"]
+TOPICS = [
+    "a/in.0",
+    "a/out.0",
+    "b/in.0",
+    "b/out.0",
+    "c/in.0",
+    "c/out.0",
+    "a/leg.0",
+    "a/ref.0",
+    "b/ref.0",
+]
 SEL_IN, SEL_OUT = "c/in.0", "c/out.0"  # "currently selected" main-window signals
+PARAMS = ["A_D", "A_I", "A_P", "B_P"]
 
 
 @pytest.fixture(scope="session")
@@ -34,7 +53,7 @@ def make(qapp):
         # Fresh copy of EXISTING per dialog so tests stay isolated.
         existing = {k: dict(v) for k, v in EXISTING.items()}
         return PresetEditDialog(
-            None, create, original_name, existing, TOPICS, SEL_IN, SEL_OUT
+            None, create, original_name, existing, TOPICS, SEL_IN, SEL_OUT, PARAMS
         )
 
     return _make
@@ -71,12 +90,96 @@ def test_typing_unknown_name_renames(make):
     assert d.result_action == "save"
     assert d.name == "Rollrate_v2"
     assert d.remove_name == "Rollrate"  # old key removed by caller
-    # legacy fallback is carried over from the renamed preset
+    # legacy fallback, reference and controller are carried over from the
+    # renamed preset
     assert d.preset == {
         "input": SEL_IN,
         "output": SEL_OUT,
         "input_legacy": "a/leg.0",
+        "reference": "a/ref.0",
+        "gains": {"P": "A_P", "I": "A_I"},
+        "gain_form": "ideal",
+        "negate_output": True,
     }
+
+
+def test_edit_mode_shows_the_stored_controller(make):
+    d = make("Rollrate")
+    assert d.combo_reference.currentText() == "a/ref.0"
+    assert d.combo_gain["P"].currentText() == "A_P"
+    assert d.combo_gain["I"].currentText() == "A_I"
+    assert d.combo_gain["D"].currentText() == ""
+    assert d.radio_ideal.isChecked()
+    assert not d.radio_parallel.isChecked()
+    assert not d.check_pi_no_zero.isChecked()
+    assert d.check_negate_output.isChecked()
+
+
+def test_edited_controller_is_saved(make):
+    d = make("Pitchrate")
+    assert d.radio_parallel.isChecked()  # default form
+    assert d.combo_reference.currentText() == ""  # Pitchrate has none
+    d.combo_reference.setEditText("b/ref.0")
+    d.combo_gain["P"].setEditText("B_P")
+    d.combo_gain["FF"].setEditText("B_FF")
+    d.check_pi_no_zero.setChecked(True)
+
+    d._on_confirm()
+
+    assert d.result_action == "save"
+    assert d.preset == {
+        "input": SEL_IN,
+        "output": SEL_OUT,
+        "reference": "b/ref.0",
+        "gains": {"P": "B_P", "FF": "B_FF"},
+        "gain_form": "parallel",
+        "pi_no_zero": True,
+    }
+
+
+def test_clearing_all_gains_removes_the_controller_gains(make):
+    d = make("Rollrate")
+    for combo in d.combo_gain.values():
+        combo.setEditText("")
+
+    d._on_confirm()
+
+    assert d.result_action == "save"
+    assert "gains" not in d.preset
+    # the form and options stand on their own
+    assert d.preset["gain_form"] == "ideal"
+    assert d.preset["negate_output"] is True
+
+
+def test_ideal_form_without_gains_is_saved(make):
+    d = make(None, create=True)
+    d.combo_name.setEditText("BrandNew")
+    d.radio_ideal.setChecked(True)
+
+    d._on_confirm()
+
+    assert d.result_action == "save"
+    assert d.preset == {"input": SEL_IN, "output": SEL_OUT, "gain_form": "ideal"}
+
+
+def test_clearing_the_reference_removes_it(make):
+    d = make("Rollrate")
+    d.combo_reference.setEditText("")
+
+    d._on_confirm()
+
+    assert d.result_action == "save"
+    assert "reference" not in d.preset
+
+
+def test_gains_without_kp_are_rejected(make, no_modals):
+    d = make(None, create=True)
+    d.combo_name.setEditText("BrandNew")
+    d.combo_gain["I"].setEditText("A_I")
+
+    d._on_confirm()
+
+    assert d.result_action == "cancel"
 
 
 def test_edit_button_opens_in_update_mode(make):
@@ -92,6 +195,8 @@ def test_add_button_creates(make):
     assert d.btn_confirm.text() == "Create new preset"
     assert d.combo_name.currentText() == ""
     assert d._delete_target() is None  # nothing to delete while creating
+    assert d.combo_reference.currentText() == ""
+    assert all(combo.currentText() == "" for combo in d.combo_gain.values())
 
     d.combo_name.setEditText("BrandNew")
     d._on_confirm()
@@ -99,7 +204,7 @@ def test_add_button_creates(make):
     assert d.result_action == "save"
     assert d.name == "BrandNew"
     assert d.remove_name is None  # nothing removed
-    assert d.preset == {"input": SEL_IN, "output": SEL_OUT}
+    assert d.preset == {"input": SEL_IN, "output": SEL_OUT, "gain_form": "parallel"}
 
 
 def test_renaming_to_existing_name_is_rejected(make, no_modals):
@@ -141,7 +246,7 @@ def test_add_then_typing_existing_name_stays_create(make, no_modals):
     assert d.result_action == "save"
     assert d.name == "Rollrate2"
     assert d.remove_name is None  # existing "Rollrate" left untouched
-    assert d.preset == {"input": SEL_IN, "output": SEL_OUT}
+    assert d.preset == {"input": SEL_IN, "output": SEL_OUT, "gain_form": "parallel"}
 
 
 def test_add_then_typing_existing_name_then_confirm_is_rejected(make, no_modals):

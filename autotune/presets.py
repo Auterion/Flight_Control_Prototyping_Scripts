@@ -6,6 +6,12 @@ file next to this module so they can be edited by hand or from the GUI without
 touching the source code. If the file is missing it is seeded with the built-in
 defaults below; if it is unreadable/corrupt we fall back to the defaults rather
 than crashing.
+
+A preset may also describe the flown controller: the logged ``reference`` of
+the loop, the parameters holding its ``gains`` (P, I, D and FF) in
+``gain_form`` "parallel" (default) or "ideal", and the ``pi_no_zero`` and
+``negate_output`` PID options (default false). They pre-load the PID of the
+interface and replay the flown closed loop through the identified model.
 """
 
 import os
@@ -14,22 +20,47 @@ import yaml
 
 # Built-in presets used to seed presets.yaml on first run (and as a fallback if
 # the file cannot be read). Each preset maps a name to a dict with "input" and
-# "output" topics, plus optional "input_legacy"/"output_legacy" fallbacks.
+# "output" topics, plus optional "input_legacy"/"output_legacy" fallbacks and
+# the optional description of the flown controller.
 DEFAULT_PRESETS = {
     "Rollrate": {
         "input": "vehicle_torque_setpoint/xyz[0].0",
         "output": "vehicle_angular_velocity/xyz[0].0",
         "input_legacy": "actuator_controls_0/control[0].0",
+        "reference": "vehicle_rates_setpoint/roll.0",
+        "gains": {
+            "P": "MC_ROLLRATE_P",
+            "I": "MC_ROLLRATE_I",
+            "D": "MC_ROLLRATE_D",
+            "FF": "MC_ROLLRATE_FF",
+        },
+        "gain_form": "parallel",
     },
     "Pitchrate": {
         "input": "vehicle_torque_setpoint/xyz[1].0",
         "output": "vehicle_angular_velocity/xyz[1].0",
         "input_legacy": "actuator_controls_0/control[1].0",
+        "reference": "vehicle_rates_setpoint/pitch.0",
+        "gains": {
+            "P": "MC_PITCHRATE_P",
+            "I": "MC_PITCHRATE_I",
+            "D": "MC_PITCHRATE_D",
+            "FF": "MC_PITCHRATE_FF",
+        },
+        "gain_form": "parallel",
     },
     "Yawrate": {
         "input": "vehicle_torque_setpoint/xyz[2].0",
         "output": "vehicle_angular_velocity/xyz[2].0",
         "input_legacy": "actuator_controls_0/control[2].0",
+        "reference": "vehicle_rates_setpoint/yaw.0",
+        "gains": {
+            "P": "MC_YAWRATE_P",
+            "I": "MC_YAWRATE_I",
+            "D": "MC_YAWRATE_D",
+            "FF": "MC_YAWRATE_FF",
+        },
+        "gain_form": "parallel",
     },
     "Rollrate(FW)": {
         "input": "vehicle_torque_setpoint/xyz[0].1",

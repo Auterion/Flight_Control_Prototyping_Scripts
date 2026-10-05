@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from data_extractor import DataExtractor
+from loop_model import idealGains
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.widgets import SpanSelector
 from pid_analyse_window import PIDAnalyseWindow
@@ -34,6 +35,10 @@ class DataSelectionWindow(QDialog):
         self.t = []
         self.u = []
         self.y = []
+        self.r = None
+        self.flown_gains = None
+        self.flown_gain_form = None
+        self.flown_options = None
         self.t_start = None
         self.t_stop = None
 
@@ -110,9 +115,55 @@ class DataSelectionWindow(QDialog):
                 self.t_start,
                 self.t_stop,
             )
+            (self.r, self.flown_gains, self.flown_gain_form, self.flown_options) = (
+                self.getFlownController()
+            )
             self.accept()
         else:
             self.printRangeError()
+
+    def getFlownController(self):
+        """Reference, flown gains and PID options of the selected preset's loop.
+
+        Returns (reference, gains, gain_form, options): gains in ideal form,
+        gain_form the form of the preset's parameters and options as LoopModel
+        keyword arguments. Each is None when the preset does not provide it or
+        the selected signals no longer match the preset.
+        """
+        preset = self.preset_candidates.get(self.combo_preset.currentText())
+        if preset is None or self.findInputOutputIndex(preset) != (
+            self.index_u,
+            self.index_y,
+        ):
+            return (None, None, None, None)
+
+        options = {
+            "p_on_feedback": preset.get("pi_no_zero", False),
+            "negate_output": preset.get("negate_output", False),
+        }
+
+        reference = None
+        index_r = self.combo_u.findText(preset.get("reference", ""))
+        if "reference" in preset and index_r > -1:
+            reference = self.data_extractor.getAlignedData(self.topics[index_r], self.t)
+
+        return (
+            reference,
+            self.getFlownGains(preset),
+            preset.get("gain_form", "parallel"),
+            options,
+        )
+
+    def getFlownGains(self, preset):
+        if "gains" not in preset:
+            return None
+        values = {
+            gain: self.data_extractor.getParameter(param, self.t[0])
+            for gain, param in preset["gains"].items()
+        }
+        if None in values.values():
+            return None
+        return idealGains(values, preset.get("gain_form", "parallel"))
 
     def browseFiles(self):
         options = QFileDialog.Options()
@@ -235,6 +286,7 @@ class DataSelectionWindow(QDialog):
             self.topic_names,
             self.combo_u.currentText(),
             self.combo_y.currentText(),
+            self.data_extractor.getParameterList(),
         )
         dialog.exec_()
 
