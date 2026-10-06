@@ -80,7 +80,8 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
    i. We are interested in frequencies between 0.5-10Hz. \
    ii. Values > 0.6 are sufficient. \
    iii. If the coherence function is oscillating dramatically, the identified model may be unreliable at those frequencies.
-4. Once you have identified the window, load the selection into the tool.
+4. (Optional) Switch to "Validation windows" and select other parts of the log. The identified model is replayed on them in the Validation tab, to check it on data it was not identified from.
+5. Once you have identified the window, load the selection into the tool.
 
 <table>
   <tr>
