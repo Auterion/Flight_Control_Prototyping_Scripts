@@ -46,6 +46,7 @@ from data_selection_window import DataSelectionWindow
 from loop_model import LoopModel, idealGains, parallelGains
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.figure import Figure
 from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, VPacker
 from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
@@ -89,21 +90,29 @@ def computeNRMSE(y, y_est):
     return 100.0 * (1.0 - np.linalg.norm(y - y_est) / norm_ref)
 
 
+def replayModel(Gz, delay, t, u):
+    """Output of the model driven by the detrended logged input."""
+    u_detrended = detrend(u)
+    u_delayed = np.concatenate(([0] * delay, u_detrended[: len(u_detrended) - delay]))
+    with np.errstate(over="ignore", invalid="ignore"):
+        _, y_est = ctrl.forced_response(Gz, T=t, U=u_delayed)
+    return y_est
+
+
+def replayFit(y, y_est):
+    if not np.all(np.isfinite(y_est)):
+        # Replay of an unstable model
+        return -np.inf
+    return computeNRMSE(detrend(y[: len(y_est)]), detrend(y_est))
+
+
 def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, method="RLS"):
     try:
         sys_id = SystemIdentification(n_poles, n_zeros, delay, dt)
         sys_id.f_hp = f_hp
         sys_id.f_lp = f_lp
         est = sys_id.fit(u, y, method=method)
-        Gz = est.G_
-        u_detrended = detrend(u)
-        u_delayed = np.concatenate(
-            ([0] * delay, u_detrended[: len(u_detrended) - delay])
-        )
-        _, y_est = ctrl.forced_response(Gz, T=t, U=u_delayed)
-        y_detrended = detrend(y[: len(y_est)])
-        y_est_detrended = detrend(y_est)
-        return computeNRMSE(y_detrended, y_est_detrended)
+        return replayFit(y, replayModel(est.G_, delay, t, u))
     except Exception:
         return -np.inf
 
@@ -302,6 +311,10 @@ class Window(QDialog):
         self.margin_text_refs = {}
         self.pz_plot_refs = []
         self.file_name = None
+        # Windows (s since boot) the model is validated on, and their
+        # (t, u, y, v) data
+        self.validation_windows = []
+        self.validation_data = []
         self.is_system_identified = False
         self.axis = 0
         self.dt = 0.005
@@ -397,6 +410,13 @@ class Window(QDialog):
             self.createPlotTab(self.robustness_toolbar, self.robustness_canvas),
             "Robustness",
         )
+        self.validation_figure = Figure(layout="constrained")
+        self.validation_canvas = FigureCanvas(self.validation_figure)
+        self.validation_tab = self.createPlotTab(
+            NavigationToolbar(self.validation_canvas, self), self.validation_canvas
+        )
+        self.plot_tabs.addTab(self.validation_tab, "Validation")
+        self.plot_tabs.currentChanged.connect(self.onPlotTabChanged)
 
         layout_h.addLayout(left_menu)
         layout_h.addWidget(self.plot_tabs)
@@ -1034,19 +1054,12 @@ class Window(QDialog):
     def replayInputData(self):
         if not self.is_system_identified:
             return
-        d = self.sys_id_delays
-        u_detrended = detrend(self.u)
-        u_delayed = np.concatenate(
-            ([0 for k in range(d)], u_detrended[0 : (len(u_detrended) - d)])
-        )
-        self.t_est, self.y_est = ctrl.forced_response(self.Gz, T=self.t, U=u_delayed)
-        if len(self.t_est) > len(self.y_est):
-            self.t_est = self.t_est[0 : len(self.y_est - 1)]
-
-        y_detrended = detrend(self.y[: len(self.y_est)])
-        y_est_detrended = detrend(self.y_est)
-        showFit(self.lbl_fit, computeNRMSE(y_detrended, y_est_detrended))
+        self.y_est = replayModel(self.Gz, self.sys_id_delays, self.t, self.u)
+        self.t_est = self.t[: len(self.y_est)]
+        showFit(self.lbl_fit, replayFit(self.y, self.y_est))
         self.updateClosedLoopFit()
+        if self.plot_tabs.currentWidget() is self.validation_tab:
+            self.updateValidation()
 
         self.plotInputOutput()
         self.checkStability()
@@ -1636,18 +1649,22 @@ class Window(QDialog):
 
         return margin_texts
 
+    def scaleInput(self, u, true_airspeed):
+        """Input scaled to trim airspeed, as selected in "Input scaling"."""
+        if len(true_airspeed) != len(u):
+            return u
+        scale = 1
+        scale_type = self.input_scale_choices[self.input_scale_combo.currentIndex()]
+        if scale_type == "True airspeed":
+            scale = np.array(true_airspeed) / self.trim_airspeed
+
+        elif scale_type == "True airspeed^2":
+            scale = (np.array(true_airspeed) / self.trim_airspeed) ** 2
+        return u * scale
+
     def plotInputOutput(self, redraw=False):
         if len(self.true_airspeed) == len(self.input):
-            scale = 1
-
-            scale_type = self.input_scale_choices[self.input_scale_combo.currentIndex()]
-            if scale_type == "True airspeed":
-                scale = np.array(self.true_airspeed) / self.trim_airspeed
-
-            elif scale_type == "True airspeed^2":
-                scale = (np.array(self.true_airspeed) / self.trim_airspeed) ** 2
-
-            self.u = self.input * scale
+            self.u = self.scaleInput(self.input, self.true_airspeed)
             self.input_scale_combo.setEnabled(True)
             self.line_edit_trim.setEnabled(True)
         else:
@@ -1684,11 +1701,13 @@ class Window(QDialog):
         self.canvas.draw()
 
     def loadLog(self):
-        select = DataSelectionWindow(self.file_name)
+        select = DataSelectionWindow(self.file_name, self.validation_windows)
 
         if select.exec_():
             self.reset()
             self.file_name = select.file_name
+            self.validation_windows = select.validation_windows
+            self.validation_data = select.validation_data
             self.t = select.t - select.t[0]
             self.input = select.u
             self.u = self.input
@@ -1741,6 +1760,79 @@ class Window(QDialog):
             self.true_airspeed = resample_interp(self.t, self.true_airspeed, t_new)
 
         self.t = t_new
+
+    def validateOnWindow(self, t_log, u, y, v):
+        """Replay of the identified model, with the same input scaling, on the
+        data of a validation window."""
+        t_log = t_log - t_log[0]
+        t = np.arange(0, t_log[-1], self.dt)
+        y = resample_interp(t_log, y, t)
+        v = resample_interp(t_log, v, t) if len(v) else []
+        u = self.scaleInput(resample_interp(t_log, u, t), v)
+        y_est = replayModel(self.Gz, self.sys_id_delays, t, u)
+        return {"t": t, "u": u, "y": y, "y_est": y_est, "fit": replayFit(y, y_est)}
+
+    def updateValidation(self):
+        """Validation tab: checks the identified model for overfitting by
+        replaying it on each validation window, with the residual below. A fit
+        close to the one of the identification window means it is not
+        overfitted."""
+        figure = self.validation_figure
+        figure.clear()
+        if not self.is_system_identified or not self.validation_windows:
+            figure.text(
+                0.5,
+                0.5,
+                "No validation window: select some in the log selection dialog",
+                ha="center",
+                va="center",
+            )
+            self.validation_canvas.draw()
+            return
+
+        # Each window: data, then residual
+        grid = figure.add_gridspec(2 * len(self.validation_windows), 1)
+        for row, ((t_start, t_stop), data) in enumerate(
+            zip(self.validation_windows, self.validation_data)
+        ):
+            result = self.validateOnWindow(*data)
+            t = result["t"]
+            y_est = result["y_est"]
+            fit = result["fit"]
+            n = len(y_est)
+            ax = figure.add_subplot(grid[2 * row, 0])
+            ax.plot(t, result["u"], "C0", label="Input")
+            ax.plot(t, result["y"], "C1", label="Output")
+            if np.isfinite(fit):
+                ax.plot(t[:n], y_est, "C2", label=f"Identified model, fit {fit:.1f}%")
+            else:
+                ax.plot([], [], "C2", label="Identified model: unstable, diverges")
+            ax.set_title(f"{t_start:.1f}–{t_stop:.1f}s")
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Amplitude")
+            ax.legend(loc="upper left", fontsize="small")
+
+            # Residual on the same detrended signals as the fit
+            ax = figure.add_subplot(grid[2 * row + 1, 0], sharex=ax)
+            if np.isfinite(fit):
+                residual = detrend(result["y"][:n]) - detrend(y_est)
+                ax.plot(
+                    t[:n],
+                    residual,
+                    "C2",
+                    linewidth=0.8,
+                    label="RMS {:.3g}".format(np.sqrt(np.mean(residual**2))),
+                )
+                ax.legend(loc="upper left", fontsize="small")
+            ax.axhline(0, color="k", linestyle="--", linewidth=0.8)
+            ax.set_title("Residual: output − model")
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Amplitude")
+        self.validation_canvas.draw()
+
+    def onPlotTabChanged(self):
+        if self.plot_tabs.currentWidget() is self.validation_tab:
+            self.updateValidation()
 
 
 class DoubleSlider(QSlider):

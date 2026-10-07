@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
 )
 from scipy import signal
@@ -24,8 +25,13 @@ from searchable_combo_box import SearchableComboBox
 
 
 class DataSelectionWindow(QDialog):
-    def __init__(self, filename):
+    def __init__(self, filename, validation_windows=None):
         QDialog.__init__(self)
+
+        # Windows (s since boot) the identified model is validated on
+        self.validation_windows = list(validation_windows or [])
+        self.validation_file = filename
+        self.selection_patches = []
 
         self.preset_candidates = load_presets()
 
@@ -83,6 +89,7 @@ class DataSelectionWindow(QDialog):
 
         layout_v.addLayout(top_group)
         layout_v.addWidget(self.canvas)
+        layout_v.addLayout(self.createSelectionModeRow())
 
         self.label_warning = QLabel("")
         self.label_warning.setStyleSheet("color: red; font-weight: bold;")
@@ -105,6 +112,60 @@ class DataSelectionWindow(QDialog):
         else:
             self.browseFiles()
 
+        self.drawSelectionPatches()
+
+    def createSelectionModeRow(self):
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Select:"))
+        self.radio_identification = QRadioButton("Identification window")
+        self.radio_identification.setChecked(True)
+        row.addWidget(self.radio_identification)
+        self.radio_validation = QRadioButton("Validation windows")
+        self.radio_validation.setToolTip(
+            "Windows of the same signals the identified model is replayed on, "
+            "to check it on data it was not identified from"
+        )
+        row.addWidget(self.radio_validation)
+        self.label_validation = QLabel("")
+        row.addWidget(self.label_validation, stretch=1)
+        btn_clear = QPushButton("Clear validation")
+        btn_clear.clicked.connect(self.clearValidationWindows)
+        row.addWidget(btn_clear)
+        btn_full_view = QPushButton("Full view")
+        btn_full_view.clicked.connect(self.showFullView)
+        row.addWidget(btn_full_view)
+        return row
+
+    def clearValidationWindows(self):
+        self.validation_windows = []
+        self.drawSelectionPatches()
+
+    def showFullView(self):
+        if len(self.t) > 0:
+            self.ax.set_xlim(self.t[0], self.t[-1])
+            self.canvas.draw()
+
+    def drawSelectionPatches(self):
+        for patch in self.selection_patches:
+            patch.remove()
+        self.selection_patches = []
+        if self.t_start is not None and self.t_stop is not None:
+            self.selection_patches.append(
+                self.ax.axvspan(self.t_start, self.t_stop, color="green", alpha=0.15)
+            )
+        for t_start, t_stop in self.validation_windows:
+            self.selection_patches.append(
+                self.ax.axvspan(t_start, t_stop, color="tab:orange", alpha=0.25)
+            )
+        self.label_validation.setText(
+            "Validation: "
+            + (
+                ", ".join(f"{a:.1f}–{b:.1f}s" for a, b in self.validation_windows)
+                or "none"
+            )
+        )
+        self.canvas.draw()
+
     def loadSelection(self):
         if (self.t_start is None and self.t_stop is None) or (
             self.t_stop > self.t_start
@@ -118,6 +179,13 @@ class DataSelectionWindow(QDialog):
             (self.r, self.flown_gains, self.flown_gain_form, self.flown_options) = (
                 self.getFlownController()
             )
+            # (t, u, y, v) of each validation window, same signals
+            self.validation_data = [
+                self.data_extractor.getInputOutputData(
+                    self.topics[self.index_u], self.topics[self.index_y], a, b
+                )
+                for a, b in self.validation_windows
+            ]
             self.accept()
         else:
             self.printRangeError()
@@ -175,6 +243,10 @@ class DataSelectionWindow(QDialog):
         self.openFile()
 
     def openFile(self):
+        if self.file_name != self.validation_file:
+            # The validation windows were selected on another log
+            self.validation_windows = []
+            self.validation_file = self.file_name
         if self.file_name:
             self.data_extractor = DataExtractor(self.file_name)
             self.topics = self.data_extractor.get_topics_list()
@@ -394,10 +466,18 @@ class DataSelectionWindow(QDialog):
         indmax = min(len(self.t) - 1, indmax)
         indmin = min(indmin, indmax)
 
+        if self.radio_validation.isChecked():
+            if indmax > indmin:
+                self.validation_windows.append((self.t[indmin], self.t[indmax]))
+            # The identification window stays shown by its patch
+            self.span.clear()
+            self.drawSelectionPatches()
+            return
+
         self.t_start = self.t[indmin]
         self.t_stop = self.t[indmax]
         self.ax.set_xlim(self.t_start - 1.0, self.t_stop + 1.0)
-        self.canvas.draw()
+        self.drawSelectionPatches()
 
         self.plotCoherence()
 
