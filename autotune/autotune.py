@@ -39,8 +39,9 @@ Description:
 import sys
 
 import control as ctrl
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import plot_style as ps
+import pyqtgraph as pg
 from data_extractor import *
 from data_selection_window import DataSelectionWindow
 from loop_model import LoopModel, idealGains, parallelGains
@@ -224,7 +225,7 @@ def thresholdColor(value, limit, limit_is_minimum):
     if value is None or not np.isfinite(value):
         return None
     respected = value >= limit if limit_is_minimum else value <= limit
-    return "green" if respected else "red"
+    return ps.GOOD_TEXT if respected else ps.CRITICAL
 
 
 def excludeAnnotationsFromLayout(ax):
@@ -284,13 +285,7 @@ class Window(QDialog):
     def __init__(self, parent=None):
         super(Window, self).__init__(parent)
 
-        self.model_ref = None
-        self.input_ref = None
-        self.closed_loop_ref = None
-        self.closed_loop_step_ref = None
-        self.closed_loop_ax = None
         self.measured_step_info = None
-        self.step_info_patches = []
         self.step_info_spinbox = {}
         self.step_info_measured_lbl = {}
         self.step_info = {
@@ -298,9 +293,6 @@ class Window(QDialog):
             "overshoot": 10.0,
             "settling_time": 0.4,
         }
-        self.bode_plot_ref = []
-        self.margin_text_refs = {}
-        self.pz_plot_refs = []
         self.file_name = None
         self.is_system_identified = False
         self.axis = 0
@@ -314,7 +306,6 @@ class Window(QDialog):
         self.flown_gains = None
         self.flown_gain_form = None
         self.flown_options = {}
-        self.figure = plt.figure(1, layout="constrained")
         self.num = []
         self.den = []
         self.sys_id_delays = 1
@@ -334,13 +325,7 @@ class Window(QDialog):
         self.disturbance_amplitude = -0.05
         self.step_sim_spinbox = {}
 
-        # this is the Canvas Widget that displays the `figure`
-        # it takes the `figure` instance as a parameter to __init__
-        self.canvas = FigureCanvas(self.figure)
-
-        # this is the Navigation widget
-        # it takes the Canvas widget and a parent
-        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.general_plots = self.createGeneralPlots()
 
         self.robustness_figure = plt.figure(2, layout="constrained")
         self.robustness_canvas = FigureCanvas(self.robustness_figure)
@@ -392,7 +377,7 @@ class Window(QDialog):
         self.tuning_tabs.addTab(self.tab_gmvc, "GMVC")
 
         self.plot_tabs = QTabWidget()
-        self.plot_tabs.addTab(self.createPlotTab(self.toolbar, self.canvas), "General")
+        self.plot_tabs.addTab(self.general_plots, "General")
         self.plot_tabs.addTab(
             self.createPlotTab(self.robustness_toolbar, self.robustness_canvas),
             "Robustness",
@@ -410,12 +395,10 @@ class Window(QDialog):
         self.setLayout(layout_v)
 
     def reset(self):
-        self.model_ref = None
-        self.input_ref = None
-        self.closed_loop_ref = None
-        self.closed_loop_step_ref = None
         self.measured_step_info = None
-        self.step_info_patches = []
+        for curve in self.generalCurves():
+            curve.setData([], [])
+        self.bode_margin_text.setLines([])
         self.lbl_fit.setText("—")
         self.lbl_fit.setStyleSheet("")
         self.lbl_closed_loop_fit.setText("—")
@@ -423,15 +406,132 @@ class Window(QDialog):
         self.lbl_stability.setText("—")
         self.lbl_stability.setStyleSheet("")
         self.btn_stabilize.setVisible(False)
-        self.bode_plot_ref = []
-        self.margin_text_refs = {}
-        self.pz_plot_refs = []
         self.is_system_identified = False
         self.robustness_figure.clear()
         self.nyquist_ax = None
         self.sensitivity_ax = None
         self.root_locus_ax = None
         self.robustness_canvas.draw()
+
+    def createGeneralPlots(self):
+        layout = pg.GraphicsLayoutWidget()
+        self.hover_readouts = []
+
+        io_plot = ps.addPlot(
+            layout,
+            0,
+            0,
+            colspan=2,
+            title="Logged data",
+            xlabel="Time (s)",
+            ylabel="Amplitude",
+        )
+        ps.addLegend(io_plot)
+        ps.xOnlyMouse(io_plot)
+        self.input_curve = io_plot.plot(pen=ps.pen(ps.BLUE), name="Input")
+        self.output_curve = io_plot.plot(pen=ps.pen(ps.ORANGE), name="Output")
+        self.model_curve = io_plot.plot(pen=ps.pen(ps.AQUA), name="Model")
+        self.hover_readouts.append(ps.HoverReadout(io_plot, "t = {:.3f} s"))
+
+        pz_plot = ps.addPlot(
+            layout, 1, 0, title="Pole-Zero Map", xlabel="Real", ylabel="Imag"
+        )
+        ps.lockAspect(pz_plot)
+        unit_circle = np.exp(1j * np.linspace(0, 2 * np.pi, 200))
+        pz_plot.plot(
+            unit_circle.real, unit_circle.imag, pen=ps.pen(ps.INK_SECONDARY, 1, "--")
+        )
+        ps.addReferenceLine(pz_plot, 0, angle=0)
+        ps.addReferenceLine(pz_plot, 0, angle=90)
+        self.pole_markers = pz_plot.plot(
+            pen=None, symbol="x", symbolSize=12, symbolPen=None, symbolBrush=ps.BLUE
+        )
+        self.zero_markers = pz_plot.plot(
+            pen=None,
+            symbol="o",
+            symbolSize=10,
+            symbolPen=ps.pen(ps.BLUE, 2),
+            symbolBrush=None,
+        )
+        pz_plot.getViewBox().setDefaultRange((-1.5, 1.5), (-1.5, 1.5))
+
+        bode_mag_plot = ps.addPlot(layout, 1, 1, title="Bode", ylabel="Magnitude (dB)")
+        bode_mag_plot.setLogMode(x=True)
+        ps.addLegend(bode_mag_plot)
+        ps.addReferenceLine(bode_mag_plot, 0, angle=0)
+        ps.addReferenceLine(bode_mag_plot, -3, angle=0, color_=ps.MUTED, style="--")
+        self.bode_mag_curves = {
+            "open": bode_mag_plot.plot(pen=ps.pen(ps.BLUE), name="Open-loop"),
+            "closed": bode_mag_plot.plot(pen=ps.pen(ps.ORANGE), name="Closed-loop"),
+        }
+        self.hover_readouts.append(
+            ps.HoverReadout(bode_mag_plot, "f = {:.3g} Hz", "{:.1f} dB")
+        )
+
+        step_plot = ps.addPlot(
+            layout,
+            2,
+            0,
+            title="Closed-loop step response",
+            xlabel="Time (s)",
+            ylabel="Amplitude (rad/s)",
+        )
+        ps.xOnlyMouse(step_plot)
+        self.step_reference_curve = step_plot.plot(pen=ps.pen(ps.INK, 1, "--"))
+        self.step_response_curve = step_plot.plot(pen=ps.pen(ps.BLUE, 2))
+        envelope_pen = ps.pen(ps.CRITICAL, 1, "--")
+        self.overshoot_limit_curve = step_plot.plot(pen=envelope_pen)
+        self.settling_time_curve = step_plot.plot(pen=envelope_pen)
+        self.hover_readouts.append(ps.HoverReadout(step_plot, "t = {:.3f} s"))
+
+        bode_phase_plot = ps.addPlot(
+            layout,
+            2,
+            1,
+            xlabel="Frequency (Hz)",
+            ylabel="Phase (deg)",
+        )
+        bode_phase_plot.setLogMode(x=True)
+        bode_phase_plot.setXLink(bode_mag_plot)
+        self.bode_phase_curves = {
+            "open": bode_phase_plot.plot(pen=ps.pen(ps.BLUE)),
+            "closed": bode_phase_plot.plot(pen=ps.pen(ps.ORANGE)),
+        }
+        self.bode_margin_text = ps.CornerText(bode_phase_plot, "top-left")
+        self.hover_readouts.append(
+            ps.HoverReadout(bode_phase_plot, "f = {:.3g} Hz", "{:.1f} deg")
+        )
+
+        # Qt shares the free space evenly on top of each column's preferred
+        # width, so only equal preferred widths give equal columns
+        column_width = max(
+            plot.effectiveSizeHint(Qt.PreferredSize).width()
+            for plot in (pz_plot, step_plot, bode_mag_plot, bode_phase_plot)
+        )
+        for column in range(2):
+            layout.ci.layout.setColumnPreferredWidth(column, column_width)
+
+        self.io_plot = io_plot
+        self.pz_plot = pz_plot
+        self.step_plot = step_plot
+        self.bode_mag_plot = bode_mag_plot
+        self.bode_phase_plot = bode_phase_plot
+        return layout
+
+    def generalCurves(self):
+        return [
+            self.input_curve,
+            self.output_curve,
+            self.model_curve,
+            self.pole_markers,
+            self.zero_markers,
+            *self.bode_mag_curves.values(),
+            *self.bode_phase_curves.values(),
+            self.step_reference_curve,
+            self.step_response_curve,
+            self.overshoot_limit_curve,
+            self.settling_time_curve,
+        ]
 
     def createPlotTab(self, toolbar, canvas):
         tab = QWidget()
@@ -856,25 +956,14 @@ class Window(QDialog):
         self.updateStepInfoEnvelope()
 
     def updateStepInfoEnvelope(self):
-        if self.closed_loop_ax is None:
+        if not self.is_system_identified:
             return
 
-        for patch in self.step_info_patches:
-            patch.remove()
-        self.step_info_patches = []
-
-        ax = self.closed_loop_ax
         step_info = self.step_info
-        kw = dict(color="#ff4444", linestyle="--", linewidth=1)
-
         y_limit = 1.0 + step_info["overshoot"] / 100.0
-        p = ax.axhline(y_limit, **kw)
-        self.step_info_patches.append(p)
-
-        p = ax.plot(
-            [step_info["settling_time"], step_info["settling_time"]], [0, 1.0], **kw
-        )[0]
-        self.step_info_patches.append(p)
+        self.overshoot_limit_curve.setData([0, self.step_duration], [y_limit, y_limit])
+        settling_time = step_info["settling_time"]
+        self.settling_time_curve.setData([settling_time, settling_time], [0, 1.0])
 
         measured_map = {
             "rise_time": ("RiseTime", lambda v: f"{v:.3f}"),
@@ -893,8 +982,6 @@ class Window(QDialog):
                     measured, self.step_info[key], limit_is_minimum=False
                 )
                 lbl.setStyleSheet(f"color: {color}" if color else "")
-
-        self.canvas.draw()
 
     def setGainForm(self, form):
         """Make the gains of form editable and driven by the sliders."""
@@ -1115,31 +1202,8 @@ class Window(QDialog):
             return
         poles = self.Gz.poles()
         zeros = self.Gz.zeros()
-        if not self.pz_plot_refs:
-            ax = self.figure.add_subplot(3, 3, 4)
-            plot_ref = ax.plot(poles.real, poles.imag, "rx", markersize=10)
-            self.pz_plot_refs.append(plot_ref[0])
-            plot_ref = ax.plot(zeros.real, zeros.imag, "ro", markersize=10)
-            self.pz_plot_refs.append(plot_ref[0])
-            uc = mpatches.Circle(
-                (0, 0), radius=1, fill=False, color="black", ls="dashed"
-            )
-            ax.add_patch(uc)
-            ax.axhline(0, color="black", linestyle="--")
-            ax.axvline(0, color="black", linestyle="--")
-            ax.set_xlim(-1.5, 1.5)
-            ax.set_ylim(-1.5, 1.5)
-            ax.set_aspect(1.0)
-            ax.set_xlabel("Real")
-            ax.set_ylabel("Imag")
-            ax.set_title("Pole-Zero Map")
-        else:
-            self.pz_plot_refs[0].set_xdata(poles.real)
-            self.pz_plot_refs[0].set_ydata(poles.imag)
-            self.pz_plot_refs[1].set_xdata(zeros.real)
-            self.pz_plot_refs[1].set_ydata(zeros.imag)
-
-        self.canvas.draw()
+        self.pole_markers.setData(poles.real, poles.imag)
+        self.zero_markers.setData(zeros.real, zeros.imag)
 
     def updateModel(self):
         self.btn_run_sys_id.setEnabled(True)
@@ -1233,23 +1297,8 @@ class Window(QDialog):
         except (IndexError, ValueError):
             self.measured_step_info = None
 
-        step_ref = [1 if i > 0 else 0 for i in t]
-        if self.closed_loop_ref is None:
-            ax = self.figure.add_subplot(3, 3, 7)
-            self.closed_loop_step_ref = ax.step(t, step_ref, "k--")[0]
-            plot_ref = ax.plot(t, y)
-            self.closed_loop_ref = plot_ref[0]
-            self.closed_loop_ax = ax
-            ax.set_title("Closed-loop step response")
-            ax.set_xlabel("Time (s)")
-            ax.set_ylabel("Amplitude (rad/s)")
-        else:
-            self.closed_loop_step_ref.set_data(t, step_ref)
-            self.closed_loop_ref.set_xdata(t)
-            self.closed_loop_ref.set_ydata(y)
-            self.closed_loop_ax.set_ylim(np.min(y), np.max([1.5, np.max(y)]))
-        self.closed_loop_ax.set_xlim(t[0], t[-1])
-
+        self.step_reference_curve.setData([t[0], t[0], t[-1]], [0, 1, 1])
+        self.step_response_curve.setData(t, y)
         self.updateStepInfoEnvelope()
 
     def plotBode(self, open_loop, closed_loop, stability_margins, is_stable):
@@ -1272,70 +1321,25 @@ class Window(QDialog):
             ),
         }
         if not is_stable:
-            margins = {"gain": (self.kUnstableLoopText, "red"), "phase": ("", None)}
+            margins = {
+                "gain": (self.kUnstableLoopText, ps.CRITICAL),
+                "phase": ("", None),
+            }
 
-        w = np.geomspace(0.1, np.pi / self.dt, 40).tolist()
-        (mag_ol, phase_ol, omega_ol) = ctrl.frequency_response(
-            open_loop, omega=np.asarray(w)
-        )
+        w = np.geomspace(0.1, np.pi / self.dt, 500)
+        mag_ol, phase_ol, _ = ctrl.frequency_response(open_loop, omega=w)
+        mag_cl, phase_cl, _ = ctrl.frequency_response(closed_loop, omega=w)
+        f = w / (2 * np.pi)
 
-        (mag_cl, phase_cl, omega_cl) = ctrl.frequency_response(
-            closed_loop, omega=np.asarray(w)
-        )
-        f = omega_cl / (2 * np.pi)
+        self.bode_mag_curves["open"].setData(f, 20 * np.log10(mag_ol))
+        self.bode_mag_curves["closed"].setData(f, 20 * np.log10(mag_cl))
+        self.bode_phase_curves["open"].setData(f, np.rad2deg(phase_ol))
+        self.bode_phase_curves["closed"].setData(f, np.rad2deg(phase_cl))
+        self.bode_margin_text.setLines(margins.values())
 
-        if not self.bode_plot_ref:
-            ax = self.figure.add_subplot(3, 3, (5, 6))
-            plot_ref = ax.semilogx(f, 20 * np.log10(mag_ol), label="Open-loop")
-            self.bode_plot_ref.append(plot_ref[0])
-            plot_ref = ax.semilogx(f, 20 * np.log10(mag_cl), label="Closed-loop")
-            self.bode_plot_ref.append(plot_ref[0])
-            ax.set_ylim(-20, 20)
-            ax.plot([f[0], f[-1]], [0, 0], "k--")
-            ax.plot([f[0], f[-1]], [-3, -3], "g--")
-
-            ax.set_title("Bode")
-            ax.set_ylabel("Magnitude (dB)")
-            ax.legend()
-            excludeAnnotationsFromLayout(ax)
-
-            ax = self.figure.add_subplot(3, 3, (8, 9))
-            plot_ref = ax.semilogx(f, phase_ol * 180 / np.pi, label="Open-loop")
-            self.bode_plot_ref.append(plot_ref[0])
-            plot_ref = ax.semilogx(f, phase_cl * 180 / np.pi, label="Closed-loop")
-            self.bode_plot_ref.append(plot_ref[0])
-            ax.set_ylim(-180, 180)
-
-            ax.set_xlabel("Frequency (Hz)")
-            ax.set_ylabel("Phase (deg)")
-            for row, key in enumerate(margins):
-                self.margin_text_refs[key] = ax.text(
-                    0.01,
-                    0.9 - 0.12 * row,
-                    "",
-                    verticalalignment="top",
-                    transform=ax.transAxes,
-                )
-            excludeAnnotationsFromLayout(ax)
-
-        else:
-            self.bode_plot_ref[0].set_xdata(f)
-            mag_ol_db = 20 * np.log10(mag_ol)
-            self.bode_plot_ref[0].set_ydata(mag_ol_db)
-            self.bode_plot_ref[1].set_xdata(f)
-            mag_cl_db = 20 * np.log10(mag_cl)
-            self.bode_plot_ref[1].set_ydata(mag_cl_db)
-
-            self.bode_plot_ref[2].set_xdata(f)
-            self.bode_plot_ref[2].set_ydata(phase_ol * 180 / np.pi)
-            self.bode_plot_ref[3].set_xdata(f)
-            self.bode_plot_ref[3].set_ydata(phase_cl * 180 / np.pi)
-
-        for key, (text, color) in margins.items():
-            self.margin_text_refs[key].set_text(text)
-            self.margin_text_refs[key].set_color(color or "black")
-
-        self.canvas.draw()
+        f_range = (np.log10(f[0]), np.log10(f[-1]))
+        self.bode_mag_plot.getViewBox().setDefaultRange(f_range, (-20, 20))
+        self.bode_phase_plot.getViewBox().setDefaultRange(f_range, (-180, 180))
 
     def plotNyquist(self, loop, stability_margins, is_stable):
         open_loop = loop.loop_gain
@@ -1654,34 +1658,16 @@ class Window(QDialog):
             self.input_scale_combo.setEnabled(False)
             self.line_edit_trim.setEnabled(False)
 
-        if self.model_ref is None or redraw:
-            # First time we have no plot reference, so do a normal plot.
-            # .plot returns a list of line <reference>s, as we're
-            # only getting one we can take the first element.
-            self.figure.clear()
-            ax = self.figure.add_subplot(3, 3, (1, 3))
-            input_ref = ax.plot(self.t, self.u)
-            self.input_ref = input_ref[0]
-            ax.plot(self.t, self.y)
-            plot_refs = ax.plot(0, 0)
-            self.model_ref = plot_refs[0]
-            ax.set_title("Logged data")
-            ax.set_xlabel("Time (s)")
-            ax.set_ylabel("Amplitude")
-            ax.legend(["Input", "Output", "Model"])
-            excludeAnnotationsFromLayout(ax)
-        else:
-            # We have a reference, we can use it to update the data for that line.
-            self.model_ref.set_xdata(self.t_est)
+        self.input_curve.setData(self.t, self.u)
+        self.output_curve.setData(self.t, self.y)
+        if self.is_system_identified:
             try:
                 offset = float(self.line_edit_offset.text())
             except ValueError:
                 offset = 0
-
-            self.model_ref.set_ydata(self.y_est + offset)
-            self.input_ref.set_ydata(self.u)
-
-        self.canvas.draw()
+            self.model_curve.setData(self.t_est, self.y_est + offset)
+        if redraw:
+            self.io_plot.getViewBox().resetRange()
 
     def loadLog(self):
         select = DataSelectionWindow(self.file_name)
