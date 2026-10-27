@@ -39,17 +39,14 @@ Description:
 import sys
 
 import control as ctrl
-import matplotlib.pyplot as plt
 import plot_style as ps
 import pyqtgraph as pg
 from data_extractor import *
 from data_selection_window import DataSelectionWindow
 from loop_model import LoopModel, idealGains, parallelGains
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, VPacker
 from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -58,6 +55,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QGraphicsEllipseItem,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -228,22 +226,22 @@ def thresholdColor(value, limit, limit_is_minimum):
     return ps.GOOD_TEXT if respected else ps.CRITICAL
 
 
-def excludeAnnotationsFromLayout(ax):
-    # Texts and legends are drawn inside the axes: when constrained layout
-    # makes room for them, small axes get larger margins, shrink further and
-    # collapse
-    for artist in [*ax.texts, *ax.artists, ax.get_legend()]:
-        if artist is not None:
-            artist.set_in_layout(False)
+kSensitivityLabels = {
+    "S": "S: sensitivity",
+    "T": "T: complementary sensitivity",
+    "PS": "PS: load disturbance → output",
+    "CS": "CS: measurement noise → control",
+    "CSF": "CSF: setpoint → control",
+}
 
 
-def drawZPlaneGrid(ax, f_nyquist):
-    """Lines of constant damping ratio and natural frequency in the z-plane."""
-    style = dict(color="gray", linewidth=0.4, alpha=0.7)
-    unit_circle = np.exp(1j * np.linspace(0, 2 * np.pi, 200))
-    ax.plot(unit_circle.real, unit_circle.imag, "k:", linewidth=0.8)
-    ax.axhline(0, color="k", linewidth=0.5)
-    ax.axvline(0, color="k", linewidth=0.5)
+def zPlaneGrid(f_nyquist):
+    """Lines of constant damping ratio and natural frequency in the z-plane.
+
+    Returns the lines as one NaN-separated curve, and the (x, y, text) labels.
+    """
+    lines = []
+    labels = []
 
     # z = exp(s * dt) with s = wn * (-zeta + j * sqrt(1 - zeta^2)), drawn
     # up to the Nyquist frequency where the damped angle wd * dt reaches pi
@@ -252,25 +250,40 @@ def drawZPlaneGrid(ax, f_nyquist):
         z = np.exp(-zeta / np.sqrt(1 - zeta**2) * damped_angle) * np.exp(
             1j * damped_angle
         )
-        ax.plot(z.real, z.imag, **style)
-        ax.plot(z.real, -z.imag, **style)
+        lines += [z, np.conj(z)]
         label_point = z[len(z) // 2]
-        ax.text(
-            label_point.real, label_point.imag, f"{zeta:.1f}", fontsize=6, color="gray"
-        )
+        labels.append((label_point.real, label_point.imag, f"{zeta:.1f}"))
 
     zeta = np.linspace(0, 1, 100)
     for fraction in np.arange(0.1, 1.01, 0.1):
         z = np.exp(fraction * np.pi * (-zeta + 1j * np.sqrt(1 - zeta**2)))
-        ax.plot(z.real, z.imag, **style)
-        ax.plot(z.real, -z.imag, **style)
-        ax.text(
-            z[0].real,
-            z[0].imag,
-            f"{fraction * f_nyquist:.0f}Hz",
-            fontsize=6,
-            color="gray",
-        )
+        lines += [z, np.conj(z)]
+        labels.append((z[0].real, z[0].imag, f"{fraction * f_nyquist:.0f}Hz"))
+
+    curve = np.concatenate([np.append(line, np.nan) for line in lines])
+    return curve.real, curve.imag, labels
+
+
+def nanSeparated(branches):
+    """Columns of branches as one curve, broken between columns."""
+    breaks = np.full((1, branches.shape[1]), np.nan, dtype=branches.dtype)
+    return np.vstack([branches, breaks]).T.ravel()
+
+
+def showMarginLine(curve, x, y, color, style="-", width=2.0):
+    curve.setData(x, y, pen=ps.pen(color or ps.INK, width, style))
+
+
+def showMarginPoint(marker, x, y, color):
+    marker.setData(
+        [x],
+        [y],
+        pen=None,
+        symbol="o",
+        symbolSize=8,
+        symbolPen=None,
+        symbolBrush=color or ps.INK,
+    )
 
 
 def isNumber(value):
@@ -325,14 +338,9 @@ class Window(QDialog):
         self.disturbance_amplitude = -0.05
         self.step_sim_spinbox = {}
 
+        self.hover_readouts = []
         self.general_plots = self.createGeneralPlots()
-
-        self.robustness_figure = plt.figure(2, layout="constrained")
-        self.robustness_canvas = FigureCanvas(self.robustness_figure)
-        self.robustness_toolbar = NavigationToolbar(self.robustness_canvas, self)
-        self.nyquist_ax = None
-        self.sensitivity_ax = None
-        self.root_locus_ax = None
+        self.robustness_plots = self.createRobustnessPlots()
 
         self.btn_open_log = QPushButton("Open log")
         self.btn_open_log.clicked.connect(self.loadLog)
@@ -378,10 +386,7 @@ class Window(QDialog):
 
         self.plot_tabs = QTabWidget()
         self.plot_tabs.addTab(self.general_plots, "General")
-        self.plot_tabs.addTab(
-            self.createPlotTab(self.robustness_toolbar, self.robustness_canvas),
-            "Robustness",
-        )
+        self.plot_tabs.addTab(self.robustness_plots, "Robustness")
 
         layout_h.addLayout(left_menu)
         layout_h.addWidget(self.plot_tabs)
@@ -407,15 +412,17 @@ class Window(QDialog):
         self.lbl_stability.setStyleSheet("")
         self.btn_stabilize.setVisible(False)
         self.is_system_identified = False
-        self.robustness_figure.clear()
-        self.nyquist_ax = None
-        self.sensitivity_ax = None
-        self.root_locus_ax = None
-        self.robustness_canvas.draw()
+        for curve in self.robustnessCurves():
+            curve.setData([], [])
+        for text in (
+            self.nyquist_margin_text,
+            self.sensitivity_text,
+            self.root_locus_text,
+        ):
+            text.setLines([])
 
     def createGeneralPlots(self):
         layout = pg.GraphicsLayoutWidget()
-        self.hover_readouts = []
 
         io_plot = ps.addPlot(
             layout,
@@ -533,13 +540,155 @@ class Window(QDialog):
             self.settling_time_curve,
         ]
 
-    def createPlotTab(self, toolbar, canvas):
-        tab = QWidget()
-        layout = QVBoxLayout()
-        layout.addWidget(toolbar)
-        layout.addWidget(canvas)
-        tab.setLayout(layout)
-        return tab
+    def createRobustnessPlots(self):
+        layout = pg.GraphicsLayoutWidget()
+        unit_circle = np.exp(1j * np.linspace(0, 2 * np.pi, 200))
+
+        nyquist_plot = ps.addPlot(
+            layout, 0, 0, title="Nyquist", xlabel="Real", ylabel="Imaginary"
+        )
+        ps.lockAspect(nyquist_plot)
+        nyquist_legend = ps.addLegend(nyquist_plot, "bottom-right")
+        nyquist_plot.plot(
+            unit_circle.real, unit_circle.imag, pen=ps.pen(ps.INK_SECONDARY, 1, ":")
+        )
+        radius = self.kMinModulusMargin
+        forbidden_region = QGraphicsEllipseItem(
+            -1 - radius, -radius, 2 * radius, 2 * radius
+        )
+        forbidden_region.setPen(pg.mkPen(None))
+        forbidden_region.setBrush(ps.color(ps.CRITICAL, 0.1))
+        nyquist_plot.addItem(forbidden_region)
+        # The ellipse has no legend sample: a filled square stands for it
+        nyquist_legend.addItem(
+            pg.ScatterPlotItem(
+                symbol="s", size=10, pen=None, brush=ps.color(ps.CRITICAL, 0.25)
+            ),
+            f"Modulus margin &lt; {radius}",
+        )
+        ps.addReferenceLine(nyquist_plot, 0, angle=0)
+        ps.addReferenceLine(nyquist_plot, 0, angle=90)
+        self.nyquist_curve = nyquist_plot.plot(pen=ps.pen(ps.BLUE), name="Open-loop")
+        self.nyquist_mirror_curve = nyquist_plot.plot(pen=ps.pen(ps.BLUE, 1, "--"))
+        nyquist_plot.plot(
+            [-1],
+            [0],
+            pen=None,
+            symbol="+",
+            symbolSize=14,
+            symbolPen=None,
+            symbolBrush=ps.INK,
+        )
+        self.nyquist_margin_items = {
+            key: nyquist_plot.plot()
+            for key in (
+                "gain_line",
+                "gain_point",
+                "phase_arc",
+                "phase_point",
+                "modulus_circle",
+                "modulus_line",
+                "modulus_point",
+                "disk",
+            )
+        }
+        self.nyquist_margin_text = ps.CornerText(nyquist_plot, "top-left")
+        nyquist_plot.getViewBox().setDefaultRange((-3, 1.5), (-2, 2))
+
+        sensitivity_plot = ps.addPlot(
+            layout,
+            0,
+            1,
+            rowspan=2,
+            title="Sensitivity functions",
+            xlabel="Frequency (Hz)",
+            ylabel="Magnitude (dB)",
+        )
+        sensitivity_plot.setLogMode(x=True)
+        sensitivity_plot.showGrid(x=True, y=True, alpha=0.3)
+        ps.addLegend(sensitivity_plot, "bottom-left")
+        self.sensitivity_curves = {
+            key: sensitivity_plot.plot(pen=ps.pen(color), name=label)
+            for (key, label), color in zip(kSensitivityLabels.items(), ps.SERIES)
+        }
+        max_sensitivity_db = -20 * np.log10(self.kMinModulusMargin)
+        self.max_sensitivity_curve = sensitivity_plot.plot(
+            pen=ps.pen(ps.CRITICAL, 1, "--"),
+            name=f"Max |S| ({max_sensitivity_db:.0f}dB)",
+        )
+        ps.addReferenceLine(sensitivity_plot, 0, angle=0)
+        self.sensitivity_peak_marker = sensitivity_plot.plot(
+            pen=None, symbol="o", symbolSize=8, symbolPen=None
+        )
+        self.sensitivity_text = ps.CornerText(sensitivity_plot, "top-left")
+        self.hover_readouts.append(
+            ps.HoverReadout(sensitivity_plot, "f = {:.3g} Hz", "{:.1f} dB")
+        )
+        ps.linkXRanges(sensitivity_plot.getViewBox(), self.bode_mag_plot.getViewBox())
+
+        root_locus_plot = ps.addPlot(
+            layout, 1, 0, title="Root locus (Kp)", xlabel="Real", ylabel="Imaginary"
+        )
+        ps.lockAspect(root_locus_plot)
+        self.root_locus_legend = ps.addLegend(root_locus_plot, "bottom-left")
+        self.z_grid_curve = root_locus_plot.plot(
+            pen=ps.pen(ps.MUTED, 1, alpha=0.5), connect="finite"
+        )
+        self.z_grid_labels = []
+        self.z_grid_f_nyquist = None
+        root_locus_plot.plot(
+            unit_circle.real, unit_circle.imag, pen=ps.pen(ps.INK_SECONDARY, 1, ":")
+        )
+        ps.addReferenceLine(root_locus_plot, 0, angle=0)
+        ps.addReferenceLine(root_locus_plot, 0, angle=90)
+        self.loci_curve = root_locus_plot.plot(pen=ps.pen(ps.BLUE), connect="finite")
+        self.open_loop_pole_markers = root_locus_plot.plot(
+            pen=None, symbol="x", symbolSize=10, symbolPen=None, symbolBrush=ps.BLUE
+        )
+        self.open_loop_zero_markers = root_locus_plot.plot(
+            pen=None,
+            symbol="o",
+            symbolSize=9,
+            symbolPen=ps.pen(ps.BLUE, 1.5),
+            symbolBrush=None,
+        )
+        self.closed_loop_pole_markers = root_locus_plot.plot(
+            pen=None, symbol="s", symbolSize=8, symbolPen=None
+        )
+        self.stability_limit_pole_markers = root_locus_plot.plot(
+            pen=None,
+            symbol="d",
+            symbolSize=10,
+            symbolPen=ps.pen(ps.ORANGE, 1.5),
+            symbolBrush=None,
+        )
+        self.root_locus_text = ps.CornerText(root_locus_plot, "top-left")
+        root_locus_plot.getViewBox().setDefaultRange((-1.1, 1.1), (-1.1, 1.1))
+
+        self.nyquist_plot = nyquist_plot
+        self.sensitivity_plot = sensitivity_plot
+        self.root_locus_plot = root_locus_plot
+        return layout
+
+    def rootLocusMarkers(self):
+        return [
+            self.loci_curve,
+            self.open_loop_pole_markers,
+            self.open_loop_zero_markers,
+            self.closed_loop_pole_markers,
+            self.stability_limit_pole_markers,
+        ]
+
+    def robustnessCurves(self):
+        return [
+            self.nyquist_curve,
+            self.nyquist_mirror_curve,
+            *self.nyquist_margin_items.values(),
+            *self.sensitivity_curves.values(),
+            self.max_sensitivity_curve,
+            self.sensitivity_peak_marker,
+            *self.rootLocusMarkers(),
+        ]
 
     def createModelOrderWidgets(self, layout):
         self.line_edit_zeros = QSpinBox()
@@ -1285,7 +1434,6 @@ class Window(QDialog):
         self.plotNyquist(loop, stability_margins, is_stable)
         self.plotSensitivities(loop, is_stable)
         self.plotRootLocus(loop, stability_margins[0], is_stable)
-        self.robustness_canvas.draw()
 
     def plotClosedLoop(self, t, y):
         # Compute metrics on pre-disturbance portion only
@@ -1342,63 +1490,19 @@ class Window(QDialog):
         self.bode_phase_plot.getViewBox().setDefaultRange(f_range, (-180, 180))
 
     def plotNyquist(self, loop, stability_margins, is_stable):
-        open_loop = loop.loop_gain
-        w_nyquist = np.pi / self.dt
-        w = np.geomspace(1e-2, w_nyquist, 2000)
-        mag, phase, _ = ctrl.frequency_response(open_loop, omega=w)
+        w = np.geomspace(1e-2, np.pi / self.dt, 2000)
+        mag, phase, _ = ctrl.frequency_response(loop.loop_gain, omega=w)
         loop_response = mag * np.exp(1j * phase)
+        self.nyquist_curve.setData(loop_response.real, loop_response.imag)
+        self.nyquist_mirror_curve.setData(loop_response.real, -loop_response.imag)
 
-        if self.nyquist_ax is None:
-            self.nyquist_ax = self.robustness_figure.add_subplot(2, 2, 1)
-        ax = self.nyquist_ax
-        ax.cla()
-
-        unit_circle = np.exp(1j * np.linspace(0, 2 * np.pi, 200))
-        ax.plot(unit_circle.real, unit_circle.imag, "k:", linewidth=0.8)
-        forbidden_region = -1 + self.kMinModulusMargin * unit_circle
-        ax.fill(
-            forbidden_region.real,
-            forbidden_region.imag,
-            color="red",
-            alpha=0.1,
-            label=f"Modulus margin < {self.kMinModulusMargin}",
-        )
-        ax.axhline(0, color="k", linewidth=0.5)
-        ax.axvline(0, color="k", linewidth=0.5)
-
-        line = ax.plot(loop_response.real, loop_response.imag, label="Open-loop")[0]
-        ax.plot(loop_response.real, -loop_response.imag, "--", color=line.get_color())
-        ax.plot(-1, 0, "r+", markersize=12, markeredgewidth=2)
-
+        for item in self.nyquist_margin_items.values():
+            item.setData([], [])
         if is_stable:
-            margin_texts = self.annotateNyquistMargins(ax, loop, stability_margins)
+            margin_texts = self.annotateNyquistMargins(loop, stability_margins)
         else:
-            margin_texts = [(self.kUnstableLoopText, "red")]
-
-        # A zero loop gain (Kp = 0) has no margin to show, and matplotlib
-        # cannot lay out an empty box
-        if margin_texts:
-            lines = [
-                TextArea(text, textprops=dict(color=color or "black", fontsize="small"))
-                for text, color in margin_texts
-            ]
-            margin_box = AnchoredOffsetbox(
-                loc="upper left",
-                child=VPacker(children=lines, align="left", pad=0, sep=2),
-                pad=0.3,
-                borderpad=0.3,
-            )
-            margin_box.patch.set(alpha=0.8, edgecolor="none")
-            ax.add_artist(margin_box)
-
-        ax.set_xlim(-3, 1.5)
-        ax.set_ylim(-2, 2)
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_title("Nyquist")
-        ax.set_xlabel("Real")
-        ax.set_ylabel("Imaginary")
-        ax.legend(loc="lower right")
-        excludeAnnotationsFromLayout(ax)
+            margin_texts = [(self.kUnstableLoopText, ps.CRITICAL)]
+        self.nyquist_margin_text.setLines(margin_texts)
 
     def plotSensitivities(self, loop, is_stable):
         omega = np.geomspace(0.1, loop.nyquistFrequency(), 500)
@@ -1407,132 +1511,102 @@ class Window(QDialog):
             key: 20 * np.log10(np.abs(response))
             for key, response in loop.sensitivities(omega).items()
         }
-
-        if self.sensitivity_ax is None:
-            self.sensitivity_ax = self.robustness_figure.add_subplot(2, 2, (2, 4))
-        ax = self.sensitivity_ax
-        ax.cla()
-
-        labels = {
-            "S": "S: sensitivity",
-            "T": "T: complementary sensitivity",
-            "PS": "PS: load disturbance → output",
-            "CS": "CS: measurement noise → control",
-            "CSF": "CSF: setpoint → control",
-        }
-        for key, label in labels.items():
-            ax.semilogx(f, magnitudes_db[key], label=label)
+        for key, curve in self.sensitivity_curves.items():
+            curve.setData(f, magnitudes_db[key])
 
         max_sensitivity_db = -20 * np.log10(self.kMinModulusMargin)
-        ax.axhline(
-            max_sensitivity_db,
-            color="red",
-            linestyle="--",
-            linewidth=0.8,
-            label=f"Max |S| ({max_sensitivity_db:.0f}dB)",
+        self.max_sensitivity_curve.setData(
+            [f[0], f[-1]], [max_sensitivity_db, max_sensitivity_db]
         )
-        ax.axhline(0, color="k", linewidth=0.5)
 
         if is_stable:
             i_peak = np.argmax(magnitudes_db["S"])
             peak_db = magnitudes_db["S"][i_peak]
             color = thresholdColor(peak_db, max_sensitivity_db, limit_is_minimum=False)
-            ax.plot(f[i_peak], peak_db, "o", color=color)
-            ax.text(
-                0.01,
-                0.99,
-                f"Peak sensitivity: {peak_db:.2f}dB (@{f[i_peak]:.1f}Hz)",
-                color=color,
-                verticalalignment="top",
-                transform=ax.transAxes,
+            self.sensitivity_peak_marker.setData(
+                [f[i_peak]], [peak_db], symbolBrush=color or ps.INK
+            )
+            self.sensitivity_text.setLines(
+                [(f"Peak sensitivity: {peak_db:.2f}dB (@{f[i_peak]:.1f}Hz)", color)]
             )
         else:
-            ax.text(
-                0.01,
-                0.99,
-                self.kUnstableLoopText,
-                color="red",
-                verticalalignment="top",
-                transform=ax.transAxes,
-            )
+            self.sensitivity_peak_marker.setData([], [])
+            self.sensitivity_text.setLines([(self.kUnstableLoopText, ps.CRITICAL)])
 
-        ax.set_xlim(f[0], f[-1])
-        highest_db = max(np.max(m) for m in magnitudes_db.values())
-        ax.set_ylim(-60, max(20, highest_db + 5))
-        ax.grid(True, which="both", linewidth=0.3)
-        ax.set_title("Sensitivity functions")
-        ax.set_xlabel("Frequency (Hz)")
-        ax.set_ylabel("Magnitude (dB)")
-        ax.legend(loc="lower left", fontsize="small")
-        excludeAnnotationsFromLayout(ax)
+        all_db = np.concatenate(list(magnitudes_db.values()))
+        highest_db = np.max(all_db[np.isfinite(all_db)], initial=-np.inf)
+        self.sensitivity_plot.getViewBox().setDefaultRange(
+            (np.log10(f[0]), np.log10(f[-1])), (-60, max(20, highest_db + 5))
+        )
+
+    def updateZPlaneGrid(self, f_nyquist):
+        if f_nyquist == self.z_grid_f_nyquist:
+            return
+        self.z_grid_f_nyquist = f_nyquist
+        x, y, labels = zPlaneGrid(f_nyquist)
+        self.z_grid_curve.setData(x, y)
+
+        for label in self.z_grid_labels:
+            self.root_locus_plot.removeItem(label)
+        font = QFont()
+        font.setPointSize(6)
+        self.z_grid_labels = []
+        for label_x, label_y, text in labels:
+            label = pg.TextItem(text, color=ps.MUTED, anchor=(0, 1))
+            label.setFont(font)
+            label.setPos(label_x, label_y)
+            self.root_locus_plot.addItem(label, ignoreBounds=True)
+            self.z_grid_labels.append(label)
 
     def plotRootLocus(self, loop, gain_margin, is_stable):
-        if self.root_locus_ax is None:
-            self.root_locus_ax = self.robustness_figure.add_subplot(2, 2, 3)
-        ax = self.root_locus_ax
-        ax.cla()
-        drawZPlaneGrid(ax, loop.nyquistFrequency() / (2 * np.pi))
+        self.updateZPlaneGrid(loop.nyquistFrequency() / (2 * np.pi))
+        legend = self.root_locus_legend
 
         kp = self.gains["P"]
-        if kp != 0:
-            max_gain_scale = 10.0
-            if is_stable and np.isfinite(gain_margin):
-                max_gain_scale = max(max_gain_scale, 2 * gain_margin)
-            gain_scales = np.concatenate(
-                ([0.0], np.geomspace(1e-3, max_gain_scale, 1000))
-            )
-            loci = loop.rootLocus(gain_scales)
-            ax.plot(loci.real, loci.imag, color="C0", linewidth=1)
-            ax.plot(
-                loci[0].real, loci[0].imag, "x", color="C0", label="Open-loop poles"
-            )
-            zeros = ctrl.zeros(loop.loop_gain)
-            ax.plot(
-                zeros.real,
-                zeros.imag,
-                "o",
-                color="C0",
-                markerfacecolor="none",
-                label="Open-loop zeros",
-            )
+        if kp == 0:
+            for item in self.rootLocusMarkers():
+                item.setData([], [])
+                ps.setLegendEntry(legend, item, None)
+            self.root_locus_text.setLines([("Kp = 0: the loop is open", None)])
+            return
+        self.root_locus_text.setLines([])
 
-            poles = loop.closedLoopPoles()
-            ax.plot(
-                poles.real,
-                poles.imag,
-                "s",
-                color="green" if is_stable else "red",
-                label=f"Kp = {kp:.3g}",
+        max_gain_scale = 10.0
+        if is_stable and np.isfinite(gain_margin):
+            max_gain_scale = max(max_gain_scale, 2 * gain_margin)
+        gain_scales = np.concatenate(([0.0], np.geomspace(1e-3, max_gain_scale, 1000)))
+        loci = loop.rootLocus(gain_scales)
+        branches = nanSeparated(loci)
+        self.loci_curve.setData(branches.real, branches.imag)
+
+        self.open_loop_pole_markers.setData(loci[0].real, loci[0].imag)
+        ps.setLegendEntry(legend, self.open_loop_pole_markers, "Open-loop poles")
+        zeros = ctrl.zeros(loop.loop_gain)
+        self.open_loop_zero_markers.setData(zeros.real, zeros.imag)
+        ps.setLegendEntry(legend, self.open_loop_zero_markers, "Open-loop zeros")
+
+        poles = loop.closedLoopPoles()
+        self.closed_loop_pole_markers.setData(
+            poles.real,
+            poles.imag,
+            symbolBrush=ps.GOOD if is_stable else ps.CRITICAL,
+        )
+        ps.setLegendEntry(legend, self.closed_loop_pole_markers, f"Kp = {kp:.3g}")
+
+        limit_markers = self.stability_limit_pole_markers
+        if is_stable and np.isfinite(gain_margin):
+            poles = loop.closedLoopPoles(gain_margin)
+            limit_markers.setData(poles.real, poles.imag)
+            ps.setLegendEntry(
+                legend,
+                limit_markers,
+                f"Kp = {gain_margin * kp:.3g} (stability limit)",
             )
-            if is_stable and np.isfinite(gain_margin):
-                poles = loop.closedLoopPoles(gain_margin)
-                ax.plot(
-                    poles.real,
-                    poles.imag,
-                    "D",
-                    color="orange",
-                    markerfacecolor="none",
-                    label=f"Kp = {gain_margin * kp:.3g} (stability limit)",
-                )
-            ax.legend(loc="lower left", fontsize="small")
         else:
-            ax.text(
-                0.01,
-                0.99,
-                "Kp = 0: the loop is open",
-                verticalalignment="top",
-                transform=ax.transAxes,
-            )
+            limit_markers.setData([], [])
+            ps.setLegendEntry(legend, limit_markers, None)
 
-        ax.set_xlim(-1.1, 1.1)
-        ax.set_ylim(-1.1, 1.1)
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_title("Root locus (Kp)")
-        ax.set_xlabel("Real")
-        ax.set_ylabel("Imaginary")
-        excludeAnnotationsFromLayout(ax)
-
-    def annotateNyquistMargins(self, ax, loop, stability_margins):
+    def annotateNyquistMargins(self, loop, stability_margins):
         open_loop = loop.loop_gain
         (
             gain_margin,
@@ -1544,6 +1618,7 @@ class Window(QDialog):
         ) = stability_margins
         w_nyquist = np.pi / self.dt
         unit_circle = np.exp(1j * np.linspace(0, 2 * np.pi, 200))
+        items = self.nyquist_margin_items
 
         margin_texts = []
 
@@ -1552,8 +1627,8 @@ class Window(QDialog):
             color = thresholdColor(
                 gain_margin_db, self.kMinGainMarginDb, limit_is_minimum=True
             )
-            ax.plot([-1, -1 / gain_margin], [0, 0], color=color, linewidth=2)
-            ax.plot(-1 / gain_margin, 0, "o", color=color)
+            showMarginLine(items["gain_line"], [-1, -1 / gain_margin], [0, 0], color)
+            showMarginPoint(items["gain_point"], -1 / gain_margin, 0, color)
             margin_texts.append(
                 (
                     f"Gain margin: {gain_margin_db:.2f}dB (@{phase_crossover / (2 * np.pi):.1f}Hz)",
@@ -1567,9 +1642,13 @@ class Window(QDialog):
             )
             # Arc from the critical point to the gain crossover on the unit circle
             arc_angle = np.linspace(np.pi, np.pi + np.deg2rad(phase_margin), 50)
-            ax.plot(np.cos(arc_angle), np.sin(arc_angle), color=color, linewidth=2)
+            showMarginLine(
+                items["phase_arc"], np.cos(arc_angle), np.sin(arc_angle), color
+            )
             crossover_point = np.exp(1j * arc_angle[-1])
-            ax.plot(crossover_point.real, crossover_point.imag, "o", color=color)
+            showMarginPoint(
+                items["phase_point"], crossover_point.real, crossover_point.imag, color
+            )
             margin_texts.append(
                 (
                     f"Phase margin: {phase_margin:.1f}deg (@{gain_crossover / (2 * np.pi):.1f}Hz)",
@@ -1582,25 +1661,28 @@ class Window(QDialog):
                 modulus_margin, self.kMinModulusMargin, limit_is_minimum=True
             )
             modulus_circle = -1 + modulus_margin * unit_circle
-            ax.plot(
+            showMarginLine(
+                items["modulus_circle"],
                 modulus_circle.real,
                 modulus_circle.imag,
-                "--",
-                color=color,
-                linewidth=1,
+                color,
+                style="--",
+                width=1.0,
             )
             closest_point = complex(
                 ctrl.evalfr(
                     open_loop, np.exp(1j * min(modulus_margin_w, w_nyquist) * self.dt)
                 )
             )
-            ax.plot(
+            showMarginLine(
+                items["modulus_line"],
                 [-1, closest_point.real],
                 [0, closest_point.imag],
-                color=color,
-                linewidth=2,
+                color,
             )
-            ax.plot(closest_point.real, closest_point.imag, "o", color=color)
+            showMarginPoint(
+                items["modulus_point"], closest_point.real, closest_point.imag, color
+            )
             margin_texts.append(
                 (
                     f"Modulus margin: {modulus_margin:.2f} (@{modulus_margin_w / (2 * np.pi):.1f}Hz)",
@@ -1630,11 +1712,13 @@ class Window(QDialog):
             # -1/f: a disk crossing the real axis at -a and -1/a
             a = (1 - alpha / 2) / (1 + alpha / 2)
             disk = -(a + 1 / a) / 2 + (1 / a - a) / 2 * unit_circle
-            ax.plot(disk.real, disk.imag, ":", color="purple", linewidth=1.2)
+            showMarginLine(
+                items["disk"], disk.real, disk.imag, ps.VIOLET, style=":", width=1.2
+            )
             margin_texts.append(
                 (
                     f"Disk margin: ±{disk_gain_margin_db:.2f}dB, ±{disk_phase_margin_deg:.1f}deg (@{disk_omega / (2 * np.pi):.1f}Hz)",
-                    "purple",
+                    ps.VIOLET,
                 )
             )
 

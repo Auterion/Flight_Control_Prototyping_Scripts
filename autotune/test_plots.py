@@ -7,7 +7,6 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import plot_style as ps  # noqa: E402
 import pytest  # noqa: E402
@@ -34,9 +33,6 @@ def qapp():
 
 @pytest.fixture
 def window(qapp):
-    # Window reuses pyplot figure 2, which still points to the Qt canvas of
-    # any previous window
-    plt.close("all")
     window = autotune.Window()
     window.num, window.den, window.dt = NUM, DEN, DT
     window.sys_id_delays = DELAYS
@@ -50,6 +46,10 @@ def window(qapp):
 
 def loop_model(window):
     return LoopModel(NUM, DEN, DT, DELAYS, window.gains)
+
+
+def is_empty(curve):
+    return curve.xData is None or len(curve.xData) == 0
 
 
 def change_gains(window, **gains):
@@ -150,8 +150,8 @@ def test_bode_phase_shares_the_frequency_axis(window):
 def test_reset_clears_the_plots(window):
     window.reset()
 
-    for curve in window.generalCurves():
-        assert curve.xData is None or len(curve.xData) == 0
+    for curve in window.generalCurves() + window.robustnessCurves():
+        assert is_empty(curve)
 
 
 def test_hover_readout_shows_the_frequency_in_hz(window):
@@ -168,7 +168,102 @@ def test_hover_readout_shows_the_frequency_in_hz(window):
     assert readout.label.text() == "f = 10 Hz, 5.0 dB"
 
 
-@pytest.mark.parametrize("plot_name", ["pz_plot"])
+def test_nyquist_plots_the_loop_gain(window):
+    x, y = window.nyquist_curve.getData()
+    w = np.geomspace(1e-2, np.pi / DT, 2000)
+    expected = loop_model(window).loop_gain(np.exp(1j * w * DT))
+    assert x + 1j * y == pytest.approx(expected, abs=1e-9)
+
+
+def test_nyquist_lists_the_margins(window):
+    lines = window.nyquist_margin_text.text().splitlines()
+    assert [line.split(":")[0] for line in lines] == [
+        "Gain margin",
+        "Phase margin",
+        "Modulus margin",
+        "Delay margin",
+        "Disk margin",
+    ]
+    gain_line_x, _ = window.nyquist_margin_items["gain_line"].getData()
+    gain_margin = loop_model(window).stabilityMargins()[0]
+    assert gain_line_x == pytest.approx([-1, -1 / gain_margin])
+
+
+def test_unstable_loop_hides_the_nyquist_margins(window):
+    change_gains(window, **UNSTABLE_GAINS)
+
+    assert window.nyquist_margin_text.text() == window.kUnstableLoopText
+    for item in window.nyquist_margin_items.values():
+        assert is_empty(item)
+
+
+def test_sensitivity_peak_is_marked(window):
+    f, s_db = window.sensitivity_curves["S"].xData, window.sensitivity_curves["S"].yData
+    peak_f, peak_db = (
+        window.sensitivity_peak_marker.xData,
+        window.sensitivity_peak_marker.yData,
+    )
+
+    assert peak_db == pytest.approx([np.max(s_db)])
+    assert peak_f == pytest.approx([f[np.argmax(s_db)]])
+    assert window.sensitivity_text.text().startswith("Peak sensitivity:")
+
+
+def test_sensitivities_share_the_bode_frequency_range(window):
+    window.sensitivity_plot.getViewBox().setXRange(0.0, 1.0, padding=0)
+
+    bode_x_range = window.bode_mag_plot.getViewBox().viewRange()[0]
+    assert bode_x_range == pytest.approx([0.0, 1.0])
+
+    window.bode_mag_plot.getViewBox().setXRange(-0.5, 0.5, padding=0)
+
+    sensitivity_x_range = window.sensitivity_plot.getViewBox().viewRange()[0]
+    assert sensitivity_x_range == pytest.approx([-0.5, 0.5])
+
+
+def legend_labels(legend):
+    return [label.text for _, label in legend.items]
+
+
+def test_root_locus_shows_the_closed_loop_poles(window):
+    poles = loop_model(window).closedLoopPoles()
+    x, y = window.closed_loop_pole_markers.getData()
+
+    assert sorted(x + 1j * y, key=np.angle) == pytest.approx(
+        sorted(poles, key=np.angle)
+    )
+    labels = legend_labels(window.root_locus_legend)
+    assert "Kp = 0.8" in labels
+    assert any(label.endswith("(stability limit)") for label in labels)
+
+
+def test_root_locus_follows_kp(window):
+    change_gains(window, P=0.5)
+
+    labels = legend_labels(window.root_locus_legend)
+    assert "Kp = 0.5" in labels
+    assert "Kp = 0.8" not in labels
+
+
+def test_open_loop_has_no_root_locus(window):
+    change_gains(window, P=0.0)
+
+    assert window.root_locus_text.text() == "Kp = 0: the loop is open"
+    assert legend_labels(window.root_locus_legend) == []
+    assert is_empty(window.loci_curve)
+
+
+def test_robustness_zoom_survives_a_gain_change(window):
+    view_box = window.nyquist_plot.getViewBox()
+    view_box.setRange(xRange=(-1.5, -0.5), yRange=(-0.5, 0.5), padding=0)
+    zoomed = np.ravel(view_box.viewRange())
+
+    change_gains(window, P=0.6)
+
+    assert np.ravel(view_box.viewRange()) == pytest.approx(zoomed)
+
+
+@pytest.mark.parametrize("plot_name", ["pz_plot", "nyquist_plot", "root_locus_plot"])
 def test_aspect_locked_axis_does_not_shrink_back(qapp, plot_name):
     window = autotune.Window()
     window.resize(1400, 900)

@@ -7,7 +7,6 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import matplotlib.pyplot as plt  # noqa: E402
 import pytest  # noqa: E402
 from loop_model import parallelGains  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
@@ -25,9 +24,6 @@ def qapp():
 
 @pytest.fixture
 def window(qapp):
-    # Window reuses pyplot figures 1 and 2, which still point to the Qt canvas
-    # of any previous window
-    plt.close("all")
     window = autotune.Window()
     window.show()
     window.activateWindow()
