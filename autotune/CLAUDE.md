@@ -39,7 +39,11 @@ the add/edit/rename/create/delete behavior; `test_loop_model.py` checks the
 closed-loop model (loop gain, closed-loop poles, sensitivities); `test_fit_metrics.py`
 checks the gain-form conversion, the loading of the flown controller from a preset
 (and its pre-loading in the main window) and the closed-loop replay fit;
-`test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection. These run in CI via
+`test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection;
+`test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
+shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, range
+selection). `conftest.py` closes the windows a test leaves open: an open window
+repainted while its pyqtgraph scene is garbage collected segfaults. These run in CI via
 `.github/workflows/autotune_tests.yml`.
 
 ## Code Quality
@@ -48,7 +52,7 @@ The root repo uses pre-commit hooks with **black** (formatting) and **isort** (i
 ```bash
 cd /home/mathieu/src/Flight_Control_Prototyping_Scripts
 poetry run black autotune/
-poetry run isort autotune/
+poetry run isort --profile black autotune/
 ```
 
 ## Architecture
@@ -62,11 +66,13 @@ autotune.py (Bode/step response validation) → PX4 gains
 
 ### Module responsibilities
 
-- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization via matplotlib figures embedded in Qt.
+- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in two pyqtgraph tabs (General: logged data, poles/zeros, step response, Bode; Robustness: Nyquist with margins, sensitivities, root locus).
 
 - **`data_extractor.py`** — Parses PX4 ULog binary logs using `pyulog`. Extracts and interpolates signals (rates, setpoints, actuator outputs, airspeed). Returns numpy arrays aligned to a common time base.
 
-- **`data_selection_window.py`** — Interactive matplotlib window for selecting the maneuver time window and inspecting signal quality/coherence before running identification. Loads input/output presets via `presets.py` and lets the user add/edit/delete them through `preset_dialogs.py`.
+- **`plot_style.py`** — Shared pyqtgraph helpers: light dataviz palette, plots whose double-click restores a default range (kept across data updates), corner text overlays, hover readout, and X-range linking across tabs.
+
+- **`data_selection_window.py`** — Interactive pyqtgraph window (left drag selects the range) for selecting the maneuver time window and inspecting signal quality/coherence before running identification. Loads input/output presets via `presets.py` and lets the user add/edit/delete them through `preset_dialogs.py`.
 
 - **`presets.py`** — Loads/saves input/output presets from the user-editable `presets.yaml` (next to the code). Seeds the file with `DEFAULT_PRESETS` on first run; falls back to defaults if the file is missing or unparseable. A preset can also describe the flown controller (reference signal, gain parameter names, ideal/parallel form, PID options), which pre-loads the PID and drives the closed-loop replay fit.
 
@@ -80,7 +86,7 @@ autotune.py (Bode/step response validation) → PX4 gains
 
 - **`loop_model.py`** — `LoopModel`: the closed loop (identified plant + PX4 PID, delay inside the loop) as a two-degree-of-freedom controller `u = C_r r - C_y y`. Provides the time simulation, loop gain, closed-loop poles/stability, stability margins and gang-of-six sensitivities used by the plots in `autotune.py`.
 
-- **`pid_analyse_window.py`** — Secondary PyQt5 window with pole-zero plots, Bode diagrams, stability margins, and disturbance response for the tuned controller.
+- **`pid_analyse_window.py`** — Secondary pyqtgraph window with the step response of the flown controller, estimated from the logged data by Wiener deconvolution over sliding windows.
 
 - **`closed_loop_sim.py`** — Simulates closed-loop behavior with the identified model and designed gains to validate stability before applying to the aircraft.
 
@@ -93,6 +99,7 @@ autotune.py (Bode/step response validation) → PX4 gains
 | `control` | Transfer functions, Bode plots, pole-zero, simulation |
 | `pyulog` | PX4 ULog binary flight log parsing |
 | `pyqt5` | GUI framework |
+| `pyqtgraph` | Interactive plots of the GUI windows |
 | `numpy` / `scipy` | Numerical computing, signal processing |
 | `pyyaml` | Read/write the user-editable `presets.yaml` |
 
