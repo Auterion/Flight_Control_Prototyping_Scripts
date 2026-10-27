@@ -1,12 +1,12 @@
-import matplotlib.pyplot as plt
 import numpy as np
+import plot_style as ps
+import pyqtgraph as pg
 from data_extractor import DataExtractor
 from loop_model import idealGains
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.widgets import SpanSelector
 from pid_analyse_window import PIDAnalyseWindow
 from preset_dialogs import PresetEditDialog
 from presets import load_presets, save_presets
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor
 from PyQt5.QtWidgets import (
     QComboBox,
@@ -21,6 +21,25 @@ from PyQt5.QtWidgets import (
 )
 from scipy import signal
 from searchable_combo_box import SearchableComboBox
+
+
+class SpanSelectViewBox(ps.ResettableViewBox):
+    """Left drag draws a time range.
+
+    The other buttons keep the pyqtgraph behavior: the middle button pans and
+    the right one zooms.
+    """
+
+    sigSpanDragged = pyqtSignal(float, float, bool)  # start, stop, finished
+
+    def mouseDragEvent(self, ev, axis=None):
+        if ev.button() != Qt.LeftButton or axis is not None:
+            super().mouseDragEvent(ev, axis)
+            return
+        ev.accept()
+        start = self.mapSceneToView(ev.buttonDownScenePos()).x()
+        stop = self.mapSceneToView(ev.scenePos()).x()
+        self.sigSpanDragged.emit(min(start, stop), max(start, stop), ev.isFinish())
 
 
 class DataSelectionWindow(QDialog):
@@ -42,13 +61,7 @@ class DataSelectionWindow(QDialog):
         self.t_start = None
         self.t_stop = None
 
-        self.input_ref = None
-        self.output_ref = None
-        self.coherence_ref = None
-        self.coherence_info_text = None
-        self.figure = plt.figure(figsize=(8, 6), layout="constrained")
-        self.canvas = FigureCanvas(self.figure)
-        self.initPlots()
+        self.plots = self.createPlots()
 
         layout_v = QVBoxLayout()
 
@@ -82,7 +95,7 @@ class DataSelectionWindow(QDialog):
         top_group.addLayout(in_out_group)
 
         layout_v.addLayout(top_group)
-        layout_v.addWidget(self.canvas)
+        layout_v.addWidget(self.plots)
 
         self.label_warning = QLabel("")
         self.label_warning.setStyleSheet("color: red; font-weight: bold;")
@@ -323,71 +336,102 @@ class DataSelectionWindow(QDialog):
     def getTrimAirspeed(self):
         return self.data_extractor.getTrimAirspeed()
 
-    def initPlots(self):
-        if self.input_ref is None:
-            self.figure.clear()
+    def createPlots(self):
+        layout = pg.GraphicsLayoutWidget()
+        layout.setMinimumSize(800, 600)
+        self.hover_readouts = []
 
-            # --- Time series Axes (Top) ---
-            self.ax = self.figure.add_subplot(2, 1, 1)
-            color_in = "tab:blue"
-            plot_refs = self.ax.plot([], [], color=color_in)
-            self.input_ref = plot_refs[0]
+        self.input_plot = ps.addPlot(
+            layout,
+            0,
+            0,
+            view_box=SpanSelectViewBox(),
+            title="Drag to select the data range",
+            ylabel="Input",
+        )
+        self.output_plot = ps.addPlot(
+            layout,
+            1,
+            0,
+            view_box=SpanSelectViewBox(),
+            xlabel="Time (s)",
+            ylabel="Output",
+        )
+        self.output_plot.setXLink(self.input_plot)
+        self.input_curve = self.input_plot.plot(pen=ps.pen(ps.BLUE))
+        self.output_curve = self.output_plot.plot(pen=ps.pen(ps.ORANGE))
 
-            self.ax.autoscale(False)
-
-            self.ax.set_title("Click and drag to select data range")
-            self.ax.set_xlabel("Time (s)")
-            self.ax.set_ylabel("Input", color=color_in)
-            self.ax.tick_params(axis="y", labelcolor=color_in)
-
-            color_out = "tab:orange"
-            self.ax_out = self.ax.twinx()
-            plot_refs = self.ax_out.plot([], [], color=color_out)
-            self.output_ref = plot_refs[0]
-            self.ax_out.set_ylabel("Output", color=color_out)
-            self.ax_out.tick_params(axis="y", labelcolor=color_out)
-
-            self.span = SpanSelector(
-                self.ax_out,
-                self.onselect,
-                "horizontal",
-                useblit=False,
-                props=dict(alpha=0.2, facecolor="green"),
-                interactive=True,
+        self.selection_regions = []
+        for plot in (self.input_plot, self.output_plot):
+            ps.xOnlyMouse(plot)
+            plot.getViewBox().sigSpanDragged.connect(self.onSpanDragged)
+            region = pg.LinearRegionItem(
+                brush=ps.color(ps.GREEN, 0.15),
+                hoverBrush=ps.color(ps.GREEN, 0.25),
+                pen=ps.pen(ps.GREEN),
             )
+            region.hide()
+            region.sigRegionChanged.connect(self.onRegionChanged)
+            region.sigRegionChangeFinished.connect(self.onRegionChangeFinished)
+            plot.addItem(region, ignoreBounds=True)
+            self.selection_regions.append(region)
+            self.hover_readouts.append(ps.HoverReadout(plot, "t = {:.3f} s"))
 
-            # --- Coherence Plot (Bottom) ---
-            self.ax_coherence = self.figure.add_subplot(2, 1, 2)
-            color_coherence = "tab:grey"
-            plot_refs = self.ax_coherence.plot([], [], color=color_coherence)
-            self.coherence_ref = plot_refs[0]
-            self.ax_coherence.set_title("Coherence")
-            self.ax_coherence.set_xlabel("Frequency (Hz)")
-            self.ax_coherence.set_ylabel("Coherence")
-            self.ax_coherence.set_xscale("log")
-
-            self.canvas.mpl_connect("scroll_event", self.zoom_fun)
-            self.canvas.draw()
+        self.coherence_plot = ps.addPlot(
+            layout,
+            2,
+            0,
+            title="Coherence",
+            xlabel="Frequency (Hz)",
+            ylabel="Coherence",
+        )
+        self.coherence_plot.setLogMode(x=True)
+        self.coherence_plot.setMouseEnabled(x=True, y=False)
+        self.coherence_curve = self.coherence_plot.plot(pen=ps.pen(ps.INK_SECONDARY))
+        self.coherence_info_text = ps.CornerText(self.coherence_plot, "bottom-right")
+        self.coherence_plot.getViewBox().setDefaultRange(
+            (np.log10(0.1), np.log10(20)), (0, 1)
+        )
+        self.hover_readouts.append(
+            ps.HoverReadout(
+                self.coherence_plot, "f = {:.3g} Hz", "{:.2f}", corner="top-right"
+            )
+        )
+        return layout
 
     def plotU(self):
-        self.input_ref.set_xdata(self.t)
-        self.input_ref.set_ydata(self.u)
-        self.ax.set_xlim([self.t[0], self.t[-1]])
-        min_u = min(self.u)
-        max_u = max(self.u)
-        if min_u < max_u:
-            self.ax.set_ylim([min_u, max_u])
-        self.canvas.draw()
+        self.plotTimeSeries(self.input_plot, self.input_curve, self.u)
 
     def plotY(self):
-        self.output_ref.set_xdata(self.t)
-        self.output_ref.set_ydata(self.y)
-        self.ax.set_xlim([self.t[0], self.t[-1]])
-        min_y = min(self.y)
-        max_y = max(self.y)
-        if min_y < max_y:
-            self.ax_out.set_ylim([min_y, max_y])
-        self.canvas.draw()
+        self.plotTimeSeries(self.output_plot, self.output_curve, self.y)
+
+    def plotTimeSeries(self, plot, curve, values):
+        curve.setData(self.t, values)
+        plot.setLimits(xMin=self.t[0] - 1.0, xMax=self.t[-1] + 1.0)
+        plot.setXRange(self.t[0], self.t[-1], padding=0)
+
+    def setSelectionRegion(self, t_start, t_stop):
+        for region in self.selection_regions:
+            region.blockSignals(True)
+            region.setRegion((t_start, t_stop))
+            region.blockSignals(False)
+            region.show()
+
+    def onSpanDragged(self, t_start, t_stop, finished):
+        self.setSelectionRegion(t_start, t_stop)
+        if finished:
+            self.onselect(t_start, t_stop)
+
+    def onRegionChanged(self, changed_region):
+        t_start, t_stop = changed_region.getRegion()
+        for region in self.selection_regions:
+            if region is not changed_region:
+                region.blockSignals(True)
+                region.setRegion((t_start, t_stop))
+                region.blockSignals(False)
+
+    def onRegionChangeFinished(self, region):
+        self.onselect(*region.getRegion())
 
     def onselect(self, xmin, xmax):
         indmin, indmax = np.searchsorted(self.t, (xmin, xmax))
@@ -396,8 +440,8 @@ class DataSelectionWindow(QDialog):
 
         self.t_start = self.t[indmin]
         self.t_stop = self.t[indmax]
-        self.ax.set_xlim(self.t_start - 1.0, self.t_stop + 1.0)
-        self.canvas.draw()
+        self.setSelectionRegion(self.t_start, self.t_stop)
+        self.input_plot.setXRange(self.t_start - 1.0, self.t_stop + 1.0, padding=0)
 
         self.plotCoherence()
 
@@ -465,8 +509,8 @@ class DataSelectionWindow(QDialog):
             )
             self.label_warning.show()
 
-            self.coherence_ref.set_xdata([])
-            self.coherence_ref.set_ydata([])
+            self.coherence_curve.setData([], [])
+            self.coherence_info_text.setLines([])
             return
         else:
             self.label_warning.hide()
@@ -484,61 +528,11 @@ class DataSelectionWindow(QDialog):
         # Compute coherence
         freq, Cuy = signal.coherence(u_sel, y_sel, fs, nperseg=nperseg)
 
-        # Update coherence plot
-        self.coherence_ref.set_xdata(freq)
-        self.coherence_ref.set_ydata(Cuy)
-        self.ax_coherence.set_xlim([0, 20])
-        self.ax_coherence.set_ylim([0, 1])
-
-        # Remove previous annotation if it exists
-        if self.coherence_info_text is not None:
-            self.coherence_info_text.remove()
-            self.coherence_info_text = None
+        self.coherence_curve.setData(freq, Cuy)
 
         freq_res = fs / nperseg
         info_text = (
             f"Samples: {num_samples}, Duration: {duration:.2f}s, "
             f"fs: {fs:.1f}Hz, nperseg: {nperseg}, Δf: {freq_res:.2f}Hz"
         )
-
-        self.coherence_info_text = self.ax_coherence.text(
-            0.98,
-            0.02,
-            info_text,
-            ha="right",
-            va="bottom",
-            transform=self.ax_coherence.transAxes,
-            fontsize=8,
-            color="gray",
-        )
-
-        self.canvas.draw()
-
-    def zoom_fun(self, event):
-        base_scale = 1.1
-        # get the current x and y limits
-        cur_xlim = self.ax.get_xlim()
-        cur_xrange = cur_xlim[1] - cur_xlim[0]
-        xdata = event.xdata  # get event x location
-        if xdata is None or xdata < cur_xlim[0] or xdata > cur_xlim[1]:
-            return
-
-        if event.button == "up":
-            # deal with zoom in
-            scale_factor = 1 / base_scale
-        elif event.button == "down":
-            # deal with zoom out
-            scale_factor = base_scale
-        else:
-            # deal with something that should never happen
-            scale_factor = 1
-        # set new limits
-        new_x_min = xdata - (xdata - cur_xlim[0]) * scale_factor
-        new_x_max = xdata + (xdata - new_x_min) / (xdata - cur_xlim[0]) * (
-            cur_xlim[1] - xdata
-        )
-
-        new_x_min = max(new_x_min, self.t[0] - 1.0)
-        new_x_max = min(new_x_max, self.t[-1] + 1.0)
-        self.ax.set_xlim([new_x_min, new_x_max])
-        self.canvas.draw()
+        self.coherence_info_text.setLines([(info_text, ps.MUTED)])

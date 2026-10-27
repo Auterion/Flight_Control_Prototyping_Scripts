@@ -7,7 +7,6 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import presets  # noqa: E402
 import pytest  # noqa: E402
@@ -180,9 +179,6 @@ def test_signals_changed_away_from_the_preset_load_no_controller(selection):
 def load_log(selection, monkeypatch):
     selection.exec_ = lambda: selection.loadSelection() or True
     monkeypatch.setattr(autotune, "DataSelectionWindow", lambda file_name: selection)
-    # Window reuses pyplot figures 1 and 2, which still point to the Qt canvas
-    # of any previous window
-    plt.close("all")
     window = autotune.Window()
     window.gains = {"P": 0.5, "I": 1.0, "D": 0.01, "FF": 0.2}
     window.loadLog()

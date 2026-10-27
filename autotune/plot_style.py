@@ -135,13 +135,13 @@ class ResettableViewBox(pg.ViewBox):
             super().mouseClickEvent(ev)
 
 
-def addPlot(layout, row, col, rowspan=1, colspan=1, **style):
+def addPlot(layout, row, col, rowspan=1, colspan=1, view_box=None, **style):
     plot = layout.addPlot(
         row=row,
         col=col,
         rowspan=rowspan,
         colspan=colspan,
-        viewBox=ResettableViewBox(),
+        viewBox=view_box or ResettableViewBox(),
     )
     plot.hideButtons()
     stylePlot(plot, **style)
@@ -241,7 +241,9 @@ class CornerText(GraphicsWidgetAnchor, pg.GraphicsWidget):
 class HoverReadout:
     """Crosshair and x/y readout under the mouse, in data units on log axes."""
 
-    def __init__(self, plot, x_format="x = {:.3g}", y_format="y = {:.3g}"):
+    def __init__(
+        self, plot, x_format="x = {:.3g}", y_format="y = {:.3g}", corner="bottom-right"
+    ):
         self.plot = plot
         self.x_format = x_format
         self.y_format = y_format
@@ -250,7 +252,7 @@ class HoverReadout:
         self.h_line = pg.InfiniteLine(angle=0, pen=crosshair_pen)
         for line in (self.v_line, self.h_line):
             plot.addItem(line, ignoreBounds=True)
-        self.label = CornerText(plot, "bottom-right")
+        self.label = CornerText(plot, corner)
         self.show(False)
         plot.scene().sigMouseMoved.connect(self.onMouseMoved)
 
