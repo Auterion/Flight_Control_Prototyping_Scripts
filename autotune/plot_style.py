@@ -100,16 +100,20 @@ class ResettableViewBox(pg.ViewBox):
         super().__init__(*args, **kwargs)
         self.default_x_range = None
         self.default_y_range = None
+        self.has_default_range = False
 
     def setDefaultRange(self, x_range=None, y_range=None):
-        """Apply the new default range, only if it differs from the current one.
+        """Apply the new default range when the X default changes.
 
         This keeps the user's zoom across data updates, but resets the view
         when what is plotted changes scale (a new sample time, for example).
+        A Y default that follows the data (a peak, say) is only applied by
+        the next reset.
         """
-        changed = (x_range, y_range) != (self.default_x_range, self.default_y_range)
+        changed = not self.has_default_range or x_range != self.default_x_range
         self.default_x_range = x_range
         self.default_y_range = y_range
+        self.has_default_range = True
         if changed:
             self.resetRange()
 
@@ -150,6 +154,32 @@ def lockAspect(plot):
     # tick labels: an axis that shrinks back can flicker between two tick
     # spacings forever
     plot.getAxis("left").setStyle(autoReduceTextSpace=False)
+
+
+def linkXRanges(view_a, view_b):
+    """Keep the X ranges of two views equal, even across tabs."""
+
+    def follow(source, target):
+        def onRangeChanged(_, x_range):
+            if target.viewRange()[0] != list(x_range):
+                target.setXRange(*x_range, padding=0)
+
+        source.sigXRangeChanged.connect(onRangeChanged)
+
+    follow(view_a, view_b)
+    follow(view_b, view_a)
+
+
+def setLegendEntry(legend, item, name):
+    """Show item in legend under name, or remove it when name is None."""
+    entry = next((label for sample, label in legend.items if sample.item is item), None)
+    if name is None:
+        if entry is not None:
+            legend.removeItem(item)
+    elif entry is None:
+        legend.addItem(item, name)
+    else:
+        entry.setText(name)
 
 
 def xOnlyMouse(plot):
