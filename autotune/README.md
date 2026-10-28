@@ -19,7 +19,7 @@ source virtualenv-test/bin/activate
 
 ### Install the dependencies
 ```
-pip3 install numpy scipy pyulog control pyqt5
+pip3 install numpy scipy pyulog control pyqt5 pyqtgraph
 ```
 
 ### Start the GUI
@@ -28,6 +28,8 @@ python3 autotune.py
 ```
 
 ![Autotune GUI main window](docs/gui_main_window.png)
+
+![Autotune GUI robustness tab](docs/gui_robustness.png)
 
 # Tuning Worflow
 
@@ -70,7 +72,7 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
 
 #### Load the flight log and select the relevant tuning loop (roll, pitch, or yaw):
 
-![image](https://github.com/user-attachments/assets/f962a004-eae8-433f-9b7e-adc618dcbeae)
+![Data selection window](docs/gui_data_selection.png)
 
 #### Window selection:
 

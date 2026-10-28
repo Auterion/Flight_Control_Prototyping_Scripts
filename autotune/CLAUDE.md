@@ -19,7 +19,7 @@ poetry run python3 autotune.py
 ```bash
 python3 -m venv virtualenv-test
 source virtualenv-test/bin/activate
-pip3 install numpy scipy pyulog control pyqt5 pyyaml
+pip3 install numpy scipy pyulog control pyqt5 pyqtgraph pyyaml
 python3 autotune.py
 ```
 
