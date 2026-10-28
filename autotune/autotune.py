@@ -297,6 +297,7 @@ def isNumber(value):
 class Window(QDialog):
     def __init__(self, parent=None):
         super(Window, self).__init__(parent)
+        self.setWindowFlags(Qt.Window)
 
         self.measured_step_info = None
         self.step_info_spinbox = {}
