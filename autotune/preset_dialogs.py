@@ -1,5 +1,7 @@
 """Dialog for adding/editing/renaming/deleting input-output presets."""
 
+from PyQt5.QtCore import QLocale
+from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -9,6 +11,7 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QRadioButton,
@@ -157,6 +160,17 @@ class PresetEditDialog(QDialog):
             )
             form.addRow(QLabel(label), self.combo_gain[gain])
 
+        self.edit_gain_scale = QLineEdit(str(src.get("gain_scale", 1.0)))
+        validator = QDoubleValidator(self.edit_gain_scale)
+        # The scale is parsed with float()
+        validator.setLocale(QLocale.c())
+        self.edit_gain_scale.setValidator(validator)
+        self.edit_gain_scale.setToolTip(
+            "Multiplies the parameter values to get the gains, e.g. 0.001 for "
+            "gains defined per 1000 units of error."
+        )
+        form.addRow(QLabel("Gain scale"), self.edit_gain_scale)
+
         form_row = QHBoxLayout()
         self.radio_ideal = QRadioButton("Ideal/Standard: Kp * [1 + Ki + Kd]")
         self.radio_parallel = QRadioButton("Parallel: Kp + Ki + Kd")
@@ -267,6 +281,16 @@ class PresetEditDialog(QDialog):
             )
             return
 
+        try:
+            gain_scale = float(self.edit_gain_scale.text())
+        except ValueError:
+            gain_scale = 0.0
+        if gain_scale <= 0.0:
+            QMessageBox.warning(
+                self, "Invalid gain scale", "The gain scale must be positive."
+            )
+            return
+
         mode = self._mode()
         if mode in ("create", "rename") and name in self.existing:
             QMessageBox.warning(
@@ -288,6 +312,8 @@ class PresetEditDialog(QDialog):
             preset["reference"] = reference
         if gains:
             preset["gains"] = gains
+            if gain_scale != 1.0:
+                preset["gain_scale"] = gain_scale
         # Also selects the form of the PID tab, gains or not
         preset["gain_form"] = "ideal" if self.radio_ideal.isChecked() else "parallel"
         if self.check_pi_no_zero.isChecked():

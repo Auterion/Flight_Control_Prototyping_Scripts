@@ -66,6 +66,7 @@ class DataSelectionWindow(QDialog):
         self.r = None
         self.flown_gains = None
         self.flown_gain_form = None
+        self.flown_gain_scale = None
         self.flown_options = None
         self.t_start = None
         self.t_stop = None
@@ -140,9 +141,13 @@ class DataSelectionWindow(QDialog):
             if hasMissingSamples(self.u, self.y):
                 self.printMissingSamplesError()
                 return
-            (self.r, self.flown_gains, self.flown_gain_form, self.flown_options) = (
-                self.getFlownController()
-            )
+            (
+                self.r,
+                self.flown_gains,
+                self.flown_gain_form,
+                self.flown_gain_scale,
+                self.flown_options,
+            ) = self.getFlownController()
             self.accept()
         else:
             self.printRangeError()
@@ -150,9 +155,10 @@ class DataSelectionWindow(QDialog):
     def getFlownController(self):
         """Reference, flown gains and PID options of the selected preset's loop.
 
-        Returns (reference, gains, gain_form, options): gains in ideal form,
-        gain_form the form of the preset's parameters and options as LoopModel
-        keyword arguments. Each is None when the preset does not provide it or
+        Returns (reference, gains, gain_form, gain_scale, options): gains in
+        ideal form, gain_form the form of the preset's parameters, gain_scale
+        the gain of a parameter unit and options as LoopModel keyword
+        arguments. Each is None when the preset does not provide it or
         the selected signals no longer match the preset.
         """
         preset = self.preset_candidates.get(self.combo_preset.currentText())
@@ -160,7 +166,7 @@ class DataSelectionWindow(QDialog):
             self.index_u,
             self.index_y,
         ):
-            return (None, None, None, None)
+            return (None, None, None, None, None)
 
         options = {
             "p_on_feedback": preset.get("pi_no_zero", False),
@@ -176,6 +182,7 @@ class DataSelectionWindow(QDialog):
             reference,
             self.getFlownGains(preset),
             preset.get("gain_form", "parallel"),
+            preset.get("gain_scale", 1.0),
             options,
         )
 
@@ -188,6 +195,8 @@ class DataSelectionWindow(QDialog):
         }
         if None in values.values():
             return None
+        scale = preset.get("gain_scale", 1.0)
+        values = {gain: value * scale for gain, value in values.items()}
         return idealGains(values, preset.get("gain_form", "parallel"))
 
     def browseFiles(self):

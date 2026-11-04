@@ -9,7 +9,9 @@ than crashing.
 
 A preset may also describe the flown controller: the logged ``reference`` of
 the loop, the parameters holding its ``gains`` (P, I, D and FF) in
-``gain_form`` "parallel" (default) or "ideal", and the ``pi_no_zero`` and
+``gain_form`` "parallel" (default) or "ideal", the ``gain_scale`` that turns
+the parameter values into gains (default 1, e.g. 0.001 for PX4's ICE_IDLE_RPM_P
+and ICE_IDLE_RPM_I, defined per 1000 rpm), and the ``pi_no_zero`` and
 ``negate_output`` PID options (default false). They pre-load the PID of the
 interface and replay the flown closed loop through the identified model.
 """

@@ -43,6 +43,15 @@ def parallelGains(ideal_gains):
     }
 
 
+def scaledGains(ideal_gains, scale):
+    """Ideal gains in units of scale; Ki and Kd are ratios to Kp, unscaled."""
+    return {
+        **ideal_gains,
+        "P": ideal_gains["P"] / scale,
+        "FF": ideal_gains["FF"] / scale,
+    }
+
+
 class LoopModel:
     def __init__(
         self,

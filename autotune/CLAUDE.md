@@ -39,7 +39,8 @@ the add/edit/rename/create/delete behavior; `test_loop_model.py` checks the
 closed-loop model (loop gain, closed-loop poles, sensitivities); `test_fit_metrics.py`
 checks the gain-form conversion, the loading of the flown controller from a preset
 (and its pre-loading in the main window) and the closed-loop replay fit;
-`test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection;
+`test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection and
+its parameter units (preset gain scale);
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, range
 selection). `conftest.py` closes the windows a test leaves open: an open window

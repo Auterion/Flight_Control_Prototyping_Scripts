@@ -43,7 +43,7 @@ import plot_style as ps
 import pyqtgraph as pg
 from data_extractor import *
 from data_selection_window import DataSelectionWindow
-from loop_model import LoopModel, idealGains, parallelGains
+from loop_model import LoopModel, idealGains, parallelGains, scaledGains
 from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -112,8 +112,9 @@ kGainFormLabels = {
     "parallel": "Parallel\nKp + Ki + Kd",
 }
 kGainFormat = {"ideal": "{:.3f}", "parallel": "{:.4f}"}
-# Loaded when the log gives no flown gains: the lowest slider values, except
-# FF left at 0 (no feedforward) rather than its -1 slider end
+# Loaded when the log gives no flown gains: the lowest slider values (in
+# parameter units), except FF left at 0 (no feedforward) rather than its -1
+# slider end
 kMinimumGains = {"P": 0.001, "I": 0.0, "D": 0.0, "FF": 0.0}
 # (min, max, step) of each slider. Parallel Ki and Kd are the ideal ones
 # scaled by Kp, typically below 1: finer steps keep them from rounding to 0
@@ -316,6 +317,8 @@ class Window(QDialog):
         self.detune_coeff = 0.5
         self.gains = {"P": 0.01, "I": 0.0, "D": 0.0, "FF": 0.0}  # ideal form
         self.gain_form = "ideal"
+        # Gain of one unit of the PX4 parameters, the units the PID tab shows
+        self.gain_scale = 1.0
         self.reference = None
         self.flown_gains = None
         self.flown_gain_form = None
@@ -369,7 +372,7 @@ class Window(QDialog):
         offset_group = QFormLayout()
         self.line_edit_offset = QDoubleSpinBox()
         self.line_edit_offset.setValue(0.0)
-        self.line_edit_offset.setRange(-10.0, 10.0)
+        self.line_edit_offset.setRange(-10000.0, 10000.0)
         self.line_edit_offset.textChanged.connect(self.onOffsetChanged)
         offset_group.addRow(QLabel("Offset"), self.line_edit_offset)
         left_menu.addLayout(offset_group)
@@ -974,6 +977,13 @@ class Window(QDialog):
         self.negate_control_box.setChecked(False)
         self.negate_control_box.stateChanged.connect(self.updateClosedLoop)
         layout_options.addWidget(self.negate_control_box)
+
+        self.lbl_gain_scale = QLabel()
+        self.lbl_gain_scale.setToolTip(
+            "Gains shown in the units of the PX4 parameters (preset gain scale)"
+        )
+        self.lbl_gain_scale.setVisible(False)
+        layout_options.addWidget(self.lbl_gain_scale)
         layout_pid.addLayout(layout_options, 0, 1)
 
         self.gain_form_radio = {}
@@ -1148,7 +1158,15 @@ class Window(QDialog):
         self.updateKIDSliders()
 
     def gainsInForm(self, form):
-        return dict(self.gains) if form == "ideal" else parallelGains(self.gains)
+        """Gains of form in parameter units, as shown and edited."""
+        gains = scaledGains(self.gains, self.gain_scale)
+        return gains if form == "ideal" else parallelGains(gains)
+
+    def setGainScale(self, scale):
+        self.gain_scale = scale
+        self.lbl_gain_scale.setText(f"Parameter units: gain = value × {scale:g}")
+        self.lbl_gain_scale.setVisible(scale != 1.0)
+        self.updateKIDSliders()
 
     def setGainInActiveForm(self, gain, value):
         """Returns False when the gains have no ideal form (parallel Kp = 0)."""
@@ -1157,7 +1175,7 @@ class Window(QDialog):
         ideal = idealGains(gains, self.gain_form)
         if ideal is None:
             return False
-        self.gains = ideal
+        self.gains = scaledGains(ideal, 1.0 / self.gain_scale)
         return True
 
     def updateGainFromSlider(self, gain: str):
@@ -1768,6 +1786,7 @@ class Window(QDialog):
             self.reference = select.r
             self.flown_gains = select.flown_gains
             self.flown_gain_form = select.flown_gain_form
+            self.setGainScale(select.flown_gain_scale or 1.0)
             self.flown_options = select.flown_options or {}
             self.loadFlownController()
             trim_airspeed = select.getTrimAirspeed()
@@ -1787,7 +1806,7 @@ class Window(QDialog):
         if self.flown_gains is not None:
             self.gains = dict(self.flown_gains)
         else:
-            self.gains = dict(kMinimumGains)
+            self.gains = scaledGains(kMinimumGains, 1.0 / self.gain_scale)
         self.updateKIDSliders()
         if self.flown_gain_form is not None:
             self.gain_form_radio[self.flown_gain_form].setChecked(True)

@@ -132,3 +132,46 @@ def test_zero_loop_gain_is_drawn(window):
     window.gains["P"] = 0.0
 
     window.updateClosedLoop()
+
+
+def test_gains_are_shown_in_parameter_units(window):
+    window.setGainScale(0.001)
+
+    assert window.lbl_gain_scale.isVisibleTo(window)
+    assert shown(window, "parallel") == pytest.approx(
+        {gain: 1000 * value for gain, value in parallelGains(IDEAL_GAINS).items()},
+        abs=1e-4,
+    )
+    # Ki and Kd of the ideal form are ratios to Kp: only Kp and FF scale
+    assert shown(window, "ideal") == pytest.approx(
+        {**IDEAL_GAINS, "P": 200.0, "FF": 100.0}, abs=1e-3
+    )
+    assert window.gains == IDEAL_GAINS
+
+
+def test_gains_are_edited_in_parameter_units(qapp, window):
+    window.setGainScale(0.001)
+    window.gain_form_radio["parallel"].setChecked(True)
+
+    type_into(qapp, window.gain_edit["parallel"]["P"], "0.4")
+    type_into(qapp, window.gain_edit["parallel"]["I"], "0.5")
+
+    assert window.gains["P"] == pytest.approx(0.0004)
+    assert parallelGains(window.gains)["I"] == pytest.approx(0.0005)
+    assert window.gain_slider["I"].value() == pytest.approx(0.5)
+
+
+def test_slider_moves_in_parameter_units(qapp, window):
+    window.setGainScale(0.001)
+    window.gain_form_radio["parallel"].setChecked(True)
+
+    move_slider(qapp, window.gain_slider["P"], 2.0)
+
+    assert window.gains["P"] == pytest.approx(0.002)
+    assert float(window.gain_edit["parallel"]["P"].text()) == pytest.approx(2.0)
+
+
+def test_unit_gain_scale_is_not_shown(window):
+    window.setGainScale(1.0)
+
+    assert not window.lbl_gain_scale.isVisibleTo(window)

@@ -148,6 +148,43 @@ def test_gains_missing_from_the_log_are_not_loaded(selection):
     assert selection.r is not None
 
 
+def test_gain_scale_multiplies_the_parameter_values(selection):
+    select_preset(selection, "Rollrate", gain_scale=0.001)
+    selection.loadSelection()
+
+    scaled = {gain: 0.001 * value for gain, value in X500_ROLL_GAINS.items()}
+    assert selection.flown_gains == pytest.approx(idealGains(scaled), rel=1e-5)
+
+
+def test_gain_scale_is_loaded_with_the_preset(selection):
+    select_preset(selection, "Rollrate", gain_scale=0.001)
+    selection.loadSelection()
+
+    assert selection.flown_gain_scale == 0.001
+
+
+def test_loaded_gains_are_shown_in_parameter_units(selection, monkeypatch):
+    select_preset(selection, "Rollrate", gain_scale=0.001)
+
+    window = load_log(selection, monkeypatch)
+
+    assert window.gain_scale == 0.001
+    assert float(window.gain_edit["parallel"]["P"].text()) == pytest.approx(
+        X500_ROLL_GAINS["P"], abs=1e-4
+    )
+
+
+def test_minimum_gains_are_in_parameter_units(selection, monkeypatch):
+    select_preset(selection, "Rollrate", gain_scale=0.001)
+    del selection.preset_candidates["Rollrate"]["gains"]
+
+    window = load_log(selection, monkeypatch)
+
+    assert float(window.gain_edit["parallel"]["P"].text()) == pytest.approx(
+        autotune.kMinimumGains["P"]
+    )
+
+
 def test_numeric_aos_settings_are_parameters():
     class Log:
         msg_info_multiple_dict = {
