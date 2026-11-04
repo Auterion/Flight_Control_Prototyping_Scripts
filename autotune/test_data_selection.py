@@ -10,6 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import numpy as np  # noqa: E402
 import presets  # noqa: E402
 import pytest  # noqa: E402
+from data_extractor import resample_interp  # noqa: E402
 from data_selection_window import DataSelectionWindow  # noqa: E402
 from PyQt5.QtCore import QPointF, Qt  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
@@ -136,3 +137,16 @@ def test_left_drag_draws_the_selection_in_either_direction(selection):
 
     assert selection.t_start == pytest.approx(75.0, abs=0.1)
     assert selection.t_stop == pytest.approx(85.0, abs=0.1)
+
+
+def test_resampling_keeps_the_gaps_of_missing_samples():
+    t = np.arange(10.0)
+    u = np.where((t >= 3) & (t <= 5), np.nan, t)
+
+    resampled = resample_interp(t, u, np.arange(0.0, 9.5, 0.5))
+
+    is_missing = np.isnan(resampled)
+    assert np.array_equal(np.flatnonzero(is_missing), np.arange(5, 12))
+    assert resampled[~is_missing] == pytest.approx(
+        np.arange(0.0, 9.5, 0.5)[~is_missing]
+    )

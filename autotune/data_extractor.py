@@ -163,9 +163,23 @@ def get_delta_mean(data_list):
 
 
 def resample_interp(t, u, t_new):
+    """Linear resampling of u(t) at t_new, NaN where it uses a NaN sample.
+
+    PX4 logs NaN for missing data (e.g. actuator_motors of a disarmed motor).
+    """
     t_unique, indices = np.unique(t, return_index=True)
-    interp = make_interp_spline(t_unique, u[indices], k=1)
-    return interp(t_new)
+    u_unique = u[indices]
+    is_missing = np.isnan(u_unique)
+    if not is_missing.any():
+        return make_interp_spline(t_unique, u_unique, k=1)(t_new)
+    if is_missing.all():
+        return np.full(len(t_new), np.nan)
+
+    resampled = make_interp_spline(t_unique[~is_missing], u_unique[~is_missing], k=1)(
+        t_new
+    )
+    resampled[np.interp(t_new, t_unique, is_missing.astype(float)) > 0] = np.nan
+    return resampled
 
 
 def find_autotune_sequence(log, axis):

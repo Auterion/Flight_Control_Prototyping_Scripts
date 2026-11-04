@@ -22,6 +22,15 @@ from PyQt5.QtWidgets import (
 from scipy import signal
 from searchable_combo_box import SearchableComboBox
 
+kMissingSamplesWarning = (
+    "The selected range contains missing (NaN) samples, e.g. while the motor is "
+    "disarmed. Select a range where the input and output are logged."
+)
+
+
+def hasMissingSamples(*signals):
+    return any(np.isnan(values).any() for values in signals)
+
 
 class SpanSelectViewBox(ps.ResettableViewBox):
     """Left drag draws a time range.
@@ -128,6 +137,9 @@ class DataSelectionWindow(QDialog):
                 self.t_start,
                 self.t_stop,
             )
+            if hasMissingSamples(self.u, self.y):
+                self.printMissingSamplesError()
+                return
             (self.r, self.flown_gains, self.flown_gain_form, self.flown_options) = (
                 self.getFlownController()
             )
@@ -238,6 +250,13 @@ class DataSelectionWindow(QDialog):
         msg.setIcon(QMessageBox.Critical)
         msg.setWindowTitle("Error")
         msg.setText("Range is invalid")
+        msg.exec_()
+
+    def printMissingSamplesError(self):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Error")
+        msg.setText(kMissingSamplesWarning)
         msg.exec_()
 
     def selectPreset(self, index):
@@ -501,6 +520,14 @@ class DataSelectionWindow(QDialog):
 
         num_samples = len(t_sel)
         duration = t_sel[-1] - t_sel[0]
+
+        if hasMissingSamples(u_sel, y_sel):
+            self.label_warning.setText(kMissingSamplesWarning)
+            self.label_warning.show()
+
+            self.coherence_curve.setData([], [])
+            self.coherence_info_text.setLines([])
+            return
 
         if num_samples < 256 or duration < 5:
             self.label_warning.setText(
