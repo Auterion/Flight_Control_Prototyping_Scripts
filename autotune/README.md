@@ -133,6 +133,8 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
 1. The gains shown in the parallel form correspond to the PX4 rate controller parameters.
    ![image](https://github.com/user-attachments/assets/2db77238-bd33-4454-af1f-a38901571e88)
 
+   For parameters in other units, set the preset's gain scale (e.g. 0.001 for `ICE_IDLE_RPM_P` and `ICE_IDLE_RPM_I`, defined per 1000 rpm): the PID tab then shows and edits the gains in parameter units.
+
 2. If the identified parameters are strongly different to the currently set ones (more than 30% for multiple axes), an incremental application while flying is recommended (not prior to takeoff, during takeoff, or during landing).
 
 3. For all loops tuned with the strategy outlined in this guide: increase the respective integrator limit parameters to 1 (FW_RR_IMAX, FW_PR_IMAX, FW_YR_IMAX).

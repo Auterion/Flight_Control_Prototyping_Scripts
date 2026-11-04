@@ -182,6 +182,55 @@ def test_gains_without_kp_are_rejected(make, no_modals):
     assert d.result_action == "cancel"
 
 
+def test_gain_scale_is_saved_with_the_gains(make):
+    d = make("Rollrate")
+    assert d.edit_gain_scale.text() == "1.0"
+    d.edit_gain_scale.setText("1e-3")
+
+    d._on_confirm()
+
+    assert d.result_action == "save"
+    assert d.preset["gain_scale"] == 0.001
+
+
+def test_stored_gain_scale_is_shown_and_kept(qapp):
+    existing = {"Ice": {"input": "a/in.0", "output": "a/out.0"}}
+    existing["Ice"].update(gains={"P": "A_P"}, gain_scale=0.001)
+    d = PresetEditDialog(None, False, "Ice", existing, TOPICS, SEL_IN, SEL_OUT, PARAMS)
+    assert float(d.edit_gain_scale.text()) == 0.001
+
+    d._on_confirm()
+
+    assert d.preset["gain_scale"] == 0.001
+
+
+def test_unit_gain_scale_is_not_saved(make):
+    d = make("Rollrate")
+
+    d._on_confirm()
+
+    assert "gain_scale" not in d.preset
+
+
+def test_gain_scale_without_gains_is_not_saved(make):
+    d = make("Pitchrate")
+    d.edit_gain_scale.setText("0.001")
+
+    d._on_confirm()
+
+    assert "gain_scale" not in d.preset
+
+
+@pytest.mark.parametrize("text", ["0", "-1", ""])
+def test_non_positive_gain_scale_is_rejected(make, no_modals, text):
+    d = make("Rollrate")
+    d.edit_gain_scale.setText(text)
+
+    d._on_confirm()
+
+    assert d.result_action == "cancel"
+
+
 def test_edit_button_opens_in_update_mode(make):
     d = make("Rollrate")  # Edit button -> create=False
     assert d._mode() == "update"
