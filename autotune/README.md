@@ -102,6 +102,17 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
 #### Model Verification
 
 1. Check that the estimated dynamic model correctly tracks the actual aircraft output.
+   The model curve is the simulation of the model from the logged input; it can drift away
+   from the output for a model with an integrator, such as a rate loop. The prediction fit
+   compares instead the output predicted one *prediction horizon* ahead from the logged data:
+   about the time scale of the loop (the default 0.1 s suits a rate loop, a slower loop needs
+   a longer horizon). A longer horizon turns the prediction into the drifting simulation.
+   With a preset that has the flown gains, the closed-loop fit replays the logged reference
+   through the model and these gains.
+   *Find parameters* picks the orders of least predicted squared error: the mean squared
+   error of the prediction plus, for each parameter of the model, the output variance divided
+   by the number of samples (Morelli's criterion). A higher order must improve the prediction
+   by more than this share of the output variance, otherwise it only fits the noise.
 2. If not, adjust the system order (number of poles and zeros) and/or delay parameters.
 3. Verify that the system is minimum-phase (i.e., zeroes lie inside the unit circle).
 

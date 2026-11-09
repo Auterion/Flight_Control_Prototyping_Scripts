@@ -69,6 +69,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -77,21 +78,60 @@ from PyQt5.QtWidgets import (
     QWidgetAction,
 )
 from scipy.signal import detrend
-from system_identification import SystemIdentification, arx_transfer_function
+from system_identification import (
+    SystemIdentification,
+    arx_predict,
+    arx_transfer_function,
+)
 
 
 def computeNRMSE(y, y_est):
     # Normalized Root Mean Square Error (NRMSE) expressed as a percentage.
+    if len(y) == 0:
+        return -np.inf
     norm_ref = np.linalg.norm(y - np.mean(y))
     if norm_ref < 1e-10:
         return -np.inf
     return 100.0 * (1.0 - np.linalg.norm(y - y_est) / norm_ref)
 
 
-def compute_fit(
+def predictedOutput(num, den, delay, u, y, horizon, remove_offset=True):
+    """Output and its prediction horizon samples ahead, from the first sample
+    predicted from measured outputs: none is left when the horizon spans the
+    data."""
+    if remove_offset:
+        u, y = u - np.mean(u), y - np.mean(y)
+    prediction = arx_predict(num, den, delay, u, y, horizon)
+    start = horizon + max(len(den) - 1, delay + len(num) - 1)
+    return y[start:], prediction[start:]
+
+
+def compute_prediction_fit(num, den, delay, u, y, horizon, remove_offset=True):
+    """Fit of the output predicted horizon samples ahead."""
+    return computeNRMSE(*predictedOutput(num, den, delay, u, y, horizon, remove_offset))
+
+
+def compute_predicted_squared_error(num, den, delay, u, y, horizon, remove_offset=True):
+    """PSE of the prediction horizon samples ahead: its mean squared error
+    plus sigma_max^2 * p / N for the p parameters of the model.
+
+    Morelli's criterion for the model structure (Klein and Morelli, Aircraft
+    System Identification, 2006): a parameter is only worth adding when it
+    lowers the mean squared error by more than sigma_max^2 / N, sigma_max^2
+    being an upper bound of the noise variance: the output variance.
+    """
+    y, prediction = predictedOutput(num, den, delay, u, y, horizon, remove_offset)
+    n_parameters = len(den) - 1 + len(num)
+    return np.mean((y - prediction) ** 2) + np.var(y) * n_parameters / len(y)
+
+
+def predictionHorizonSamples(horizon_s, dt):
+    return max(1, int(round(horizon_s / dt)))
+
+
+def search_criterion(
     u,
     y,
-    t,
     dt,
     n_poles,
     n_zeros,
@@ -100,25 +140,28 @@ def compute_fit(
     f_lp,
     method="RLS",
     remove_offset=True,
+    horizon=1,
 ):
+    """PSE of the model identified with these orders, inf if it fails."""
     try:
         sys_id = SystemIdentification(n_poles, n_zeros, delay, dt)
         sys_id.f_hp = f_hp
         sys_id.f_lp = f_lp
         sys_id.remove_offset = remove_offset
-        est = sys_id.fit(u, y, method=method)
-        Gz = est.G_
-        u_detrended = detrend(u)
-        u_delayed = np.concatenate(
-            ([0] * delay, u_detrended[: len(u_detrended) - delay])
+        sys_id.fit(u, y, method=method)
+        pse = compute_predicted_squared_error(
+            sys_id.getNum(), sys_id.getDen(), delay, u, y, horizon, remove_offset
         )
-        _, y_est = ctrl.forced_response(Gz, T=t, U=u_delayed)
-        y_detrended = detrend(y[: len(y_est)])
-        y_est_detrended = detrend(y_est)
-        return computeNRMSE(y_detrended, y_est_detrended)
+        return pse if np.isfinite(pse) else np.inf
     except Exception:
-        return -np.inf
+        return np.inf
 
+
+# Seconds, about the time scale of a rate loop: long enough to rank the models
+# by their dynamics, short enough for the drift of an integrator not to dominate
+kDefaultPredictionHorizon = 0.1
+kMaxModelOrder = 7
+kMaxCoefficientRowsShown = 7
 
 kGainFormLabels = {
     "ideal": "Ideal/Standard\nKp * [1 + Ki + Kd]",
@@ -174,21 +217,21 @@ class ParamSearchWorker(QThread):
     finished = pyqtSignal(dict, float)
     progress = pyqtSignal(int, int)
 
-    def __init__(self, u, y, t, dt, f_hp, f_lp, method, remove_offset=True):
+    def __init__(self, u, y, dt, f_hp, f_lp, method, remove_offset=True, horizon=1):
         super().__init__()
         self._cancel = False
         self.u = u
         self.y = y
-        self.t = t
         self.dt = dt
         self.f_hp = f_hp
         self.f_lp = f_lp
         self.method = method
         self.remove_offset = remove_offset
+        self.horizon = horizon
 
     def run(self):
-        n_poles_range = range(2, 8)
-        n_zeros_range = range(2, 8)
+        n_poles_range = range(2, kMaxModelOrder + 1)
+        n_zeros_range = range(2, kMaxModelOrder + 1)
         delay_range = range(0, 6)
 
         combos = [
@@ -199,14 +242,13 @@ class ParamSearchWorker(QThread):
             if n_poles >= n_zeros
         ]
         total = len(combos)
-        best_fit = -np.inf
+        best_pse = np.inf
         best_params = {}
 
         for i, (n_poles, n_zeros, delay) in enumerate(combos):
-            fit = compute_fit(
+            pse = search_criterion(
                 self.u,
                 self.y,
-                self.t,
                 self.dt,
                 n_poles,
                 n_zeros,
@@ -215,13 +257,10 @@ class ParamSearchWorker(QThread):
                 self.f_lp,
                 self.method,
                 self.remove_offset,
+                self.horizon,
             )
-            new_order = n_poles
-            best_order = best_params.get("n_poles", 0)
-            # Prefer lower-order models: a higher-order model must improve fit
-            # by more than 1% to be accepted, avoiding overfitting.
-            if (fit > best_fit + 1.0) or (fit > best_fit and new_order == best_order):
-                best_fit = fit
+            if pse < best_pse:
+                best_pse = pse
                 best_params = {
                     "n_poles": n_poles,
                     "n_zeros": n_zeros,
@@ -231,7 +270,7 @@ class ParamSearchWorker(QThread):
             if self._cancel:
                 break
 
-        self.finished.emit(best_params, best_fit)
+        self.finished.emit(best_params, best_pse)
 
 
 def thresholdColor(value, limit, limit_is_minimum):
@@ -712,12 +751,12 @@ class Window(QDialog):
     def createModelOrderWidgets(self, layout):
         self.line_edit_zeros = QSpinBox()
         self.line_edit_zeros.setValue(self.sys_id_n_zeros)
-        self.line_edit_zeros.setRange(0, 6)
+        self.line_edit_zeros.setRange(0, kMaxModelOrder)
         self.line_edit_zeros.valueChanged.connect(self.onZerosChanged)
         layout.addRow(QLabel("Zeros"), self.line_edit_zeros)
         self.line_edit_poles = QSpinBox()
         self.line_edit_poles.setValue(self.sys_id_n_poles)
-        self.line_edit_poles.setRange(0, 6)
+        self.line_edit_poles.setRange(0, kMaxModelOrder)
         self.line_edit_poles.valueChanged.connect(self.onPolesChanged)
         layout.addRow(QLabel("Poles"), self.line_edit_poles)
         self.line_edit_delays = QSpinBox()
@@ -802,13 +841,31 @@ class Window(QDialog):
         layout.addRow(self.btn_find_params)
 
     def createFitWidget(self, layout):
+        self.horizon_spinbox = QDoubleSpinBox()
+        self.horizon_spinbox.setRange(0.001, 10.0)
+        self.horizon_spinbox.setSingleStep(0.01)
+        self.horizon_spinbox.setDecimals(3)
+        self.horizon_spinbox.setValue(kDefaultPredictionHorizon)
+        self.horizon_spinbox.valueChanged.connect(self.updatePredictionFit)
+        self.addHintedRow(
+            layout,
+            "Prediction horizon (s)",
+            self.horizon_spinbox,
+            "How far ahead the model predicts the output for the prediction fit. "
+            "About the time scale of the loop: a longer horizon makes the "
+            "prediction fit a simulation, which drifts for a model with an "
+            "integrator (e.g. a rate loop).",
+        )
         self.lbl_fit = QLabel("—")
         self.addHintedRow(
             layout,
-            "Open-loop fit",
+            "Prediction fit",
             self.lbl_fit,
-            "Model driven by the logged input, compared with the logged output "
-            "(100% is a perfect match).",
+            "Output predicted one horizon ahead by the model, from the logged "
+            "input and the logged output up to then, compared with the logged "
+            "output (100% is a perfect match).<br><br>"
+            "The model curve is the simulation from the logged input alone: it "
+            "can drift away from the output while the prediction fit is good.",
         )
         self.lbl_closed_loop_fit = QLabel("—")
         self.addHintedRow(
@@ -849,8 +906,6 @@ class Window(QDialog):
         self.t_coeffs.setHorizontalHeaderLabels(["Coefficients"])
         self.t_coeffs.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.t_coeffs.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
-        self.t_coeffs.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.t_coeffs.setFixedWidth(120)
         self.t_coeffs.itemChanged.connect(self.onModelChanged)
 
         # Place in horizontal layout to center it properly
@@ -884,8 +939,15 @@ class Window(QDialog):
             labels.append("b{}".format(i))
 
         self.t_coeffs.setVerticalHeaderLabels(labels)
+        rows_shown = min(self.t_coeffs.rowCount(), kMaxCoefficientRowsShown)
+        scroll_bar_width = 0
+        if rows_shown < self.t_coeffs.rowCount():
+            scroll_bar_width = self.t_coeffs.style().pixelMetric(
+                QStyle.PM_ScrollBarExtent
+            )
+        self.t_coeffs.setFixedWidth(120 + scroll_bar_width)
         self.t_coeffs.setFixedHeight(
-            self.t_coeffs.verticalHeader().length()
+            rows_shown * self.t_coeffs.verticalHeader().defaultSectionSize()
             + self.t_coeffs.horizontalHeader().height()
             + 2
         )
@@ -949,12 +1011,12 @@ class Window(QDialog):
         self._param_search_worker = ParamSearchWorker(
             self.u.copy(),
             self.y.copy(),
-            self.t.copy(),
             self.dt,
             self.f_hp_spinbox.value(),
             self.f_lp_spinbox.value(),
             self.id_method_combo.currentText(),
-            self.remove_offset_box.isChecked(),
+            remove_offset=self.remove_offset_box.isChecked(),
+            horizon=self.predictionHorizon(),
         )
         self._param_search_worker.progress.connect(self.onParamSearchProgress)
         self._param_search_worker.finished.connect(self.onParamSearchFinished)
@@ -963,7 +1025,7 @@ class Window(QDialog):
     def onParamSearchProgress(self, current, total):
         self.btn_find_params.setText(f"Cancel ({100 * current // total}%)")
 
-    def onParamSearchFinished(self, best_params, best_fit):
+    def onParamSearchFinished(self, best_params, best_pse):
         self.line_edit_poles.setValue(best_params["n_poles"])
         self.line_edit_zeros.setValue(best_params["n_zeros"])
         self.line_edit_delays.setValue(best_params["delay"])
@@ -1313,6 +1375,18 @@ class Window(QDialog):
         self.plotPolesZeros()
         self.replayInputData()
 
+    def predictionHorizon(self):
+        return predictionHorizonSamples(self.horizon_spinbox.value(), self.dt)
+
+    def flownController(self):
+        if self.reference is None or self.flown_gains is None:
+            return None
+        return {
+            "gains": self.flown_gains,
+            "reference": self.reference,
+            "pid_options": self.flown_options,
+        }
+
     def replayInputData(self):
         if not self.is_system_identified:
             return
@@ -1325,16 +1399,29 @@ class Window(QDialog):
         if len(self.t_est) > len(self.y_est):
             self.t_est = self.t_est[0 : len(self.y_est - 1)]
 
-        y_detrended = detrend(self.y[: len(self.y_est)])
-        y_est_detrended = detrend(self.y_est)
-        showFit(self.lbl_fit, computeNRMSE(y_detrended, y_est_detrended))
+        self.updatePredictionFit()
         self.updateClosedLoopFit()
 
         self.plotInputOutput()
         self.checkStability()
 
+    def updatePredictionFit(self):
+        if not self.is_system_identified:
+            return
+        fit = compute_prediction_fit(
+            self.num,
+            self.den,
+            self.sys_id_delays,
+            self.u,
+            self.y,
+            self.predictionHorizon(),
+            self.remove_offset_box.isChecked(),
+        )
+        showFit(self.lbl_fit, fit)
+
     def updateClosedLoopFit(self):
-        if self.reference is None or self.flown_gains is None:
+        flown_controller = self.flownController()
+        if flown_controller is None:
             self.lbl_closed_loop_fit.setText("—")
             self.lbl_closed_loop_fit.setStyleSheet("")
             return
@@ -1343,11 +1430,11 @@ class Window(QDialog):
             self.den,
             self.dt,
             self.sys_id_delays,
-            self.flown_gains,
+            flown_controller["gains"],
             self.t,
-            self.reference,
+            flown_controller["reference"],
             self.y,
-            **self.flown_options,
+            **flown_controller["pid_options"],
         )
         if fit is None:
             self.lbl_closed_loop_fit.setText("unstable")

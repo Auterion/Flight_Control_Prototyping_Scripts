@@ -273,21 +273,170 @@ def test_offset_removal_checkbox_drives_the_identification(selection, monkeypatc
     assert used == [False]
 
 
-def test_offset_removal_checkbox_drives_the_parameter_search(selection, monkeypatch):
-    select_preset(selection, "Rollrate")
-    window = load_log(selection, monkeypatch)
+def search_settings(window, monkeypatch):
+    """Keyword arguments of the parameter search started from the window."""
     searches = []
 
     class StubWorker:
-        def __init__(self, *args):
-            searches.append(args)
+        def __init__(self, *args, **kwargs):
+            searches.append(kwargs)
             self.progress = self.finished = SimpleNamespace(connect=lambda slot: None)
 
         def start(self):
             pass
 
     monkeypatch.setattr(autotune, "ParamSearchWorker", StubWorker)
-    window.remove_offset_box.setChecked(False)
     window.onFindParamsClicked()
+    return searches[0]
 
-    assert searches[0][-1] is False
+
+def test_offset_removal_checkbox_drives_the_parameter_search(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    window.remove_offset_box.setChecked(False)
+
+    assert search_settings(window, monkeypatch)["remove_offset"] is False
+
+
+def test_parameter_search_uses_the_prediction_horizon(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    window.horizon_spinbox.setValue(0.05)
+
+    settings = search_settings(window, monkeypatch)
+
+    assert settings["horizon"] == round(0.05 / window.dt)
+    assert "flown_controller" not in settings
+
+
+def test_parameter_search_result_fits_in_the_model_order_spinboxes(
+    selection, monkeypatch
+):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    largest = autotune.kMaxModelOrder
+    monkeypatch.setattr(window, "onSysIdClicked", lambda: None)
+
+    window.onParamSearchFinished(
+        {"n_poles": largest, "n_zeros": largest, "delay": 0}, 0.0
+    )
+
+    assert window.line_edit_poles.value() == largest
+    assert window.line_edit_zeros.value() == largest
+
+
+def test_coefficient_table_of_a_large_model_scrolls(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    small_height = window.t_coeffs.height()
+
+    window.line_edit_poles.setValue(autotune.kMaxModelOrder)
+    window.line_edit_zeros.setValue(autotune.kMaxModelOrder)
+    window.show()
+
+    table = window.t_coeffs
+    assert table.rowCount() > autotune.kMaxCoefficientRowsShown
+    assert small_height < table.height() < table.verticalHeader().length()
+    assert table.verticalScrollBar().isVisible()
+
+
+def test_parameter_search_ranks_a_worse_predicting_larger_model_lower(
+    selection, monkeypatch
+):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    horizon = window.predictionHorizon()
+
+    def criterion(n_poles, n_zeros, delay):
+        return autotune.search_criterion(
+            window.u,
+            window.y,
+            window.dt,
+            n_poles,
+            n_zeros,
+            delay,
+            0.0,
+            30.0,
+            horizon=horizon,
+        )
+
+    assert criterion(2, 2, 1) < criterion(6, 6, 3)
+
+
+def test_prediction_horizon_updates_the_fit_without_a_new_identification(
+    selection, monkeypatch
+):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    window.runIdentification()
+    short_horizon_fit = window.lbl_fit.text()
+    num = list(window.num)
+    model_curve = window.model_curve.getData()[1].copy()
+
+    window.horizon_spinbox.setValue(1.0)
+
+    assert window.lbl_fit.text() != short_horizon_fit
+    assert window.num == num
+    # the model curve is the simulation, whatever the horizon
+    assert window.model_curve.getData()[1] == pytest.approx(model_curve)
+
+
+def integrator_with_disturbance():
+    """Rate of an integrating plant y(k) = y(k-1) + 0.05 u(k-3), under
+    proportional control and an unmeasured slow disturbance torque."""
+    rng = np.random.default_rng(0)
+    n = 1250
+    reference = np.sign(np.sin(2 * np.pi * np.arange(n) * DT))
+    disturbance = np.cumsum(rng.standard_normal(n)) * 0.003
+    u = np.zeros(n)
+    y = np.zeros(n)
+    for k in range(n):
+        if k >= 3:
+            y[k] = y[k - 1] + 0.05 * (u[k - 3] + disturbance[k - 3])
+        u[k] = 4.0 * (reference[k] - y[k])
+    return [0.05], [1.0, -1.0], 3, u, y
+
+
+def test_prediction_fit_of_the_true_model_is_not_spoiled_by_integrator_drift():
+    num, den, delay, u, y = integrator_with_disturbance()
+
+    prediction_fit = autotune.compute_prediction_fit(num, den, delay, u, y, 20)
+    # 2 s of 6: close to a simulation, which drifts with the disturbance
+    long_horizon_fit = autotune.compute_prediction_fit(num, den, delay, u, y, 400)
+
+    assert prediction_fit > 90.0
+    assert long_horizon_fit < 50.0
+
+
+def test_prediction_fit_ranks_a_wrong_model_lower():
+    num, den, delay, u, y = integrator_with_disturbance()
+
+    true_fit = autotune.compute_prediction_fit(num, den, delay, u, y, 20)
+    wrong_delay_fit = autotune.compute_prediction_fit(num, den, 0, u, y, 20)
+    wrong_gain_fit = autotune.compute_prediction_fit([0.03], den, delay, u, y, 20)
+
+    assert true_fit > wrong_delay_fit + 10.0
+    assert true_fit > wrong_gain_fit + 10.0
+
+
+@pytest.mark.parametrize("order", [(2, 2, 3), (4, 4, 3), (7, 7, 0)])
+def test_predicted_squared_error_is_least_for_the_true_model(order):
+    num, den, delay, u, y = integrator_with_disturbance()
+
+    true_pse = autotune.compute_predicted_squared_error(num, den, delay, u, y, 20)
+    larger_pse = autotune.search_criterion(u, y, DT, *order, 0.0, 1000.0, horizon=20)
+
+    assert true_pse < larger_pse
+
+
+def test_predicted_squared_error_penalizes_a_useless_parameter():
+    num, den, delay, u, y = integrator_with_disturbance()
+    # a zero leading coefficient: the same prediction, one parameter more
+    padded_pse = autotune.compute_predicted_squared_error(
+        [0.0] + num, den, delay - 1, u, y, 20
+    )
+    y_valid, _ = autotune.predictedOutput(num, den, delay, u, y, 20)
+
+    assert padded_pse - autotune.compute_predicted_squared_error(
+        num, den, delay, u, y, 20
+    ) == pytest.approx(np.var(y_valid) / len(y_valid))
