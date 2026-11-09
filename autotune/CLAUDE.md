@@ -38,13 +38,15 @@ fallback); `test_preset_dialogs.py` drives `PresetEditDialog` headlessly to veri
 the add/edit/rename/create/delete behavior; `test_system_identification.py` checks
 the ARX fit is not biased by an operating point offset, that this offset removal
 can be turned off, and the k-step-ahead ARX prediction; `test_loop_model.py` checks the
-closed-loop model (loop gain, closed-loop poles, sensitivities); `test_fit_metrics.py`
+closed-loop model (loop gain, closed-loop poles, sensitivities, its polynomial form);
+`test_pid_design.py` checks the GMVC design (the closed form for one delay, any delay,
+any number of poles and zeros) and the feedforward putting P on the measurement; `test_fit_metrics.py`
 checks the gain-form conversion, the loading of the flown controller from a preset
 (and its pre-loading in the main window), the closed-loop replay fit, the prediction
 fit (not spoiled by the drift of an integrator) and the predicted squared error the
 parameter search ranks by (penalizing the parameters that do not improve the prediction);
 `test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection and
-its parameter units (preset gain scale);
+its parameter units (preset gain scale), and the GMVC feedforward cancelling P on the error;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, range
 selection). `conftest.py` closes the windows a test leaves open: an open window

@@ -1058,7 +1058,7 @@ class Window(QDialog):
         layout_options = QHBoxLayout()
         self.pid_no_zero_box = QCheckBox("PI no-zero", self)
         self.pid_no_zero_box.setChecked(False)
-        self.pid_no_zero_box.stateChanged.connect(self.updateClosedLoop)
+        self.pid_no_zero_box.stateChanged.connect(self.computeController)
         layout_options.addWidget(self.pid_no_zero_box)
 
         self.negate_control_box = QCheckBox("Negate control output", self)
@@ -1512,23 +1512,28 @@ class Window(QDialog):
         self.btn_update_model.setEnabled(False)
         return
 
+    def isGmvcTabActive(self):
+        return self.tuning_tabs.currentWidget() is self.tab_gmvc
+
     def computeController(self):
         if not self.is_system_identified:
             return
 
-        if self.tuning_tabs.tabText(self.tuning_tabs.currentIndex()) == "GMVC":
+        if self.isGmvcTabActive():
             sigma = self.rise_time  # rise time
             delta = (
                 self.damping_index
             )  # damping property, set between 0 and 2 (1 for Butterworth)
             lbda = self.detune_coeff
             (self.gains["P"], self.gains["I"], self.gains["D"]) = computePidGmvc(
-                self.num, self.den, self.dt, sigma, delta, lbda
+                self.num, self.den, self.dt, sigma, delta, lbda, self.sys_id_delays
             )
-            # TODO:find a better solution
-            self.gains["I"] /= 5.0
             static_gain = sum(self.num) / sum(self.den)
             self.gains["FF"] = max(1 / static_gain, 0.0)
+            if not self.pid_no_zero_box.isChecked():
+                # GMVC designs P on the measurement: cancel the reference
+                # path of P on the error
+                self.gains["FF"] -= self.gains["P"]
 
         self.updateKIDSliders()
         self.updateClosedLoop()
