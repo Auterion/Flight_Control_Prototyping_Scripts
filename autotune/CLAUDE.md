@@ -35,7 +35,9 @@ QT_QPA_PLATFORM=offscreen poetry run pytest -v
 ```
 `test_presets.py` covers preset load/save (seed, round-trip, order, corrupt-file
 fallback); `test_preset_dialogs.py` drives `PresetEditDialog` headlessly to verify
-the add/edit/rename/create/delete behavior; `test_loop_model.py` checks the
+the add/edit/rename/create/delete behavior; `test_system_identification.py` checks
+the ARX fit is not biased by an operating point offset, and that this offset removal
+can be turned off; `test_loop_model.py` checks the
 closed-loop model (loop gain, closed-loop poles, sensitivities); `test_fit_metrics.py`
 checks the gain-form conversion, the loading of the flown controller from a preset
 (and its pre-loading in the main window) and the closed-loop replay fit;

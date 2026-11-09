@@ -4,6 +4,7 @@ Run with:  QT_QPA_PLATFORM=offscreen poetry run pytest test_fit_metrics.py
 """
 
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -251,3 +252,42 @@ def test_preset_without_gains_loads_the_minimum_gains_in_its_form(
     assert window.gains == autotune.kMinimumGains
     assert window.gain_form_radio["ideal"].isChecked()
     assert window.lbl_closed_loop_fit.text() == "—"  # nothing to replay
+
+
+def test_offset_removal_checkbox_drives_the_identification(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    assert window.remove_offset_box.isChecked()
+
+    used = []
+
+    class RecordingIdentification(autotune.SystemIdentification):
+        def fit(self, u, y, method="RLS"):
+            used.append(self.remove_offset)
+            return super().fit(u, y, method)
+
+    monkeypatch.setattr(autotune, "SystemIdentification", RecordingIdentification)
+    window.remove_offset_box.setChecked(False)
+    window.runIdentification()
+
+    assert used == [False]
+
+
+def test_offset_removal_checkbox_drives_the_parameter_search(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    searches = []
+
+    class StubWorker:
+        def __init__(self, *args):
+            searches.append(args)
+            self.progress = self.finished = SimpleNamespace(connect=lambda slot: None)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(autotune, "ParamSearchWorker", StubWorker)
+    window.remove_offset_box.setChecked(False)
+    window.onFindParamsClicked()
+
+    assert searches[0][-1] is False
