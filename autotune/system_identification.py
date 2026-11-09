@@ -100,6 +100,7 @@ class SystemIdentification(object):
         self.forgetting_tc = 60.0  # forgetting factor for weighted RLS in seconds
         self.f_hp = 0.5  # high-pass filter cutoff frequency
         self.f_lp = 30.0  # low-pass filter cutoff frequency
+        self.remove_offset = True
         self.dt = dt
 
         tau = 60.0  # forgetting period
@@ -111,6 +112,12 @@ class SystemIdentification(object):
         a_coeffs = np.zeros((self.n, n_steps))
         b_coeffs = np.zeros((self.m + 1, n_steps))
 
+        if self.remove_offset:
+            # The ARX model has no constant term: an operating point offset
+            # would be fitted as a pole at z = 1. Removing the means is the
+            # least-squares equivalent of SIDPAC's bias regressor (Morelli,
+            # AIAA 2002-4704)
+            u, y = u - np.mean(u), y - np.mean(y)
         u_lp, y_lp = apply_filters(u, y, self.f_hp, self.f_lp, self.dt)
 
         if method == "RLS":

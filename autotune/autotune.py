@@ -88,11 +88,24 @@ def computeNRMSE(y, y_est):
     return 100.0 * (1.0 - np.linalg.norm(y - y_est) / norm_ref)
 
 
-def compute_fit(u, y, t, dt, n_poles, n_zeros, delay, f_hp, f_lp, method="RLS"):
+def compute_fit(
+    u,
+    y,
+    t,
+    dt,
+    n_poles,
+    n_zeros,
+    delay,
+    f_hp,
+    f_lp,
+    method="RLS",
+    remove_offset=True,
+):
     try:
         sys_id = SystemIdentification(n_poles, n_zeros, delay, dt)
         sys_id.f_hp = f_hp
         sys_id.f_lp = f_lp
+        sys_id.remove_offset = remove_offset
         est = sys_id.fit(u, y, method=method)
         Gz = est.G_
         u_detrended = detrend(u)
@@ -161,7 +174,7 @@ class ParamSearchWorker(QThread):
     finished = pyqtSignal(dict, float)
     progress = pyqtSignal(int, int)
 
-    def __init__(self, u, y, t, dt, f_hp, f_lp, method):
+    def __init__(self, u, y, t, dt, f_hp, f_lp, method, remove_offset=True):
         super().__init__()
         self._cancel = False
         self.u = u
@@ -171,6 +184,7 @@ class ParamSearchWorker(QThread):
         self.f_hp = f_hp
         self.f_lp = f_lp
         self.method = method
+        self.remove_offset = remove_offset
 
     def run(self):
         n_poles_range = range(2, 8)
@@ -200,6 +214,7 @@ class ParamSearchWorker(QThread):
                 self.f_hp,
                 self.f_lp,
                 self.method,
+                self.remove_offset,
             )
             new_order = n_poles
             best_order = best_params.get("n_poles", 0)
@@ -722,6 +737,16 @@ class Window(QDialog):
     def createPreprocessingWidget(self, layout):
         preproc_group = QGroupBox("Pre-processing")
         preproc_form = QFormLayout()
+        self.remove_offset_box = QCheckBox("Remove offset")
+        self.remove_offset_box.setToolTip(
+            "Remove the mean of the input and output before the identification: "
+            "the ARX model has no constant term to fit an operating point offset"
+        )
+        self.remove_offset_box.setChecked(True)
+        self.remove_offset_box.stateChanged.connect(
+            lambda: self.btn_run_sys_id.setEnabled(True)
+        )
+        preproc_form.addRow(self.remove_offset_box)
         self.f_hp_spinbox = QDoubleSpinBox()
         self.f_hp_spinbox.setRange(0.0, 50.0)
         self.f_hp_spinbox.setSingleStep(0.1)
@@ -929,6 +954,7 @@ class Window(QDialog):
             self.f_hp_spinbox.value(),
             self.f_lp_spinbox.value(),
             self.id_method_combo.currentText(),
+            self.remove_offset_box.isChecked(),
         )
         self._param_search_worker.progress.connect(self.onParamSearchProgress)
         self._param_search_worker.finished.connect(self.onParamSearchFinished)
@@ -1270,6 +1296,7 @@ class Window(QDialog):
         id = SystemIdentification(n, m, d, self.dt)
         id.f_hp = self.f_hp_spinbox.value()
         id.f_lp = self.f_lp_spinbox.value()
+        id.remove_offset = self.remove_offset_box.isChecked()
 
         est = id.fit(self.u, self.y, method=self.id_method_combo.currentText())
 
