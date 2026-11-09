@@ -175,3 +175,20 @@ def test_unit_gain_scale_is_not_shown(window):
     window.setGainScale(1.0)
 
     assert not window.lbl_gain_scale.isVisibleTo(window)
+
+
+def test_gmvc_with_p_on_the_error_cancels_it_with_the_feedforward(window):
+    window.num, window.den = [0.094], [1.0, -1.765, 0.765]
+    window.dt, window.sys_id_delays = 0.008, 1
+    window.is_system_identified = True
+    window.tuning_tabs.setCurrentWidget(window.tab_gmvc)
+
+    window.pid_no_zero_box.setChecked(True)
+    window.computeController()
+    p_on_measurement = dict(window.gains)
+
+    window.pid_no_zero_box.setChecked(False)
+
+    assert window.gains == pytest.approx(
+        {**p_on_measurement, "FF": p_on_measurement["FF"] - p_on_measurement["P"]}
+    )

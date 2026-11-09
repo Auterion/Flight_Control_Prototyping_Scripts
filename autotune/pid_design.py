@@ -38,9 +38,38 @@ Description:
 """
 
 import numpy as np
+from numpy.polynomial import Polynomial
 
 
-def computePidGmvc(num, den, dt, sigma=0.1, delta=0.0, lbda=0.5):
+def desiredClosedLoopPolynomial(dt, sigma, delta):
+    """P(z^-1) = 1 + p1 z^-1 + p2 z^-2 of the GMVC reference model.
+
+    Discretization of 1 / (1 + sigma s + mu sigma^2 s^2), mu set by the
+    damping index delta (Yamamoto, Fujii and Kaneda, 1998).
+    """
+    rho = dt / sigma
+    mu = 0.25 * (1 - delta) + 0.51 * delta
+    p1 = -2 * np.exp(-rho / (2 * mu)) * np.cos(np.sqrt(4 * mu - 1) * rho / (2 * mu))
+    p2 = np.exp(-rho / mu)
+    return np.array([1.0, p1, p2])
+
+
+def solveDiophantine(p, delta_a, delays):
+    """E and F of P = delta_a E + z^-(delays + 1) F, polynomials in z^-1.
+
+    E (degree delays) is the start of the series P / delta_a, F the
+    remainder, of degree len(delta_a) - 2.
+    """
+    remainder = np.zeros(len(delta_a) + delays)
+    remainder[: len(p)] = p
+    e = np.zeros(delays + 1)
+    for i in range(delays + 1):
+        e[i] = remainder[i] / delta_a[0]
+        remainder[i : i + len(delta_a)] -= e[i] * delta_a
+    return e, remainder[delays + 1 :]
+
+
+def computePidGmvc(num, den, dt, sigma=0.1, delta=0.0, lbda=0.5, delays=1):
     """Compute a set of PID gains using General Minimum Variance Control law design
 
     Args:
@@ -50,10 +79,14 @@ def computePidGmvc(num, den, dt, sigma=0.1, delta=0.0, lbda=0.5):
         sigma: the desired closed-loop rise time in seconds
         delta: the damping index (between 0 and 2). 0 is critical damping, 1 is Butterworth
         lbda: the "detuning" coefficients. This affects the gain of the controller kc only. Increase to detune the controller.
+        delays: the delay of the plant in samples, besides the sample of the
+            measurement: the loop is y = z^-(delays + 1) num / den u
 
-    Raises:
-        ValueError: if the is not a 2nd order system (2 poles)
-        ValueError: if the plant has more than 2 zeros
+    The model may have any number of zeros, only its static gain is used,
+    and at least one pole. A PID only realizes F up to the second order
+    in (1 - z^-1): a first order model gives a PI controller, the higher
+    orders of a model with more than two poles are dropped. A negative
+    derivative gain, from poles of negative real part, is set to 0.
 
     Returns:
         The PID gains in standard form: u = kc*[1 + ki*dt + kd/dt]*e
@@ -61,41 +94,24 @@ def computePidGmvc(num, den, dt, sigma=0.1, delta=0.0, lbda=0.5):
         ki: the integral gain (= 1/Ti)
         kd: the derivative gain (= Td)
     """
-    if len(den) != 3:
-        print("Only supports 2nd order system")
+    if len(den) < 2:
+        print("Needs at least one pole")
         return (0.0, 0.0, 0.0)
 
-    if len(num) > 3:
-        print("Cannot have more than 2 zeros")
-        return (0.0, 0.0, 0.0)
+    # Solve the GMVC law (see the derivation for delays = 1 in
+    # pid_synthesis_symbolic.py)
+    p = desiredClosedLoopPolynomial(dt, sigma, delta)
+    e, f = solveDiophantine(p, np.convolve(den, [1.0, -1.0]), delays)
 
-    a1 = den[1]
-    a2 = den[2]
-    b0 = num[0]
-    if len(num) > 1:
-        b1 = num[1]
-    else:
-        b1 = 0
-    if len(num) > 2:
-        b2 = num[2]
-    else:
-        b2 = 0
+    # The velocity form PID is F / nu = kc * (dt / Ti + D + Td / dt * D^2),
+    # D = 1 - z^-1: write F in powers of D, z^-1 = 1 - D
+    f_in_differences = Polynomial(f)(Polynomial([1.0, -1.0])).coef
+    integral, proportional, derivative = np.pad(f_in_differences, (0, 3))[:3]
 
-    # Solve GMVC law (see derivation in pid_synthesis_symbolic.py)
-    rho = dt / sigma
-    mu = 0.25 * (1 - delta) + 0.51 * delta
-    p1 = -2 * np.exp(-rho / (2 * mu)) * np.cos(np.sqrt(4 * mu - 1) * rho / (2 * mu))
-    p2 = np.exp(-rho / mu)
-    e1 = -a1 + p1 + 1
-    f0 = -a1 * e1 + a1 - a2 + e1 + p2
-    f1 = a1 * e1 - a2 * e1 + a2
-    f2 = a2 * e1
-
-    # Translate to PID gains
-    nu = lbda + (e1 + 1) * (b0 + b1 + b2)
-    kc = -(f1 + 2 * f2) / nu
-    ki = -(f0 + f1 + f2) / (dt * (f1 + 2 * f2))
-    kd = -dt * f2 / (f1 + 2 * f2)
+    nu = lbda + np.sum(e) * np.sum(num)
+    kc = proportional / nu
+    ki = integral / (dt * proportional)
+    kd = max(dt * derivative / proportional, 0.0)
 
     return (kc, ki, kd)
 
