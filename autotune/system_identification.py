@@ -42,6 +42,7 @@ import control as ctrl
 import numpy as np
 from arx_rls import ArxRls
 from scipy.optimize import lsq_linear
+from scipy.signal import lfilter
 
 
 def apply_filters(u, y, f_hp, f_lp, dt):
@@ -85,6 +86,26 @@ def arx_transfer_function(num, den, dt, **kwargs):
     # den, otherwise n - m spurious samples of delay are added.
     num = np.concatenate((num, np.zeros(max(len(den) - len(num), 0))))
     return ctrl.TransferFunction(num, den, dt, **kwargs)
+
+
+def arx_predict(num, den, delay, u, y, horizon):
+    """Output of the ARX model predicted `horizon` samples ahead.
+
+    y(k) is predicted from the measured outputs up to k - horizon and the
+    measured inputs: a horizon of 1 is the one-step predictor the model is fitted
+    with, a horizon longer than the data the simulation of the model.
+    """
+    forced = lfilter(np.concatenate((np.zeros(delay), num)), [1.0], u)
+    measured = np.asarray(y, dtype=float)
+    order = len(den) - 1
+    recent = []  # predictions at horizons h - 1, h - 2, ... (at most order)
+    for h in range(1, min(horizon, len(u)) + 1):
+        y_h = forced.copy()
+        for i in range(1, order + 1):
+            past = recent[i - 1] if i <= len(recent) else measured
+            y_h[i:] -= den[i] * past[:-i]
+        recent = [y_h] + recent[: order - 1]
+    return recent[0] if recent else measured
 
 
 class SysIdResult(object):

@@ -5,7 +5,8 @@ Run with:  poetry run pytest test_system_identification.py
 
 import numpy as np
 import pytest
-from system_identification import SystemIdentification
+from scipy.signal import lfilter
+from system_identification import SystemIdentification, arx_predict
 
 
 def first_order_response():
@@ -40,3 +41,26 @@ def test_offset_removal_can_be_disabled():
 
     # the offset is left for the ARX model to explain: a pole at z = 1
     assert sys_id.getDen()[1] == pytest.approx(-1.0, abs=0.01)
+
+
+def test_one_step_prediction_is_the_arx_equation():
+    num, den, delay = [0.5, 0.2], [1.0, -1.5, 0.6], 2
+    rng = np.random.default_rng(1)
+    u, y = rng.standard_normal(200), rng.standard_normal(200)
+
+    prediction = arx_predict(num, den, delay, u, y, 1)
+
+    k = np.arange(4, 200)
+    expected = 1.5 * y[k - 1] - 0.6 * y[k - 2] + 0.5 * u[k - 2] + 0.2 * u[k - 3]
+    assert prediction[k] == pytest.approx(expected)
+
+
+def test_prediction_beyond_the_data_is_the_simulation():
+    num, den, delay = [0.5, 0.2], [1.0, -1.5, 0.6], 2
+    rng = np.random.default_rng(1)
+    u, y = rng.standard_normal(200), rng.standard_normal(200)
+
+    prediction = arx_predict(num, den, delay, u, y, 10 * len(u))
+
+    simulation = lfilter([0.0, 0.0, 0.5, 0.2], den, u)
+    assert prediction == pytest.approx(simulation)
