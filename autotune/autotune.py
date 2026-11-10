@@ -36,13 +36,18 @@ Description:
     UI tool for parametric system identification and controller design
 """
 
+import html
 import sys
 
 import control as ctrl
 import plot_style as ps
 import pyqtgraph as pg
 from data_extractor import *
-from data_selection_window import DataSelectionWindow
+from data_selection_window import (
+    DataSelectionWindow,
+    kMinCoherenceSamples,
+    kMinGoodCoherence,
+)
 from loop_model import LoopModel, idealGains, parallelGains, scaledGains
 from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
@@ -82,6 +87,7 @@ from system_identification import (
     SystemIdentification,
     arx_predict,
     arx_transfer_function,
+    measured_frequency_response,
 )
 
 
@@ -341,6 +347,12 @@ def showMarginPoint(marker, x, y, color):
     )
 
 
+def measuredSymbol(is_good):
+    if is_good:
+        return dict(symbol="o", symbolSize=5, symbolPen=None, symbolBrush=ps.INK)
+    return dict(symbol="o", symbolSize=5, symbolPen=ps.pen(ps.MUTED), symbolBrush=None)
+
+
 def isNumber(value):
     try:
         float(value)
@@ -373,6 +385,8 @@ class Window(QDialog):
         self.gain_form = "ideal"
         # Gain of one unit of the PX4 parameters, the units the PID tab shows
         self.gain_scale = 1.0
+        self.u = []
+        self.y = []
         self.reference = None
         self.flown_gains = None
         self.flown_gain_form = None
@@ -528,6 +542,15 @@ class Window(QDialog):
         self.bode_mag_curves = {
             "open": bode_mag_plot.plot(pen=ps.pen(ps.BLUE), name="Open-loop"),
             "closed": bode_mag_plot.plot(pen=ps.pen(ps.ORANGE), name="Closed-loop"),
+            "plant": bode_mag_plot.plot(pen=ps.pen(ps.AQUA), name="Plant model"),
+            "measured": bode_mag_plot.plot(
+                pen=None, name="Plant measured", **measuredSymbol(is_good=True)
+            ),
+            "measured_poor": bode_mag_plot.plot(
+                pen=None,
+                name=html.escape(f"γ² < {kMinGoodCoherence}"),
+                **measuredSymbol(is_good=False),
+            ),
         }
         self.hover_readouts.append(
             ps.HoverReadout(bode_mag_plot, "f = {:.3g} Hz", "{:.1f} dB")
@@ -561,6 +584,11 @@ class Window(QDialog):
         self.bode_phase_curves = {
             "open": bode_phase_plot.plot(pen=ps.pen(ps.BLUE)),
             "closed": bode_phase_plot.plot(pen=ps.pen(ps.ORANGE)),
+            "plant": bode_phase_plot.plot(pen=ps.pen(ps.AQUA)),
+            "measured": bode_phase_plot.plot(pen=None, **measuredSymbol(is_good=True)),
+            "measured_poor": bode_phase_plot.plot(
+                pen=None, **measuredSymbol(is_good=False)
+            ),
         }
         self.bode_margin_text = ps.CornerText(bode_phase_plot, "top-left")
         self.hover_readouts.append(
@@ -1373,6 +1401,7 @@ class Window(QDialog):
 
         self.updateTfDisplay(den_coeffs, num_coeffs)
         self.plotPolesZeros()
+        self.plotPlant()
         self.replayInputData()
 
     def predictionHorizon(self):
@@ -1507,6 +1536,7 @@ class Window(QDialog):
         self.resampleData(dt)
         self.is_system_identified = True
         self.plotPolesZeros()
+        self.plotPlant()
         self.replayInputData()
         self.computeController()
         self.btn_update_model.setEnabled(False)
@@ -1626,6 +1656,37 @@ class Window(QDialog):
         f_range = (np.log10(f[0]), np.log10(f[-1]))
         self.bode_mag_plot.getViewBox().setDefaultRange(f_range, (-20, 20))
         self.bode_phase_plot.getViewBox().setDefaultRange(f_range, (-180, 180))
+
+    def plotPlant(self):
+        w = np.geomspace(0.1, np.pi / self.dt, 500)
+        delay = np.exp(-1j * w * self.sys_id_delays * self.dt)
+        mag, phase, _ = ctrl.frequency_response(self.Gz, omega=w)
+        plant = mag * np.exp(1j * phase) * delay
+        plant_phase = np.unwrap(np.angle(plant))
+        self.bode_mag_curves["plant"].setData(w / (2 * np.pi), 20 * np.log10(mag))
+        self.bode_phase_curves["plant"].setData(
+            w / (2 * np.pi), np.rad2deg(plant_phase)
+        )
+
+        for key in ("measured", "measured_poor"):
+            self.bode_mag_curves[key].setData([], [])
+            self.bode_phase_curves[key].setData([], [])
+        if len(self.u) < kMinCoherenceSamples:
+            return
+        f, measured, gamma2 = measured_frequency_response(
+            self.u, self.y, self.dt, self.reference
+        )
+        # Put the measured phase on the branch of the model's to compare them
+        model_phase = np.interp(f, w / (2 * np.pi), plant_phase)
+        measured_phase = model_phase + np.angle(measured * np.exp(-1j * model_phase))
+        is_good = gamma2 >= kMinGoodCoherence
+        for key, points in (("measured", is_good), ("measured_poor", ~is_good)):
+            self.bode_mag_curves[key].setData(
+                f[points], 20 * np.log10(np.abs(measured[points]))
+            )
+            self.bode_phase_curves[key].setData(
+                f[points], np.rad2deg(measured_phase[points])
+            )
 
     def plotNyquist(self, loop, stability_margins, is_stable):
         w = np.geomspace(1e-2, np.pi / self.dt, 2000)

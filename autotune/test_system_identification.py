@@ -6,7 +6,11 @@ Run with:  poetry run pytest test_system_identification.py
 import numpy as np
 import pytest
 from scipy.signal import lfilter
-from system_identification import SystemIdentification, arx_predict
+from system_identification import (
+    SystemIdentification,
+    arx_predict,
+    measured_frequency_response,
+)
 
 
 def first_order_response():
@@ -64,3 +68,60 @@ def test_prediction_beyond_the_data_is_the_simulation():
 
     simulation = lfilter([0.0, 0.0, 0.5, 0.2], den, u)
     assert prediction == pytest.approx(simulation)
+
+
+DT = 0.01
+
+
+def first_order_frequency_response(f):
+    # y(k) = 0.9 y(k-1) + 0.1 u(k-1)
+    z = np.exp(2j * np.pi * f * DT)
+    return 0.1 / (z - 0.9)
+
+
+def proportional_loop(k_p, noise_std):
+    """Plant above under u = k_p (r - y_m), y_m measured with white noise."""
+    rng = np.random.default_rng(2)
+    r = rng.standard_normal(2**15)
+    noise = noise_std * rng.standard_normal(len(r))
+    y = np.zeros_like(r)
+    u = np.zeros_like(r)
+    for k in range(len(r)):
+        if k > 0:
+            y[k] = 0.9 * y[k - 1] + 0.1 * u[k - 1]
+        u[k] = k_p * (r[k] - y[k] - noise[k])
+    return r, u, y + noise
+
+
+def relative_error(f, measured):
+    expected = first_order_frequency_response(f)
+    return np.abs(measured - expected) / np.abs(expected)
+
+
+def bias(f, measured):
+    # Averaging over frequencies leaves the bias, not the random error
+    return np.abs(np.mean(measured / first_order_frequency_response(f)) - 1.0)
+
+
+def test_measured_frequency_response_of_an_open_loop_is_the_plant():
+    rng = np.random.default_rng(3)
+    u = rng.standard_normal(2**13)
+    y = lfilter([0.0, 0.1], [1.0, -0.9], u) + 0.001 * rng.standard_normal(len(u))
+
+    f, measured, gamma2 = measured_frequency_response(u, y, DT)
+
+    assert f[0] > 0.0
+    assert np.all(gamma2 > 0.9)
+    assert np.max(relative_error(f, measured)) < 0.1
+
+
+def test_measured_frequency_response_from_the_reference_is_not_biased_by_feedback():
+    r, u, y = proportional_loop(k_p=2.0, noise_std=0.5)
+
+    f, from_input, _ = measured_frequency_response(u, y, DT)
+    f, from_reference, gamma2 = measured_frequency_response(u, y, DT, r)
+
+    is_good = gamma2 >= 0.6
+    assert np.count_nonzero(is_good) > 10
+    assert bias(f[is_good], from_reference[is_good]) < 0.05
+    assert bias(f[is_good], from_input[is_good]) > 0.2
