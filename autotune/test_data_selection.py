@@ -82,9 +82,23 @@ def test_selection_plots_the_coherence(selection):
     assert selection.label_warning.isHidden()
 
 
+def test_coherence_plot_marks_the_minimum_good_coherence(selection):
+    line = selection.coherence_threshold_line
+
+    assert line in selection.coherence_plot.items
+    assert line.value() == pytest.approx(0.6)
+
+
+def test_selection_of_a_couple_of_seconds_plots_the_coherence(selection):
+    drag_span(selection, 76.5, 78.0)
+
+    assert len(selection.coherence_curve.getData()[0]) > 0
+    assert selection.label_warning.isHidden()
+
+
 def test_short_selection_warns_and_clears_the_coherence(selection):
     drag_span(selection, 76.5, 83.5)
-    drag_span(selection, 76.5, 78.0)
+    drag_span(selection, 76.5, 77.0)
 
     assert not selection.label_warning.isHidden()
     assert selection.coherence_curve.xData is None or (
