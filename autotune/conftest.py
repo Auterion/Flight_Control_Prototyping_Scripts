@@ -1,3 +1,5 @@
+import gc
+
 import pytest
 from PyQt5.QtWidgets import QApplication
 
@@ -11,3 +13,5 @@ def close_windows():
     if app is not None:
         for widget in app.topLevelWidgets():
             widget.close()
+    # Tear the scenes down now, rather than while a later test paints
+    gc.collect()
