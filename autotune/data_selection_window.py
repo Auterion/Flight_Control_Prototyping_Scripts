@@ -22,6 +22,14 @@ from PyQt5.QtWidgets import (
 from scipy import signal
 from searchable_combo_box import SearchableComboBox
 
+# Coherence is averaged over num_samples // 4 long segments: below, the
+# frequency resolution fs / nperseg is too coarse for a rate loop
+kMinCoherenceSamples = 256
+# Coherence above which the frequency response is accurate enough to
+# identify from (Tischler and Remple, Aircraft and Rotorcraft System
+# Identification)
+kMinGoodCoherence = 0.6
+
 kMissingSamplesWarning = (
     "The selected range contains missing (NaN) samples, e.g. while the motor is "
     "disarmed. Select a range where the input and output are logged."
@@ -411,9 +419,19 @@ class DataSelectionWindow(QDialog):
             0,
             title="Coherence",
             xlabel="Frequency (Hz)",
-            ylabel="Coherence",
+            ylabel="Coherence γ²",
         )
         self.coherence_plot.setLogMode(x=True)
+        self.coherence_threshold_line = ps.addReferenceLine(
+            self.coherence_plot, kMinGoodCoherence, angle=0, color_=ps.MUTED, style="--"
+        )
+        pg.InfLineLabel(
+            self.coherence_threshold_line,
+            text=f"good ≥ {kMinGoodCoherence}",
+            position=0.03,
+            anchors=[(0, 1), (0, 1)],
+            color=ps.MUTED,
+        )
         self.coherence_plot.setMouseEnabled(x=True, y=False)
         self.coherence_curve = self.coherence_plot.plot(pen=ps.pen(ps.INK_SECONDARY))
         self.coherence_info_text = ps.CornerText(self.coherence_plot, "bottom-right")
@@ -538,10 +556,11 @@ class DataSelectionWindow(QDialog):
             self.coherence_info_text.setLines([])
             return
 
-        if num_samples < 256 or duration < 5:
+        if num_samples < kMinCoherenceSamples:
             self.label_warning.setText(
-                f"Increase the window size to at least 5 seconds and 256 samples. "
-                f"Currently selected: {duration:.2f} seconds, {num_samples} samples."
+                f"Increase the window size to at least {kMinCoherenceSamples} "
+                f"samples. Currently selected: {duration:.2f} seconds, "
+                f"{num_samples} samples."
             )
             self.label_warning.show()
 
