@@ -42,7 +42,7 @@ import control as ctrl
 import numpy as np
 from arx_rls import ArxRls
 from scipy.optimize import lsq_linear
-from scipy.signal import lfilter
+from scipy.signal import coherence, csd, lfilter
 
 
 def apply_filters(u, y, f_hp, f_lp, dt):
@@ -106,6 +106,29 @@ def arx_predict(num, den, delay, u, y, horizon):
             y_h[i:] -= den[i] * past[:-i]
         recent = [y_h] + recent[: order - 1]
     return recent[0] if recent else measured
+
+
+def measured_frequency_response(u, y, dt, r=None):
+    """Frequency response from u to y estimated from the data by Welch averages.
+
+    Returns (f, H, coherence) without the zero frequency. In closed loop,
+    Φ_uy / Φ_uu tends to -1/C where the noise fed back by the controller
+    dominates the excitation: given the reference r carrying the excitation,
+    H = Φ_ry / Φ_ru is not biased by that noise. Its coherence is the lower one
+    of r to u and r to y.
+    """
+    fs = 1.0 / dt
+    nperseg = min(1024, len(u) // 4)
+    source = u if r is None else r
+    f, p_su = csd(source, u, fs, nperseg=nperseg)
+    _, p_sy = csd(source, y, fs, nperseg=nperseg)
+    if r is None:
+        _, gamma2 = coherence(u, y, fs, nperseg=nperseg)
+    else:
+        _, gamma2_ru = coherence(r, u, fs, nperseg=nperseg)
+        _, gamma2_ry = coherence(r, y, fs, nperseg=nperseg)
+        gamma2 = np.minimum(gamma2_ru, gamma2_ry)
+    return f[1:], p_sy[1:] / p_su[1:], gamma2[1:]
 
 
 class SysIdResult(object):

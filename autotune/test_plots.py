@@ -13,6 +13,7 @@ import pytest  # noqa: E402
 from loop_model import LoopModel  # noqa: E402
 from PyQt5.QtCore import QPointF  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
+from scipy.signal import lfilter  # noqa: E402
 from system_identification import arx_transfer_function  # noqa: E402
 
 import autotune  # noqa: E402
@@ -40,6 +41,7 @@ def window(qapp):
     window.is_system_identified = True
     window.gains = dict(GAINS)
     window.plotPolesZeros()
+    window.plotPlant()
     window.updateClosedLoop()
     return window
 
@@ -84,6 +86,80 @@ def test_bode_plots_the_loop_gain(window):
     w = 2 * np.pi * f
     response = loop_model(window).loop_gain(np.exp(1j * w * DT))
     assert mag_db == pytest.approx(20 * np.log10(np.abs(response)), abs=1e-6)
+
+
+def plant_response(f):
+    z = np.exp(2j * np.pi * f * DT)
+    return np.polyval(NUM[::-1], 1 / z) / np.polyval(DEN[::-1], 1 / z) * z**-DELAYS
+
+
+def plant_output(u):
+    return lfilter(np.concatenate((np.zeros(DELAYS), NUM)), DEN, u)
+
+
+# Enough Welch averages for noise never to reach a coherence of 0.6
+NUM_NOISE_SAMPLES = 2**14
+
+
+def curve_data(curve):
+    return curve.xData, curve.yData
+
+
+def measure_plant(window, u, y):
+    window.u, window.y = u, y
+    window.plotPlant()
+
+
+def test_bode_plots_the_plant_model_with_its_delay(window):
+    f, mag_db = curve_data(window.bode_mag_curves["plant"])
+    _, phase_deg = curve_data(window.bode_phase_curves["plant"])
+
+    expected = plant_response(f)
+    assert mag_db == pytest.approx(20 * np.log10(np.abs(expected)), abs=1e-6)
+    assert np.deg2rad(phase_deg) == pytest.approx(np.unwrap(np.angle(expected)))
+
+
+def test_plant_is_not_measured_without_data(window):
+    assert is_empty(window.bode_mag_curves["measured"])
+    assert is_empty(window.bode_mag_curves["measured_poor"])
+
+
+def test_measured_plant_lies_on_the_model_it_was_simulated_with(window):
+    u = np.random.default_rng(0).standard_normal(4096)
+
+    measure_plant(window, u, plant_output(u))
+
+    f, mag_db = curve_data(window.bode_mag_curves["measured"])
+    _, phase_deg = curve_data(window.bode_phase_curves["measured"])
+    model_f, model_phase = curve_data(window.bode_phase_curves["plant"])
+    assert len(f) > 100
+    assert is_empty(window.bode_mag_curves["measured_poor"])
+    assert mag_db == pytest.approx(20 * np.log10(np.abs(plant_response(f))), abs=0.5)
+    assert phase_deg == pytest.approx(np.interp(f, model_f, model_phase), abs=3.0)
+
+
+def test_measured_plant_of_poor_coherence_is_set_apart(window):
+    rng = np.random.default_rng(0)
+
+    measure_plant(
+        window,
+        rng.standard_normal(NUM_NOISE_SAMPLES),
+        rng.standard_normal(NUM_NOISE_SAMPLES),
+    )
+
+    assert is_empty(window.bode_mag_curves["measured"])
+    assert len(window.bode_mag_curves["measured_poor"].xData) > 100
+    assert len(window.bode_phase_curves["measured_poor"].xData) > 100
+
+
+def test_plant_is_measured_from_the_reference_when_logged(window):
+    rng = np.random.default_rng(0)
+    u = rng.standard_normal(NUM_NOISE_SAMPLES)
+    window.reference = rng.standard_normal(NUM_NOISE_SAMPLES)
+
+    measure_plant(window, u, plant_output(u))
+
+    assert is_empty(window.bode_mag_curves["measured"])
 
 
 def test_bode_margins_are_colored_by_threshold(window):

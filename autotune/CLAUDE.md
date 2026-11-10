@@ -37,8 +37,9 @@ QT_QPA_PLATFORM=offscreen poetry run pytest -v
 fallback); `test_preset_dialogs.py` drives `PresetEditDialog` headlessly to verify
 the add/edit/rename/create/delete behavior; `test_system_identification.py` checks
 the ARX fit is not biased by an operating point offset, that this offset removal
-can be turned off, and the k-step-ahead ARX prediction; `test_loop_model.py` checks the
-closed-loop model (loop gain, closed-loop poles, sensitivities, its polynomial form);
+can be turned off, the k-step-ahead ARX prediction, and the frequency response
+measured from the data (not biased by the feedback when measured from the reference); `test_loop_model.py` checks the
+closed-loop model (loop gain, closed-loop poles, sensitivities);
 `test_pid_design.py` checks the GMVC design (the closed form for one delay, any delay,
 any number of poles and zeros) and the feedforward putting P on the measurement; `test_fit_metrics.py`
 checks the gain-form conversion, the loading of the flown controller from a preset
@@ -49,7 +50,7 @@ parameter search ranks by (penalizing the parameters that do not improve the pre
 its parameter units (preset gain scale), and the GMVC feedforward cancelling P on the error;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, range
-selection). `conftest.py` closes the windows a test leaves open: an open window
+selection, plant model against its measured frequency response). `conftest.py` closes the windows a test leaves open: an open window
 repainted while its pyqtgraph scene is garbage collected segfaults. These run in CI via
 `.github/workflows/autotune_tests.yml`.
 
@@ -86,6 +87,8 @@ autotune.py (Bode/step response validation) → PX4 gains
 - **`preset_dialogs.py`** — `PresetEditDialog`: a Qt dialog to add, edit, or delete a preset, with an old→new signal diff that switches to "create" mode when the preset is renamed, and the controller reference, gain parameters, form and PID options.
 
 - **`system_identification.py`** — Preprocesses signals (bias removal, filtering) and runs weighted RLS to fit an ARX model. Returns numerator/denominator polynomial coefficients.
+  Also measures the frequency response from the data (Welch averages, from the logged
+  reference in closed loop), which the Bode plot shows against the plant model.
 
 - **`arx_rls.py`** — Core recursive least-squares implementation. Assumes ARX model: `A(q⁻¹)y(k) = q⁻ᵈ B(q⁻¹)u(k) + A(q⁻¹)e(k)`. Uses matrix-inversion-free update for efficiency.
 
