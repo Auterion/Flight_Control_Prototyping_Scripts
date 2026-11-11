@@ -131,6 +131,41 @@ def measured_frequency_response(u, y, dt, r=None):
     return f[1:], p_sy[1:] / p_su[1:], gamma2[1:]
 
 
+def residual_correlations(num, den, delay, u, y, max_lag):
+    """Residual tests of an ARX model (Ljung, System Identification, 1999).
+
+    The residuals are the one-step prediction errors of the model on u and y,
+    the data it was fitted to. Returns (auto, cross, bound):
+    - auto: autocorrelation of the residuals at lags 0 to max_lag, all within
+      the bound if the residuals are white, as least squares assumes;
+    - cross: correlation of the residual e(t) with the input u(t - lag) at lags
+      -max_lag to max_lag. At positive lags it reveals dynamics the model
+      misses; at lag 0 and negative lags, an input reacting to the current
+      and past residuals, as a controller in closed loop does;
+    - bound: 99 % confidence bound of these correlations for white residuals.
+    """
+    start = max(len(den) - 1, delay + len(num) - 1)
+    residuals = (y - arx_predict(num, den, delay, u, y, 1))[start:]
+    u = u[start:]
+
+    def correlation(a, b, lag):
+        n = len(a)
+        if lag >= 0:
+            return np.dot(a[lag:], b[: n - lag]) / n
+        return np.dot(a[: n + lag], b[-lag:]) / n
+
+    e_power = correlation(residuals, residuals, 0)
+    auto = np.array(
+        [correlation(residuals, residuals, lag) for lag in range(max_lag + 1)]
+    )
+    cross = np.array(
+        [correlation(residuals, u, lag) for lag in range(-max_lag, max_lag + 1)]
+    )
+    auto /= e_power
+    cross /= np.sqrt(e_power * correlation(u, u, 0))
+    return auto, cross, 2.58 / np.sqrt(len(residuals))
+
+
 class SysIdResult(object):
     def __init__(self, num, den, dt):
         self.G_ = arx_transfer_function(num, den, dt)
@@ -156,13 +191,7 @@ class SystemIdentification(object):
         a_coeffs = np.zeros((self.n, n_steps))
         b_coeffs = np.zeros((self.m + 1, n_steps))
 
-        if self.remove_offset:
-            # The ARX model has no constant term: an operating point offset
-            # would be fitted as a pole at z = 1. Removing the means is the
-            # least-squares equivalent of SIDPAC's bias regressor (Morelli,
-            # AIAA 2002-4704)
-            u, y = u - np.mean(u), y - np.mean(y)
-        u_lp, y_lp = apply_filters(u, y, self.f_hp, self.f_lp, self.dt)
+        u_lp, y_lp = self.preprocess(u, y)
 
         if method == "RLS":
             rls = ArxRls(
@@ -197,6 +226,16 @@ class SystemIdentification(object):
 
         estimate = SysIdResult(self.getNum(), self.getDen(), self.dt)
         return estimate
+
+    def preprocess(self, u, y):
+        """Input and output the model is fitted to."""
+        if self.remove_offset:
+            # The ARX model has no constant term: an operating point offset
+            # would be fitted as a pole at z = 1. Removing the means is the
+            # least-squares equivalent of SIDPAC's bias regressor (Morelli,
+            # AIAA 2002-4704)
+            u, y = u - np.mean(u), y - np.mean(y)
+        return apply_filters(u, y, self.f_hp, self.f_lp, self.dt)
 
     def getNum(self):
         num = [
