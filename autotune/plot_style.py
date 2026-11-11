@@ -55,12 +55,16 @@ def pen(value, width=1.0, style="-", alpha=1.0):
     return p
 
 
-def stylePlot(plot, title=None, xlabel=None, ylabel=None):
+def stylePlot(plot, title=None, xlabel=None, ylabel=None, info=None):
+    """info: tooltip shown over the title, marked with an info sign."""
     for name in ("left", "bottom"):
         axis = plot.getAxis(name)
         axis.setPen(pg.mkPen(AXIS))
         axis.setTextPen(pg.mkPen(INK_SECONDARY))
     if title is not None:
+        if info is not None:
+            title += " ⓘ"
+            plot.titleLabel.setToolTip(info)
         plot.setTitle(title, color=INK, size="10pt")
     if xlabel is not None:
         plot.setLabel("bottom", xlabel, color=INK_SECONDARY)

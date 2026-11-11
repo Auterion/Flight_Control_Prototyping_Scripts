@@ -14,7 +14,11 @@ from loop_model import LoopModel  # noqa: E402
 from PyQt5.QtCore import QPointF  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 from scipy.signal import lfilter  # noqa: E402
-from system_identification import arx_transfer_function  # noqa: E402
+from system_identification import (  # noqa: E402
+    SystemIdentification,
+    arx_transfer_function,
+    residual_correlations,
+)
 
 import autotune  # noqa: E402
 
@@ -224,10 +228,101 @@ def test_bode_phase_shares_the_frequency_axis(window):
 
 
 def test_reset_clears_the_plots(window):
+    u = np.random.default_rng(0).standard_normal(4096)
+    measure_plant(window, u, plant_output(u))
+    window.plotResiduals()
+
     window.reset()
 
-    for curve in window.generalCurves() + window.robustnessCurves():
+    for curve in (
+        window.generalCurves() + window.robustnessCurves() + window.residualCurves()
+    ):
         assert is_empty(curve)
+    assert window.residual_auto_text.text() == ""
+    assert window.residual_cross_text.text() == ""
+
+
+def test_residual_plots_explain_themselves_over_their_title(window):
+    for curves in (window.residual_auto_curves, window.residual_cross_curves):
+        title = curves["plot"].titleLabel
+
+        assert title.text.endswith("ⓘ")
+        assert "99% bounds" in title.toolTip()
+
+
+def expected_residual_correlations(window, u, y):
+    sys_id = SystemIdentification(dt=DT)
+    sys_id.f_hp = window.f_hp_spinbox.value()
+    sys_id.f_lp = window.f_lp_spinbox.value()
+    return residual_correlations(
+        NUM, DEN, DELAYS, *sys_id.preprocess(u, y), autotune.kResidualLags
+    )
+
+
+def test_residuals_are_not_plotted_without_data(window):
+    window.plotResiduals()
+
+    assert all(is_empty(curve) for curve in window.residualCurves())
+
+
+def test_residual_plots_show_the_correlations_of_the_model_on_the_fitted_data(window):
+    rng = np.random.default_rng(0)
+    u = rng.standard_normal(4096)
+    y = plant_output(u) + 0.01 * rng.standard_normal(len(u))
+    window.u, window.y = u, y
+
+    window.plotResiduals()
+
+    auto, cross, bound = expected_residual_correlations(window, u, y)
+    lags, auto_shown = curve_data(window.residual_auto_curves["points"])
+    assert lags == pytest.approx(np.arange(1, autotune.kResidualLags + 1))
+    assert auto_shown == pytest.approx(auto[1:])
+    lags, cross_shown = curve_data(window.residual_cross_curves["points"])
+    assert lags[0] == -autotune.kResidualLags
+    assert cross_shown == pytest.approx(cross)
+    _, bounds = curve_data(window.residual_cross_curves["bounds"])
+    assert sorted(set(bounds)) == pytest.approx([-bound, bound])
+
+
+def test_residual_plots_scale_to_the_bounds_and_the_correlations(window, qapp):
+    window.resize(1200, 900)
+    window.show()
+    window.plot_tabs.setCurrentWidget(window.residual_plots)
+    rng = np.random.default_rng(0)
+    u = rng.standard_normal(875)
+    window.u, window.y = u, plant_output(u) + 0.01 * rng.standard_normal(len(u))
+
+    window.plotResiduals()
+    qapp.processEvents()
+
+    _, bounds = curve_data(window.residual_cross_curves["bounds"])
+    bound = max(bounds)
+    for curves in (window.residual_auto_curves, window.residual_cross_curves):
+        _, correlation = curve_data(curves["points"])
+        extent = max(bound, np.max(np.abs(correlation)))
+        y_min, y_max = curves["plot"].getViewBox().viewRange()[1]
+        assert y_min < min(-bound, np.min(correlation))
+        assert y_max > max(bound, np.max(correlation))
+        assert y_max - y_min < 3 * extent
+
+
+def test_residual_text_counts_the_lags_outside_the_bounds(window):
+    rng = np.random.default_rng(0)
+    u = rng.standard_normal(4096)
+    window.u, window.y = u, plant_output(np.roll(u, 3))
+
+    window.plotResiduals()
+
+    auto, cross, bound = expected_residual_correlations(window, u, window.y)
+    lags = np.arange(-autotune.kResidualLags, autotune.kResidualLags + 1)
+    n_past = np.count_nonzero(np.abs(cross[lags > 0]) > bound)
+    n_future = np.count_nonzero(np.abs(cross[lags <= 0]) > bound)
+    assert n_past > 0
+    lines = window.residual_cross_text.text().splitlines()
+    assert f"{n_past} of {autotune.kResidualLags}" in lines[0]
+    assert f"{n_future} of {autotune.kResidualLags + 1}" in lines[1]
+    n_auto = np.count_nonzero(np.abs(auto[1:]) > bound)
+    assert f"{n_auto} of {autotune.kResidualLags}" in window.residual_auto_text.text()
 
 
 def test_hover_readout_shows_the_frequency_in_hz(window):

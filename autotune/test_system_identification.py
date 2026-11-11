@@ -10,6 +10,7 @@ from system_identification import (
     SystemIdentification,
     arx_predict,
     measured_frequency_response,
+    residual_correlations,
 )
 
 
@@ -125,3 +126,60 @@ def test_measured_frequency_response_from_the_reference_is_not_biased_by_feedbac
     assert np.count_nonzero(is_good) > 10
     assert bias(f[is_good], from_reference[is_good]) < 0.05
     assert bias(f[is_good], from_input[is_good]) > 0.2
+
+
+NUM, DEN, DELAY = [0.5, 0.2], [1.0, -1.5, 0.6], 2
+MAX_LAG = 25
+
+
+def arx_output(u, equation_error, delay=DELAY):
+    forced = lfilter(np.concatenate((np.zeros(delay), NUM)), [1.0], u)
+    return lfilter([1.0], DEN, forced + equation_error)
+
+
+def lags_outside(correlation, bound):
+    lags = np.arange(len(correlation)) - (len(correlation) - 1 - MAX_LAG)
+    return lags[np.abs(correlation) > bound]
+
+
+def test_residuals_of_the_true_model_are_white_and_uncorrelated_with_the_input():
+    rng = np.random.default_rng(4)
+    u = rng.standard_normal(4000)
+    y = arx_output(u, 0.1 * rng.standard_normal(len(u)))
+
+    auto, cross, bound = residual_correlations(NUM, DEN, DELAY, u, y, MAX_LAG)
+
+    assert auto[0] == pytest.approx(1.0)
+    assert len(lags_outside(auto[1:], bound)) <= 1
+    assert len(lags_outside(cross, bound)) <= 1
+
+
+def test_missed_dynamics_correlate_the_residuals_with_past_inputs():
+    rng = np.random.default_rng(4)
+    u = rng.standard_normal(4000)
+    y = arx_output(u, 0.1 * rng.standard_normal(len(u)), delay=DELAY + 2)
+
+    _, cross, bound = residual_correlations(NUM, DEN, DELAY, u, y, MAX_LAG)
+
+    assert set(lags_outside(cross, bound)) >= {DELAY + 2, DELAY + 3}
+    assert np.all(lags_outside(cross, bound) > 0)
+
+
+def test_feedback_correlates_the_residuals_with_future_inputs_only():
+    rng = np.random.default_rng(5)
+    r = rng.standard_normal(4000)
+    equation_error = rng.standard_normal(len(r))
+    u = np.zeros_like(r)
+    y = np.zeros_like(r)
+    for k in range(len(r)):
+        y[k] = equation_error[k]
+        for i in range(1, len(DEN)):
+            y[k] -= DEN[i] * y[k - i] if k >= i else 0.0
+        for i, b in enumerate(NUM):
+            y[k] += b * u[k - DELAY - i] if k >= DELAY + i else 0.0
+        u[k] = 0.1 * (r[k] - y[k])
+
+    _, cross, bound = residual_correlations(NUM, DEN, DELAY, u, y, MAX_LAG)
+
+    assert 0 in lags_outside(cross, bound)
+    assert np.all(lags_outside(cross, bound) <= 0)

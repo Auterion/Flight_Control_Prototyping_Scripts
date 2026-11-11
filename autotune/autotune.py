@@ -88,6 +88,7 @@ from system_identification import (
     arx_predict,
     arx_transfer_function,
     measured_frequency_response,
+    residual_correlations,
 )
 
 
@@ -168,6 +169,8 @@ def search_criterion(
 kDefaultPredictionHorizon = 0.1
 kMaxModelOrder = 7
 kMaxCoefficientRowsShown = 7
+# As the residual analysis of Ljung's System Identification Toolbox
+kResidualLags = 25
 
 kGainFormLabels = {
     "ideal": "Ideal/Standard\nKp * [1 + Ki + Kd]",
@@ -413,6 +416,7 @@ class Window(QDialog):
         self.hover_readouts = []
         self.general_plots = self.createGeneralPlots()
         self.robustness_plots = self.createRobustnessPlots()
+        self.residual_plots = self.createResidualPlots()
 
         self.btn_open_log = QPushButton("Open log")
         self.btn_open_log.clicked.connect(self.loadLog)
@@ -459,6 +463,7 @@ class Window(QDialog):
         self.plot_tabs = QTabWidget()
         self.plot_tabs.addTab(self.general_plots, "General")
         self.plot_tabs.addTab(self.robustness_plots, "Robustness")
+        self.plot_tabs.addTab(self.residual_plots, "Residuals")
 
         layout_h.addLayout(left_menu)
         layout_h.addWidget(self.plot_tabs)
@@ -484,12 +489,14 @@ class Window(QDialog):
         self.lbl_stability.setStyleSheet("")
         self.btn_stabilize.setVisible(False)
         self.is_system_identified = False
-        for curve in self.robustnessCurves():
+        for curve in (*self.robustnessCurves(), *self.residualCurves()):
             curve.setData([], [])
         for text in (
             self.nyquist_margin_text,
             self.sensitivity_text,
             self.root_locus_text,
+            self.residual_auto_text,
+            self.residual_cross_text,
         ):
             text.setLines([])
 
@@ -775,6 +782,127 @@ class Window(QDialog):
             self.sensitivity_peak_marker,
             *self.rootLocusMarkers(),
         ]
+
+    def createResidualPlots(self):
+        layout = pg.GraphicsLayoutWidget()
+        self.residual_auto_curves = self.addCorrelationPlot(
+            layout,
+            0,
+            "Residual autocorrelation",
+            "e(t) with e(t - lag)",
+            1,
+            "<b>Are the residuals white?</b><br>"
+            "The residual e is the one-step prediction error of the model on "
+            "the data it was fitted to (offset removed, HP/LP filtered).<br>"
+            "<b>Inside the dashed 99% bounds:</b> the model leaves nothing "
+            "predictable, as least squares assumes.<br>"
+            "<b>Outside:</b> noise the model does not explain, which biases the "
+            "fit. Stems of one sign over many lags are a slow drift: try the "
+            "HP filter.",
+        )
+        self.residual_cross_curves = self.addCorrelationPlot(
+            layout,
+            1,
+            "Residual-input cross-correlation",
+            "e(t) with u(t - lag)",
+            -kResidualLags,
+            "<b>Does the input still explain the residuals?</b><br>"
+            "<b>Lags &gt; 0</b>, past inputs: stems outside the dashed 99% "
+            "bounds are dynamics the model misses, such as a wrong delay (a "
+            "peak at the missed lag) or too few poles or zeros.<br>"
+            "<b>Lags ≤ 0</b>, current and future inputs: the controller "
+            "reacting to the residuals. Expected in closed loop, not a model "
+            "error.",
+        )
+        self.residual_auto_text = ps.CornerText(
+            self.residual_auto_curves["plot"], "top-right"
+        )
+        self.residual_cross_text = ps.CornerText(
+            self.residual_cross_curves["plot"], "top-right"
+        )
+        return layout
+
+    @staticmethod
+    def addCorrelationPlot(layout, row, title, ylabel, min_lag, info):
+        plot = ps.addPlot(
+            layout,
+            row,
+            0,
+            title=title,
+            xlabel="Lag (samples)",
+            ylabel=ylabel,
+            info=info,
+        )
+        ps.xOnlyMouse(plot)
+        ps.addReferenceLine(plot, 0, angle=0)
+        curves = {
+            "plot": plot,
+            "stems": plot.plot(pen=ps.pen(ps.BLUE), connect="pairs"),
+            "points": plot.plot(
+                pen=None, symbol="o", symbolSize=5, symbolPen=None, symbolBrush=ps.BLUE
+            ),
+            "bounds": plot.plot(pen=ps.pen(ps.CRITICAL, 1, "--"), connect="pairs"),
+        }
+        # Y fits the stems and the bounds, leaving room for the corner text
+        plot.getViewBox().setDefaultPadding(0.15)
+        plot.getViewBox().setDefaultRange((min_lag - 1, kResidualLags + 1))
+        return curves
+
+    def residualCurves(self):
+        return [
+            curves[key]
+            for curves in (self.residual_auto_curves, self.residual_cross_curves)
+            for key in ("stems", "points", "bounds")
+        ]
+
+    def plotResiduals(self):
+        if len(self.u) == 0:
+            return
+        sys_id = SystemIdentification(dt=self.dt)
+        sys_id.f_hp = self.f_hp_spinbox.value()
+        sys_id.f_lp = self.f_lp_spinbox.value()
+        sys_id.remove_offset = self.remove_offset_box.isChecked()
+        auto, cross, bound = residual_correlations(
+            self.num,
+            self.den,
+            self.sys_id_delays,
+            *sys_id.preprocess(self.u, self.y),
+            kResidualLags,
+        )
+        lags = np.arange(-kResidualLags, kResidualLags + 1)
+        self.plotCorrelation(
+            self.residual_auto_curves, lags[kResidualLags + 1 :], auto[1:], bound
+        )
+        self.plotCorrelation(self.residual_cross_curves, lags, cross, bound)
+
+        def outside(correlation):
+            return (
+                f"{np.count_nonzero(np.abs(correlation) > bound)} of {len(correlation)}"
+            )
+
+        self.residual_auto_text.setLines(
+            [(f"Outside the 99% bounds: {outside(auto[1:])} lags", ps.INK_SECONDARY)]
+        )
+        self.residual_cross_text.setLines(
+            [
+                (
+                    f"Missed dynamics, lags > 0: {outside(cross[lags > 0])} outside",
+                    ps.INK_SECONDARY,
+                ),
+                (
+                    f"Feedback, lags ≤ 0: {outside(cross[lags <= 0])} outside",
+                    ps.INK_SECONDARY,
+                ),
+            ]
+        )
+
+    @staticmethod
+    def plotCorrelation(curves, lags, correlation, bound):
+        stems_y = np.column_stack((np.zeros_like(correlation), correlation)).ravel()
+        curves["stems"].setData(np.repeat(lags, 2), stems_y)
+        curves["points"].setData(lags, correlation)
+        x_ends = [lags[0], lags[-1]]
+        curves["bounds"].setData(x_ends * 2, [bound, bound, -bound, -bound])
 
     def createModelOrderWidgets(self, layout):
         self.line_edit_zeros = QSpinBox()
@@ -1402,6 +1530,7 @@ class Window(QDialog):
         self.updateTfDisplay(den_coeffs, num_coeffs)
         self.plotPolesZeros()
         self.plotPlant()
+        self.plotResiduals()
         self.replayInputData()
 
     def predictionHorizon(self):
@@ -1537,6 +1666,7 @@ class Window(QDialog):
         self.is_system_identified = True
         self.plotPolesZeros()
         self.plotPlant()
+        self.plotResiduals()
         self.replayInputData()
         self.computeController()
         self.btn_update_model.setEnabled(False)

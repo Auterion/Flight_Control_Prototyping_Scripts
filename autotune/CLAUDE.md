@@ -38,7 +38,9 @@ fallback); `test_preset_dialogs.py` drives `PresetEditDialog` headlessly to veri
 the add/edit/rename/create/delete behavior; `test_system_identification.py` checks
 the ARX fit is not biased by an operating point offset, that this offset removal
 can be turned off, the k-step-ahead ARX prediction, and the frequency response
-measured from the data (not biased by the feedback when measured from the reference); `test_loop_model.py` checks the
+measured from the data (not biased by the feedback when measured from the reference), and
+the residual tests (white residuals of the true model, missed dynamics at positive lags,
+feedback at lag 0 and negative lags); `test_loop_model.py` checks the
 closed-loop model (loop gain, closed-loop poles, sensitivities);
 `test_pid_design.py` checks the GMVC design (the closed form for one delay, any delay,
 any number of poles and zeros) and the feedforward putting P on the measurement; `test_fit_metrics.py`
@@ -50,7 +52,7 @@ parameter search ranks by (penalizing the parameters that do not improve the pre
 its parameter units (preset gain scale), and the GMVC feedforward cancelling P on the error;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, range
-selection, plant model against its measured frequency response). `conftest.py` closes the windows a test leaves open: an open window
+selection, plant model against its measured frequency response, residual correlations). `conftest.py` closes the windows a test leaves open: an open window
 repainted while its pyqtgraph scene is garbage collected segfaults. These run in CI via
 `.github/workflows/autotune_tests.yml`.
 
@@ -74,11 +76,11 @@ autotune.py (Bode/step response validation) → PX4 gains
 
 ### Module responsibilities
 
-- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in two pyqtgraph tabs (General: logged data, poles/zeros, step response, Bode; Robustness: Nyquist with margins, sensitivities, root locus).
+- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in three pyqtgraph tabs (General: logged data, poles/zeros, step response, Bode; Robustness: Nyquist with margins, sensitivities, root locus; Residuals: residual autocorrelation and residual-input cross-correlation).
 
 - **`data_extractor.py`** — Parses PX4 ULog binary logs using `pyulog`. Extracts and interpolates signals (rates, setpoints, actuator outputs, airspeed). Returns numpy arrays aligned to a common time base.
 
-- **`plot_style.py`** — Shared pyqtgraph helpers: light dataviz palette, plots whose double-click restores a default range (kept across data updates), corner text overlays, hover readout, and X-range linking across tabs.
+- **`plot_style.py`** — Shared pyqtgraph helpers: light dataviz palette, plots whose double-click restores a default range (kept across data updates), corner text overlays, info tooltips over plot titles, hover readout, and X-range linking across tabs.
 
 - **`data_selection_window.py`** — Interactive pyqtgraph window (left drag selects the range) for selecting the maneuver time window and inspecting signal quality/coherence before running identification. Loads input/output presets via `presets.py` and lets the user add/edit/delete them through `preset_dialogs.py`.
 
@@ -88,7 +90,8 @@ autotune.py (Bode/step response validation) → PX4 gains
 
 - **`system_identification.py`** — Preprocesses signals (bias removal, filtering) and runs weighted RLS to fit an ARX model. Returns numerator/denominator polynomial coefficients.
   Also measures the frequency response from the data (Welch averages, from the logged
-  reference in closed loop), which the Bode plot shows against the plant model.
+  reference in closed loop), which the Bode plot shows against the plant model, and the
+  residual correlations of a model on the preprocessed data it was fitted to.
 
 - **`arx_rls.py`** — Core recursive least-squares implementation. Assumes ARX model: `A(q⁻¹)y(k) = q⁻ᵈ B(q⁻¹)u(k) + A(q⁻¹)e(k)`. Uses matrix-inversion-free update for efficiency.
 
