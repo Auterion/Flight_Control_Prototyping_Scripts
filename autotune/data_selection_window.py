@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass
 
 import numpy as np
@@ -131,7 +132,9 @@ class SpanSelectViewBox(ps.ResettableViewBox):
 
 
 class DataSelectionWindow(QDialog):
-    def __init__(self, filename):
+    def __init__(self, filename, selection=None):
+        """selection, as currentSelection() returns it, is restored in the log
+        filename."""
         QDialog.__init__(self)
 
         self.preset_candidates = load_presets()
@@ -212,9 +215,66 @@ class DataSelectionWindow(QDialog):
         if filename:
             self.file_name = filename
             self.openFile()
+            if selection is not None:
+                self.restoreSelection(selection)
 
         else:
             self.browseFiles()
+
+    def currentSelection(self):
+        """Preset, signals and ranges selected, the ranges in log time."""
+        preset_name = self.combo_preset.currentText()
+        preset = None
+        if preset_name in self.preset_candidates:
+            preset = {
+                "name": preset_name,
+                "definition": copy.deepcopy(self.preset_candidates[preset_name]),
+            }
+
+        def plainRange(t_range):
+            return None if t_range[0] is None else [float(t) for t in t_range]
+
+        return {
+            "preset": preset,
+            "input": self.combo_u.currentText(),
+            "output": self.combo_y.currentText(),
+            "estimation_range": plainRange((self.t_start, self.t_stop)),
+            "validation_range": plainRange(self.validation_range or (None, None)),
+        }
+
+    def restoreSelection(self, selection):
+        preset = selection.get("preset")
+        if preset is not None:
+            # The preset as it was when selected, even if presets.yaml changed
+            self.preset_candidates[preset["name"]] = copy.deepcopy(preset["definition"])
+            self.fillPresets()
+            self.combo_preset.setCurrentIndex(
+                self.combo_preset.findText(preset["name"])
+            )
+        for combo, name in (
+            (self.combo_u, selection.get("input")),
+            (self.combo_y, selection.get("output")),
+        ):
+            index = combo.findText(name or "")
+            if index > -1:
+                combo.setCurrentIndex(index)
+
+        for kind, key in (
+            (kEstimation, "estimation_range"),
+            (kValidation, "validation_range"),
+        ):
+            t_range = selection.get(key)
+            if t_range is None:
+                self.removeRange(kind)
+                continue
+            # Already snapped to the samples when selected
+            if kind == kValidation:
+                self.validation_range = tuple(t_range)
+            else:
+                (self.t_start, self.t_stop) = t_range
+            self.setSelectionRegion(kind, *t_range)
+        self.zoomOnSelectedRanges()
+        self.plotCoherence()
 
     def loadSelection(self):
         if not isValidRange(self.t_start, self.t_stop):

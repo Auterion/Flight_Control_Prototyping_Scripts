@@ -216,7 +216,7 @@ def test_signals_changed_away_from_the_preset_load_no_controller(selection):
 
 def load_log(selection, monkeypatch):
     selection.exec_ = lambda: selection.loadSelection() or True
-    monkeypatch.setattr(autotune, "DataSelectionWindow", lambda file_name: selection)
+    monkeypatch.setattr(autotune, "DataSelectionWindow", lambda *args: selection)
     window = autotune.Window()
     window.gains = {"P": 0.5, "I": 1.0, "D": 0.01, "FF": 0.2}
     window.loadLog()

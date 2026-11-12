@@ -385,6 +385,33 @@ def test_right_drag_draws_the_validation_range(selection):
     assert selection.range_remove_buttons[kValidation][1].isVisible()
 
 
+def test_saved_selection_is_restored_with_its_preset(selection):
+    drag_span(selection, 76.5, 83.5)
+    drag_validation_span(selection, 103.0, 109.0)
+    saved = selection.currentSelection()
+    saved["preset"]["definition"]["reference"] = "vehicle_rates_setpoint/pitch.0"
+
+    restored = DataSelectionWindow(selection.file_name, saved)
+
+    assert restored.currentSelection() == saved
+    assert (restored.t_start, restored.t_stop) == tuple(saved["estimation_range"])
+    assert regions(restored, kValidation)[0] == pytest.approx(saved["validation_range"])
+    assert restored.selection_regions[kValidation][0].isVisible()
+    assert presets.load_presets()["Rollrate"]["reference"] == (
+        "vehicle_rates_setpoint/roll.0"
+    )
+
+
+def test_selection_without_ranges_is_the_whole_log(selection):
+    saved = selection.currentSelection()
+
+    restored = DataSelectionWindow(selection.file_name, saved)
+
+    assert saved["estimation_range"] is None
+    assert saved["validation_range"] is None
+    assert restored.t_start is None and restored.validation_range is None
+
+
 def test_cancelled_browse_keeps_the_open_log(selection, monkeypatch):
     file_name = selection.file_name
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args, **kw: ("", ""))

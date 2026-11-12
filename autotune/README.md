@@ -149,6 +149,33 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
 
    ![image](https://github.com/user-attachments/assets/86d99295-43a8-47a9-b052-324ab5ac3082)
 
+### Sessions
+
+*Save session…* writes the state of the tool to a YAML file, and *Load session…* restores
+it. Both let you choose the groups to save or load:
+
+| Group | Content |
+|-------|---------|
+| Data | Log (path relative to the session, absolute path and SHA-256), preset, input and output signals, estimation and validation ranges |
+| Pre-processing | Offset removal, HP and LP cutoffs, input scaling, trim airspeed |
+| Model structure | Poles, zeros, delays, method, prediction horizon |
+| Model result | Coefficients, delay and sample time of the model, as identified or edited |
+| Tuning | PID or GMVC tab, gain form, gains, PID options, GMVC sliders |
+| Others | Step info limits, step simulation, model output offset |
+
+Loading the whole session reproduces the saved state: the model is restored, not identified
+again. Loading only some groups carries them over to the current state, e.g. the tuning of a
+session onto the model of another log. Then:
+- The gains are kept as saved, even with the GMVC tab active, until a GMVC slider moves.
+- Model result also sets the poles, zeros and delays.
+- Data without Model result runs the identification, as *Select data* does.
+- A model loaded without its data, pre-processing and structure enables *Run identification*:
+  it may not be the model these settings identify.
+- A model loads without data too: the plots of the closed loop are shown, the fits are not.
+
+The log is looked for next to the session first, so a folder holding both can be moved or
+shared. A log that differs from the saved one is only loaded once confirmed.
+
 ### Applying the Gains
 
 1. The gains shown in the parallel form correspond to the PX4 rate controller parameters.
