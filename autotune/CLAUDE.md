@@ -15,12 +15,10 @@ poetry install
 poetry run python3 autotune.py
 ```
 
-**Or with venv:**
+**Or with uv** (reads the same `pyproject.toml`; it shares `.venv` with Poetry and
+re-syncs it to its own `uv.lock`, so run `poetry install` again before using Poetry):
 ```bash
-python3 -m venv virtualenv-test
-source virtualenv-test/bin/activate
-pip3 install numpy scipy pyulog control pyqt5 pyqtgraph pyyaml
-python3 autotune.py
+uv run autotune.py
 ```
 
 **Run simulation-based test (no GUI data needed):**
