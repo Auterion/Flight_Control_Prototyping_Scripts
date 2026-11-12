@@ -241,6 +241,79 @@ def test_loading_a_log_preloads_the_flown_pid(selection, monkeypatch):
     assert window.lbl_closed_loop_fit.text().endswith("%")
 
 
+def test_validation_range_loads_its_own_data_reference_and_gains(selection):
+    select_preset(selection, "Rollrate")
+    selection.validation_range = (103.0, 109.0)
+
+    selection.loadSelection()
+
+    validation = selection.validation
+    assert validation.t[0] == pytest.approx(103.0, abs=0.1)
+    assert validation.t[-1] == pytest.approx(109.0, abs=0.1)
+    assert selection.t[0] == pytest.approx(76.5, abs=0.1)
+    assert len(validation.u) == len(validation.y) == len(validation.t)
+    assert len(validation.r) == len(validation.t)
+    assert validation.flown_gains == pytest.approx(
+        idealGains(X500_ROLL_GAINS), rel=1e-5
+    )
+
+
+def test_no_validation_range_loads_no_validation_data(selection):
+    select_preset(selection, "Rollrate")
+    selection.loadSelection()
+
+    assert selection.validation is None
+
+
+def test_model_is_judged_on_the_validation_data(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    estimation_fit = window.lbl_fit.text()
+    estimation_replay = window.lbl_closed_loop_fit.text()
+
+    selection.validation_range = (103.0, 109.0)
+    window = load_log(selection, monkeypatch)
+
+    validation = window.validation
+    assert window.dt == pytest.approx(np.mean(np.diff(validation.t)))
+    assert window.lbl_fit.text() != estimation_fit
+    assert window.lbl_closed_loop_fit.text() != estimation_replay
+    assert window.output_curve.yData == pytest.approx(validation.y)
+    assert len(window.model_curve.xData) == len(validation.t)
+    assert window.io_plot.titleLabel.text.startswith("Validation data")
+
+
+def test_parameter_search_ranks_on_the_validation_data(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    selection.validation_range = (103.0, 109.0)
+    window = load_log(selection, monkeypatch)
+
+    settings = search_settings(window, monkeypatch)
+
+    u_v, y_v = settings["validation"]
+    assert u_v == pytest.approx(window.validation.u)
+    assert y_v == pytest.approx(window.validation.y)
+
+
+def test_validation_criterion_is_the_prediction_error_on_the_validation_data():
+    _, _, delay, u, y = integrator_with_disturbance()
+    u_v, y_v = integrator_with_disturbance(seed=1)[3:]
+    order = (1, 0, delay)
+    sys_id = autotune.SystemIdentification(*order, DT)
+    sys_id.f_hp, sys_id.f_lp = 0.0, 1000.0
+    sys_id.fit(u, y, method="RLS")
+
+    criterion = autotune.search_criterion(
+        u, y, DT, *order, 0.0, 1000.0, horizon=20, validation=(u_v, y_v)
+    )
+
+    assert criterion == pytest.approx(
+        autotune.compute_prediction_mse(
+            sys_id.getNum(), sys_id.getDen(), delay, u_v, y_v, 20
+        )
+    )
+
+
 def test_preset_without_gains_loads_the_minimum_gains_in_its_form(
     selection, monkeypatch
 ):
@@ -381,10 +454,10 @@ def test_prediction_horizon_updates_the_fit_without_a_new_identification(
     assert window.model_curve.getData()[1] == pytest.approx(model_curve)
 
 
-def integrator_with_disturbance():
+def integrator_with_disturbance(seed=0):
     """Rate of an integrating plant y(k) = y(k-1) + 0.05 u(k-3), under
     proportional control and an unmeasured slow disturbance torque."""
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(seed)
     n = 1250
     reference = np.sign(np.sin(2 * np.pi * np.arange(n) * DT))
     disturbance = np.cumsum(rng.standard_normal(n)) * 0.003
