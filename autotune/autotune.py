@@ -38,6 +38,7 @@ Description:
 
 import html
 import sys
+from dataclasses import dataclass, replace
 
 import control as ctrl
 import plot_style as ps
@@ -132,6 +133,11 @@ def compute_predicted_squared_error(num, den, delay, u, y, horizon, remove_offse
     return np.mean((y - prediction) ** 2) + np.var(y) * n_parameters / len(y)
 
 
+def compute_prediction_mse(num, den, delay, u, y, horizon, remove_offset=True):
+    y, prediction = predictedOutput(num, den, delay, u, y, horizon, remove_offset)
+    return np.mean((y - prediction) ** 2)
+
+
 def predictionHorizonSamples(horizon_s, dt):
     return max(1, int(round(horizon_s / dt)))
 
@@ -148,18 +154,30 @@ def search_criterion(
     method="RLS",
     remove_offset=True,
     horizon=1,
+    validation=None,
 ):
-    """PSE of the model identified with these orders, inf if it fails."""
+    """PSE of the model identified with these orders, inf if it fails.
+
+    With validation data (u, y), the mean squared prediction error on it
+    instead: a parameter that only fits the noise of the estimation data does
+    not predict other data, so it needs no penalty (cross-validation).
+    """
     try:
         sys_id = SystemIdentification(n_poles, n_zeros, delay, dt)
         sys_id.f_hp = f_hp
         sys_id.f_lp = f_lp
         sys_id.remove_offset = remove_offset
         sys_id.fit(u, y, method=method)
-        pse = compute_predicted_squared_error(
-            sys_id.getNum(), sys_id.getDen(), delay, u, y, horizon, remove_offset
-        )
-        return pse if np.isfinite(pse) else np.inf
+        num, den = sys_id.getNum(), sys_id.getDen()
+        if validation is None:
+            criterion = compute_predicted_squared_error(
+                num, den, delay, u, y, horizon, remove_offset
+            )
+        else:
+            criterion = compute_prediction_mse(
+                num, den, delay, *validation, horizon, remove_offset
+            )
+        return criterion if np.isfinite(criterion) else np.inf
     except Exception:
         return np.inf
 
@@ -212,6 +230,38 @@ def compute_closed_loop_fit(num, den, dt, delays, gains, t, r, y, **pid_options)
     return computeNRMSE(detrend(y), detrend(y_replay))
 
 
+@dataclass
+class LoggedData:
+    """Data of a log range. u is the input scaled to the trim airspeed;
+    reference and flown_gains are None when the preset does not give them."""
+
+    t: np.ndarray
+    u: np.ndarray
+    y: np.ndarray
+    reference: np.ndarray | None = None
+    flown_gains: dict | None = None
+    input: np.ndarray | None = None
+    true_airspeed: np.ndarray = ()
+
+    def resampled(self, dt):
+        t_new = np.arange(0, self.t[-1] + dt, dt)
+
+        def resample(values):
+            if values is None or len(values) == 0:
+                return values
+            return resample_interp(self.t, values, t_new)
+
+        return replace(
+            self,
+            t=t_new,
+            u=resample(self.u),
+            y=resample(self.y),
+            reference=resample(self.reference),
+            input=resample(self.input),
+            true_airspeed=resample(self.true_airspeed),
+        )
+
+
 def showFit(label, fit):
     label.setText(f"{fit:.1f}%")
     if fit >= 80:
@@ -226,9 +276,21 @@ class ParamSearchWorker(QThread):
     finished = pyqtSignal(dict, float)
     progress = pyqtSignal(int, int)
 
-    def __init__(self, u, y, dt, f_hp, f_lp, method, remove_offset=True, horizon=1):
+    def __init__(
+        self,
+        u,
+        y,
+        dt,
+        f_hp,
+        f_lp,
+        method,
+        remove_offset=True,
+        horizon=1,
+        validation=None,
+    ):
         super().__init__()
         self._cancel = False
+        self.validation = validation
         self.u = u
         self.y = y
         self.dt = dt
@@ -267,6 +329,7 @@ class ParamSearchWorker(QThread):
                 self.method,
                 self.remove_offset,
                 self.horizon,
+                self.validation,
             )
             if pse < best_pse:
                 best_pse = pse
@@ -388,9 +451,13 @@ class Window(QDialog):
         self.gain_form = "ideal"
         # Gain of one unit of the PX4 parameters, the units the PID tab shows
         self.gain_scale = 1.0
+        self.t = []
         self.u = []
         self.y = []
         self.reference = None
+        # Separate LoggedData the model is judged on, None to judge it on the
+        # estimation data
+        self.validation = None
         self.flown_gains = None
         self.flown_gain_form = None
         self.flown_options = {}
@@ -798,7 +865,7 @@ class Window(QDialog):
             1,
             "<b>Are the residuals white?</b><br>"
             "The residual e is the one-step prediction error of the model on "
-            "the data it was fitted to (offset removed, HP/LP filtered).<br>"
+            "the validation data (offset removed, HP/LP filtered).<br>"
             "<b>Inside the dashed 99% bounds:</b> the model leaves nothing "
             "predictable, as least squares assumes.<br>"
             "<b>Outside:</b> noise the model does not explain, which biases the "
@@ -861,7 +928,8 @@ class Window(QDialog):
         ]
 
     def plotResiduals(self):
-        if len(self.u) == 0:
+        data = self.validationData()
+        if len(data.u) == 0:
             return
         sys_id = SystemIdentification(dt=self.dt)
         sys_id.f_hp = self.f_hp_spinbox.value()
@@ -871,7 +939,7 @@ class Window(QDialog):
             self.num,
             self.den,
             self.sys_id_delays,
-            *sys_id.preprocess(self.u, self.y),
+            *sys_id.preprocess(data.u, data.y),
             kResidualLags,
         )
         lags = np.arange(-kResidualLags, kResidualLags + 1)
@@ -1024,7 +1092,7 @@ class Window(QDialog):
             self.lbl_fit,
             "Output predicted one horizon ahead by the model, from the logged "
             "input and the logged output up to then, compared with the logged "
-            "output (100% is a perfect match).<br><br>"
+            "output (100% is a perfect match), on the validation data.<br><br>"
             "The model curve is the simulation from the logged input alone: it "
             "can drift away from the output while the prediction fit is good.",
         )
@@ -1035,7 +1103,7 @@ class Window(QDialog):
             self.lbl_closed_loop_fit,
             "Logged reference replayed through the model and the controller "
             "gains flown in the log, compared with the logged output (100% is a "
-            "perfect match).<br><br>"
+            "perfect match), on the validation data.<br><br>"
             "Needs a preset with a <i>reference</i> and <i>gains</i> whose "
             "parameters are in the log, otherwise shows —.",
         )
@@ -1169,6 +1237,9 @@ class Window(QDialog):
             self._param_search_worker._cancel = True
             return
         self.btn_find_params.setText("Cancel (0%)")
+        validation = None
+        if self.validation is not None:
+            validation = (self.validation.u.copy(), self.validation.y.copy())
         self._param_search_worker = ParamSearchWorker(
             self.u.copy(),
             self.y.copy(),
@@ -1178,6 +1249,7 @@ class Window(QDialog):
             self.id_method_combo.currentText(),
             remove_offset=self.remove_offset_box.isChecked(),
             horizon=self.predictionHorizon(),
+            validation=validation,
         )
         self._param_search_worker.progress.connect(self.onParamSearchProgress)
         self._param_search_worker.finished.connect(self.onParamSearchFinished)
@@ -1541,24 +1613,33 @@ class Window(QDialog):
     def predictionHorizon(self):
         return predictionHorizonSamples(self.horizon_spinbox.value(), self.dt)
 
+    def validationData(self):
+        if self.validation is not None:
+            return self.validation
+        return LoggedData(self.t, self.u, self.y, self.reference, self.flown_gains)
+
     def flownController(self):
-        if self.reference is None or self.flown_gains is None:
+        """Gains, reference and PID options flown over the validation data,
+        None when the preset does not give them."""
+        data = self.validationData()
+        if data.reference is None or data.flown_gains is None:
             return None
         return {
-            "gains": self.flown_gains,
-            "reference": self.reference,
+            "gains": data.flown_gains,
+            "reference": data.reference,
             "pid_options": self.flown_options,
         }
 
     def replayInputData(self):
         if not self.is_system_identified:
             return
+        data = self.validationData()
         d = self.sys_id_delays
-        u_detrended = detrend(self.u)
+        u_detrended = detrend(data.u)
         u_delayed = np.concatenate(
             ([0 for k in range(d)], u_detrended[0 : (len(u_detrended) - d)])
         )
-        self.t_est, self.y_est = ctrl.forced_response(self.Gz, T=self.t, U=u_delayed)
+        self.t_est, self.y_est = ctrl.forced_response(self.Gz, T=data.t, U=u_delayed)
         if len(self.t_est) > len(self.y_est):
             self.t_est = self.t_est[0 : len(self.y_est - 1)]
 
@@ -1571,12 +1652,13 @@ class Window(QDialog):
     def updatePredictionFit(self):
         if not self.is_system_identified:
             return
+        data = self.validationData()
         fit = compute_prediction_fit(
             self.num,
             self.den,
             self.sys_id_delays,
-            self.u,
-            self.y,
+            data.u,
+            data.y,
             self.predictionHorizon(),
             self.remove_offset_box.isChecked(),
         )
@@ -1584,6 +1666,7 @@ class Window(QDialog):
 
     def updateClosedLoopFit(self):
         flown_controller = self.flownController()
+        data = self.validationData()
         if flown_controller is None:
             self.lbl_closed_loop_fit.setText("—")
             self.lbl_closed_loop_fit.setStyleSheet("")
@@ -1594,9 +1677,9 @@ class Window(QDialog):
             self.dt,
             self.sys_id_delays,
             flown_controller["gains"],
-            self.t,
+            data.t,
             flown_controller["reference"],
-            self.y,
+            data.y,
             **flown_controller["pid_options"],
         )
         if fit is None:
@@ -1806,10 +1889,11 @@ class Window(QDialog):
         for key in ("measured", "measured_poor"):
             self.bode_mag_curves[key].setData([], [])
             self.bode_phase_curves[key].setData([], [])
-        if len(self.u) < kMinCoherenceSamples:
+        data = self.validationData()
+        if len(data.u) < kMinCoherenceSamples:
             return
         f, measured, gamma2 = measured_frequency_response(
-            self.u, self.y, self.dt, self.reference
+            data.u, data.y, self.dt, data.reference
         )
         # Put the measured phase on the branch of the model's to compare them
         model_phase = np.interp(f, w / (2 * np.pi), plant_phase)
@@ -2058,26 +2142,35 @@ class Window(QDialog):
 
         return margin_texts
 
+    def scaledInput(self, input, true_airspeed):
+        if len(true_airspeed) != len(input):
+            return input
+        scale_type = self.input_scale_choices[self.input_scale_combo.currentIndex()]
+        if scale_type == "True airspeed":
+            return input * np.array(true_airspeed) / self.trim_airspeed
+        if scale_type == "True airspeed^2":
+            return input * (np.array(true_airspeed) / self.trim_airspeed) ** 2
+        return input
+
     def plotInputOutput(self, redraw=False):
-        if len(self.true_airspeed) == len(self.input):
-            scale = 1
+        has_airspeed = len(self.true_airspeed) == len(self.input)
+        if has_airspeed:
+            self.u = self.scaledInput(self.input, self.true_airspeed)
+            if self.validation is not None:
+                self.validation.u = self.scaledInput(
+                    self.validation.input, self.validation.true_airspeed
+                )
+        self.input_scale_combo.setEnabled(has_airspeed)
+        self.line_edit_trim.setEnabled(has_airspeed)
 
-            scale_type = self.input_scale_choices[self.input_scale_combo.currentIndex()]
-            if scale_type == "True airspeed":
-                scale = np.array(self.true_airspeed) / self.trim_airspeed
-
-            elif scale_type == "True airspeed^2":
-                scale = (np.array(self.true_airspeed) / self.trim_airspeed) ** 2
-
-            self.u = self.input * scale
-            self.input_scale_combo.setEnabled(True)
-            self.line_edit_trim.setEnabled(True)
-        else:
-            self.input_scale_combo.setEnabled(False)
-            self.line_edit_trim.setEnabled(False)
-
-        self.input_curve.setData(self.t, self.u)
-        self.output_curve.setData(self.t, self.y)
+        # The model curve is the simulation on the validation data
+        data = self.validationData()
+        ps.stylePlot(
+            self.io_plot,
+            title="Logged data" if self.validation is None else "Validation data",
+        )
+        self.input_curve.setData(data.t, data.u)
+        self.output_curve.setData(data.t, data.y)
         if self.is_system_identified:
             try:
                 offset = float(self.line_edit_offset.text())
@@ -2100,6 +2193,17 @@ class Window(QDialog):
             self.true_airspeed = select.v
             self.reference = select.r
             self.flown_gains = select.flown_gains
+            self.validation = None
+            if select.validation is not None:
+                self.validation = LoggedData(
+                    t=select.validation.t - select.validation.t[0],
+                    u=select.validation.u,
+                    y=select.validation.y,
+                    reference=select.validation.r,
+                    flown_gains=select.validation.flown_gains,
+                    input=select.validation.u,
+                    true_airspeed=select.validation.v,
+                )
             self.flown_gain_form = select.flown_gain_form
             self.setGainScale(select.flown_gain_scale or 1.0)
             self.flown_options = select.flown_options or {}
@@ -2146,6 +2250,8 @@ class Window(QDialog):
             self.true_airspeed = resample_interp(self.t, self.true_airspeed, t_new)
 
         self.t = t_new
+        if self.validation is not None:
+            self.validation = self.validation.resampled(dt)
 
 
 class DoubleSlider(QSlider):
