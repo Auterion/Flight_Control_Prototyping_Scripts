@@ -130,6 +130,12 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
 
 #### Tuning Gains
 
+The PID tab starts from the gains flown in the log, when the preset gives them. Once you
+tune them, selecting other data asks whether to replace your tuning with the gains flown in
+that log (when it gives them), otherwise your gains are kept to try them on it. The reload
+button at the top left of the PID tab restores the flown gains and PID options: it is enabled
+while they differ from yours.
+
 1. Set all gains to zero
 2. Increase the P-gain until the step response shows oscillations. Then reduce the P-gain by approximately 50%:
 

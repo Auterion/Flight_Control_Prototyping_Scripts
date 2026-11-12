@@ -81,6 +81,7 @@ from PyQt5.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
     QWidgetAction,
@@ -460,6 +461,10 @@ kSessionLoadNotes = (
 )
 
 
+def gainLabel(gain):
+    return gain if gain == "FF" else f"K{gain.lower()}"
+
+
 def isNumber(value):
     try:
         float(value)
@@ -491,6 +496,9 @@ class Window(QDialog):
         self.damping_index = 0.0
         self.detune_coeff = 0.5
         self.gains = {"P": 0.01, "I": 0.0, "D": 0.0, "FF": 0.0}  # ideal form
+        # Gains the tool set itself, from the log or by default: equal to
+        # self.gains until the user tunes them
+        self.untuned_gains = dict(self.gains)
         self.gain_form = "ideal"
         # Gain of one unit of the PX4 parameters, the units the PID tab shows
         self.gain_scale = 1.0
@@ -1358,6 +1366,8 @@ class Window(QDialog):
         self.negate_control_box = QCheckBox("Negate control output", self)
         self.negate_control_box.setChecked(False)
         self.negate_control_box.stateChanged.connect(self.updateClosedLoop)
+        for box in (self.pid_no_zero_box, self.negate_control_box):
+            box.toggled.connect(lambda: self.updateReloadButton())
         layout_options.addWidget(self.negate_control_box)
 
         self.lbl_gain_scale = QLabel()
@@ -1368,14 +1378,25 @@ class Window(QDialog):
         layout_options.addWidget(self.lbl_gain_scale)
         layout_pid.addLayout(layout_options, 0, 1)
 
+        self.btn_reload_gains = QToolButton()
+        self.btn_reload_gains.setIcon(
+            self.style().standardIcon(QStyle.SP_BrowserReload)
+        )
+        self.btn_reload_gains.setToolTip(
+            "Reload the gains and PID options flown in the log. Needs a preset "
+            "with <i>gains</i> whose parameters are in the log."
+        )
+        self.btn_reload_gains.setEnabled(False)
+        self.btn_reload_gains.clicked.connect(self.reloadFlownController)
+        layout_pid.addWidget(self.btn_reload_gains, 0, 0)
+
         self.gain_form_radio = {}
         for column, (form, label) in enumerate(kGainFormLabels.items(), start=2):
             self.gain_form_radio[form] = QRadioButton(label)
             layout_pid.addWidget(self.gain_form_radio[form], 0, column)
 
         for row, gain in enumerate(self.gains.keys(), start=1):
-            label = gain if gain == "FF" else f"K{gain.lower()}"
-            layout_pid.addWidget(QLabel(label), row, 0)
+            layout_pid.addWidget(QLabel(gainLabel(gain)), row, 0)
 
             self.gain_slider[gain] = DoubleSlider(Qt.Horizontal)
             self.gain_slider[gain].valueChanged.connect(make_slider_callback(gain))
@@ -1539,9 +1560,10 @@ class Window(QDialog):
             slider.setMaximum(maximum)
         self.updateKIDSliders()
 
-    def gainsInForm(self, form):
-        """Gains of form in parameter units, as shown and edited."""
-        gains = scaledGains(self.gains, self.gain_scale)
+    def gainsInForm(self, form, gains=None):
+        """Gains of form in parameter units, as shown and edited, the current
+        ones by default."""
+        gains = scaledGains(self.gains if gains is None else gains, self.gain_scale)
         return gains if form == "ideal" else parallelGains(gains)
 
     def setGainScale(self, scale):
@@ -1584,6 +1606,19 @@ class Window(QDialog):
             for gain, edit in edits.items():
                 if edit is not skip:
                     edit.setText(kGainFormat[form].format(gains[gain]))
+        self.updateReloadButton()
+
+    def updateReloadButton(self):
+        """Enabled while the gains or PID options differ from the flown ones."""
+        options_changed = bool(self.flown_options) and (
+            self.pid_no_zero_box.isChecked() != self.flown_options["p_on_feedback"]
+            or self.negate_control_box.isChecked()
+            != self.flown_options["negate_output"]
+        )
+        self.btn_reload_gains.setEnabled(
+            self.flown_gains is not None
+            and (self.gains != self.flown_gains or options_changed)
+        )
 
     def createGmvcLayout(self):
         layout_gmvc = QFormLayout()
@@ -2269,8 +2304,12 @@ class Window(QDialog):
             self.runIdentification()
             self.computeController()
 
-    def applyDataSelection(self, select):
-        """Load the data selected in a DataSelectionWindow, not identified yet."""
+    def applyDataSelection(self, select, offer_flown_gains=True):
+        """Load the data selected in a DataSelectionWindow, not identified yet.
+
+        Gains tuned on the previous data are kept, unless offer_flown_gains
+        and the user prefers the gains flown in these data.
+        """
         self.reset()
         self.file_name = select.file_name
         self.data_selection = select.currentSelection()
@@ -2295,7 +2334,15 @@ class Window(QDialog):
         self.flown_gain_form = select.flown_gain_form
         self.setGainScale(select.flown_gain_scale or 1.0)
         self.flown_options = select.flown_options or {}
-        self.loadFlownController()
+        if self.gains == self.untuned_gains or (
+            offer_flown_gains
+            and self.flown_gains is not None
+            and self.confirmFlownGains()
+        ):
+            self.loadFlownController()
+        if self.flown_gain_form is not None:
+            self.gain_form_radio[self.flown_gain_form].setChecked(True)
+        self.updateReloadButton()
         trim_airspeed = select.getTrimAirspeed()
 
         if trim_airspeed is not None:
@@ -2305,6 +2352,8 @@ class Window(QDialog):
         self.btn_find_params.setEnabled(True)
 
     def loadFlownController(self):
+        """Gains and PID options flown in the log, the minimum gains when the
+        preset does not give them."""
         if "p_on_feedback" in self.flown_options:
             self.pid_no_zero_box.setChecked(self.flown_options["p_on_feedback"])
             self.negate_control_box.setChecked(self.flown_options["negate_output"])
@@ -2312,9 +2361,29 @@ class Window(QDialog):
             self.gains = dict(self.flown_gains)
         else:
             self.gains = scaledGains(kMinimumGains, 1.0 / self.gain_scale)
+        self.untuned_gains = dict(self.gains)
         self.updateKIDSliders()
-        if self.flown_gain_form is not None:
-            self.gain_form_radio[self.flown_gain_form].setChecked(True)
+
+    def confirmFlownGains(self):
+        form = self.flown_gain_form or "parallel"
+        flown_gains = ", ".join(
+            f"{gainLabel(gain)} {value:.4g}"
+            for gain, value in self.gainsInForm(form, self.flown_gains).items()
+        )
+        answer = QMessageBox.question(
+            self,
+            "Select data",
+            "Replace the current tuning with the gains flown in this log?\n\n"
+            f"Flown gains ({form}): {flown_gains}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return answer == QMessageBox.Yes
+
+    def reloadFlownController(self):
+        with signalsBlocked(self.pid_no_zero_box, self.negate_control_box):
+            self.loadFlownController()
+        self.updateClosedLoop()
 
     def refreshInputOutputData(self):
         self.reset()
@@ -2423,7 +2492,11 @@ class Window(QDialog):
         }
         self.cancelParameterSearch()
 
-        if "data" in states and not self.applyDataState(states["data"]):
+        # A loaded tuning replaces the flown gains anyway
+        offer_flown_gains = "tuning" not in states
+        if "data" in states and not self.applyDataState(
+            states["data"], offer_flown_gains
+        ):
             del states["data"]
         if "preprocessing" in states:
             self.applyPreprocessingState(states["preprocessing"])
@@ -2462,13 +2535,13 @@ class Window(QDialog):
         del self._param_search_worker
         self.btn_find_params.setText("Find parameters")
 
-    def applyDataState(self, state):
+    def applyDataState(self, state, offer_flown_gains):
         """Returns False when the selection could not be loaded."""
         select = DataSelectionWindow(state["log"], state)
         select.loadSelection()
         if select.result() != QDialog.Accepted:
             return False
-        self.applyDataSelection(select)
+        self.applyDataSelection(select, offer_flown_gains)
         return True
 
     def applyPreprocessingState(self, state):

@@ -405,3 +405,19 @@ def test_all_box_follows_the_groups(qapp):
     assert dialog.all_box.checkState() == Qt.Checked
     dialog.group_boxes["model"].setChecked(False)
     assert dialog.all_box.checkState() == Qt.Unchecked
+
+
+def test_loading_data_with_a_tuning_does_not_ask_for_the_flown_gains(
+    selection, monkeypatch, tmp_path
+):
+    window = load_log(selection, monkeypatch)
+    window.gains = dict(GAINS)
+    loaded = load_log(selection, monkeypatch)
+    loaded.gains = {"P": 0.5, "I": 1.0, "D": 0.01, "FF": 0.2}
+    monkeypatch.setattr(
+        autotune.QMessageBox, "question", lambda *args: pytest.fail("asked")
+    )
+
+    save_and_load(window, str(tmp_path / "s.yaml"), ["data", "tuning"], into=loaded)
+
+    assert loaded.gains == GAINS
