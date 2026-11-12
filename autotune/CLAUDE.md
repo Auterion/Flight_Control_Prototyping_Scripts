@@ -49,7 +49,8 @@ checks the gain-form conversion, the loading of the flown controller from a pres
 fit (not spoiled by the drift of an integrator) and the predicted squared error the
 parameter search ranks by (penalizing the parameters that do not improve the prediction);
 `test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection and
-its parameter units (preset gain scale), and the GMVC feedforward cancelling P on the error;
+its parameter units (preset gain scale), the GMVC feedforward cancelling P on the error,
+and that Enter in a field does not press the "Open log" button;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, range
 selection, plant model against its measured frequency response, residual correlations). `conftest.py` closes the windows a test leaves open: an open window

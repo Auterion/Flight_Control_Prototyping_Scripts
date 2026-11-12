@@ -476,6 +476,11 @@ class Window(QDialog):
         layout_v.addLayout(bottom_row)
         self.setLayout(layout_v)
 
+        # A QDialog clicks its first auto-default button on Enter, which a spin
+        # box passes on after taking its value: "Open log" on every Enter
+        for button in self.findChildren(QPushButton):
+            button.setAutoDefault(False)
+
     def reset(self):
         self.measured_step_info = None
         for curve in self.generalCurves():
