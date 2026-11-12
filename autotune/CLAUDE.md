@@ -45,7 +45,8 @@ closed-loop model (loop gain, closed-loop poles, sensitivities);
 `test_pid_design.py` checks the GMVC design (the closed form for one delay, any delay,
 any number of poles and zeros) and the feedforward putting P on the measurement; `test_fit_metrics.py`
 checks the gain-form conversion, the loading of the flown controller from a preset
-(and its pre-loading in the main window), the closed-loop replay fit, the prediction
+(its pre-loading in the main window, a tuning kept when
+loading other data unless the flown gains are confirmed, the reload button and its state), the closed-loop replay fit, the prediction
 fit (not spoiled by the drift of an integrator) and the predicted squared error the
 parameter search ranks by (penalizing the parameters that do not improve the prediction),
 and the validation range (its own reference and gains, the model judged and the parameter

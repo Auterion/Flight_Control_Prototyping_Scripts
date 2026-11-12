@@ -218,7 +218,6 @@ def load_log(selection, monkeypatch):
     selection.exec_ = lambda: selection.loadSelection() or True
     monkeypatch.setattr(autotune, "DataSelectionWindow", lambda *args: selection)
     window = autotune.Window()
-    window.gains = {"P": 0.5, "I": 1.0, "D": 0.01, "FF": 0.2}
     window.loadLog()
     return window
 
@@ -513,3 +512,133 @@ def test_predicted_squared_error_penalizes_a_useless_parameter():
     assert padded_pse - autotune.compute_predicted_squared_error(
         num, den, delay, u, y, 20
     ) == pytest.approx(np.var(y_valid) / len(y_valid))
+
+
+def answer_flown_gains_question(monkeypatch, answer):
+    """Questions asked, answered with answer."""
+    asked = []
+    monkeypatch.setattr(
+        autotune.QMessageBox, "question", lambda *args: asked.append(args) or answer
+    )
+    return asked
+
+
+TUNED_GAINS = {"P": 0.5, "I": 1.0, "D": 0.01, "FF": 0.2}
+
+
+def tune(window):
+    window.gains = dict(TUNED_GAINS)
+    window.pid_no_zero_box.setChecked(True)
+    window.showGains()
+
+
+def test_loading_data_asks_before_replacing_a_tuning(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    tune(window)
+    asked = answer_flown_gains_question(monkeypatch, autotune.QMessageBox.No)
+
+    window.loadLog()
+
+    assert len(asked) == 1
+    assert "Ki 0.338" in asked[0][2]
+    assert window.gains == TUNED_GAINS
+    assert window.pid_no_zero_box.isChecked()
+    assert float(window.gain_edit["ideal"]["P"].text()) == pytest.approx(0.5)
+
+
+def test_tuning_is_replaced_by_the_flown_gains_when_confirmed(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    tune(window)
+    answer_flown_gains_question(monkeypatch, autotune.QMessageBox.Yes)
+
+    window.loadLog()
+
+    assert window.gains == pytest.approx(idealGains(X500_ROLL_GAINS), rel=1e-5)
+    assert not window.pid_no_zero_box.isChecked()
+
+
+def test_tuning_is_kept_without_asking_when_the_log_has_no_gains(
+    selection, monkeypatch
+):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    tune(window)
+    del selection.preset_candidates["Rollrate"]["gains"]
+    asked = answer_flown_gains_question(monkeypatch, autotune.QMessageBox.Yes)
+
+    window.loadLog()
+
+    assert asked == []
+    assert window.gains == TUNED_GAINS
+
+
+def test_loading_data_replaces_untuned_gains(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    gains = selection.preset_candidates["Rollrate"].pop("gains")
+    window = load_log(selection, monkeypatch)
+    assert window.gains == autotune.kMinimumGains
+
+    selection.preset_candidates["Rollrate"]["gains"] = gains
+    window.loadLog()
+
+    assert window.gains == pytest.approx(idealGains(X500_ROLL_GAINS), rel=1e-5)
+
+
+def test_reload_button_restores_the_flown_controller(selection, monkeypatch):
+    select_preset(selection, "Rollrate", pi_no_zero=True)
+    window = load_log(selection, monkeypatch)
+    window.gains = {"P": 0.5, "I": 1.0, "D": 0.01, "FF": 0.2}
+    window.pid_no_zero_box.setChecked(False)
+    window.updateClosedLoop()
+    tuned_response = window.step_response_curve.yData.copy()
+
+    assert window.btn_reload_gains.isEnabled()
+
+    window.btn_reload_gains.click()
+
+    assert not window.btn_reload_gains.isEnabled()
+    assert window.gains == pytest.approx(idealGains(X500_ROLL_GAINS), rel=1e-5)
+    assert window.pid_no_zero_box.isChecked()
+    assert float(window.gain_edit["parallel"]["I"].text()) == pytest.approx(
+        X500_ROLL_GAINS["I"], abs=1e-4
+    )
+    assert not np.array_equal(window.step_response_curve.yData, tuned_response)
+
+
+def test_reload_button_keeps_the_gains_with_the_gmvc_tab(selection, monkeypatch):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    window.tuning_tabs.setCurrentWidget(window.tab_gmvc)
+    window.computeController()
+
+    window.btn_reload_gains.click()
+
+    assert window.gains == pytest.approx(idealGains(X500_ROLL_GAINS), rel=1e-5)
+
+
+def test_reload_button_needs_flown_gains(selection, monkeypatch):
+    assert not autotune.Window().btn_reload_gains.isEnabled()
+    select_preset(selection, "Rollrate")
+    del selection.preset_candidates["Rollrate"]["gains"]
+
+    window = load_log(selection, monkeypatch)
+
+    assert not window.btn_reload_gains.isEnabled()
+
+
+def test_reload_button_is_enabled_by_a_change_of_the_flown_controller(
+    selection, monkeypatch
+):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    assert not window.btn_reload_gains.isEnabled()
+
+    window.setGainInActiveForm("P", 0.3)
+    window.showGains()
+    assert window.btn_reload_gains.isEnabled()
+
+    window.btn_reload_gains.click()
+    window.negate_control_box.setChecked(True)
+    assert window.btn_reload_gains.isEnabled()
