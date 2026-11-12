@@ -80,8 +80,8 @@ def test_selecting_parallel_makes_it_editable(window):
 )
 def test_enter_in_a_field_does_not_open_a_log(qapp, window, field):
     clicked = []
-    window.btn_open_log.clicked.disconnect()
-    window.btn_open_log.clicked.connect(lambda: clicked.append(True))
+    window.btn_select_data.clicked.disconnect()
+    window.btn_select_data.clicked.connect(lambda: clicked.append(True))
     field(window).setFocus()
     qapp.processEvents()
 

@@ -52,7 +52,7 @@ and the validation range (its own reference and gains, the model judged and the 
 search ranking on it);
 `test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection and
 its parameter units (preset gain scale), the GMVC feedforward cancelling P on the error,
-and that Enter in a field does not press the "Open log" button;
+and that Enter in a field does not press the "Select data" button;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, estimation
 and validation range selection and removal, coherence of both ranges, plant model against its measured frequency response, residual correlations). `conftest.py` closes the windows a test leaves open: an open window
