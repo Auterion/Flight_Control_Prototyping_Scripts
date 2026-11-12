@@ -160,6 +160,8 @@ while they differ from yours.
 *Save session…* writes the state of the tool to a YAML file, and *Load session…* restores
 it. Both let you choose the groups to save or load:
 
+![Session groups](docs/gui_session_dialog.png)
+
 | Group | Content |
 |-------|---------|
 | Data | Log (path relative to the session, absolute path and SHA-256), preset, input and output signals, estimation and validation ranges |
