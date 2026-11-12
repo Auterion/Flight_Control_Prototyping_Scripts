@@ -41,6 +41,23 @@ kMissingSamplesWarning = (
 kEstimation = "estimation"
 kValidation = "validation"
 kRangeColors = {kEstimation: ps.GREEN, kValidation: ps.VIOLET}
+kValidationRangeHint = (
+    "<b>Why a validation range?</b><br>"
+    "On the data it was fitted to, a model with more parameters always fits "
+    "better: it also fits the noise. On another maneuver, a model that fits "
+    "the noise predicts worse, which shows the model to keep. The fits, the "
+    "residuals and <i>Find parameters</i> then judge the model on the "
+    "validation range.<br><br>"
+    "<b>How to choose the ranges</b><br>"
+    "• <b>Estimation:</b> a long range of rich excitation, covering the "
+    "frequencies of the loop, e.g. a sweep or the PX4 autotune "
+    "excitation.<br>"
+    "• <b>Validation:</b> a shorter, separate range in the same flight "
+    "condition, not overlapping the estimation one, ideally with another "
+    "input, e.g. steps or pilot inputs.<br><br>"
+    "The validation range is optional: without it, the model is judged on "
+    "the estimation range. The ✕ in the corner of a range removes it."
+)
 
 
 def hasMissingSamples(*signals):
@@ -457,8 +474,9 @@ class DataSelectionWindow(QDialog):
                 f"<span style='color:{kRangeColors[kEstimation]}'>Left drag: "
                 "estimation range</span>, "
                 f"<span style='color:{kRangeColors[kValidation]}'>right drag: "
-                "validation range</span> (optional, else the estimation one)"
+                "validation range</span>"
             ),
+            info=kValidationRangeHint,
             ylabel="Input",
         )
         self.output_plot = ps.addPlot(
