@@ -496,14 +496,14 @@ class Window(QDialog):
         self.robustness_plots = self.createRobustnessPlots()
         self.residual_plots = self.createResidualPlots()
 
-        self.btn_open_log = QPushButton("Open log")
-        self.btn_open_log.clicked.connect(self.loadLog)
+        self.btn_select_data = QPushButton("Select data")
+        self.btn_select_data.clicked.connect(self.loadLog)
 
         # set the layout
         layout_v = QVBoxLayout()
         layout_h = QHBoxLayout()
         left_menu = QVBoxLayout()
-        left_menu.addWidget(self.btn_open_log)
+        left_menu.addWidget(self.btn_select_data)
 
         id_params_group = QFormLayout()
         self.createPreprocessingWidget(id_params_group)
@@ -555,7 +555,7 @@ class Window(QDialog):
         self.setLayout(layout_v)
 
         # A QDialog clicks its first auto-default button on Enter, which a spin
-        # box passes on after taking its value: "Open log" on every Enter
+        # box passes on after taking its value: "Select data" on every Enter
         for button in self.findChildren(QPushButton):
             button.setAutoDefault(False)
 
@@ -2227,7 +2227,7 @@ class Window(QDialog):
     def loadLog(self):
         select = DataSelectionWindow(self.file_name)
 
-        if select.exec_():
+        if select.file_name and select.exec_():
             self.reset()
             self.file_name = select.file_name
             self.t = select.t - select.t[0]

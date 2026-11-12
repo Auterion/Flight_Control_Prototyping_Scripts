@@ -19,7 +19,9 @@ from data_selection_window import (  # noqa: E402
     kValidation,
 )
 from PyQt5.QtCore import QPointF, Qt  # noqa: E402
-from PyQt5.QtWidgets import QApplication  # noqa: E402
+from PyQt5.QtWidgets import QApplication, QFileDialog  # noqa: E402
+
+import autotune  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -381,3 +383,32 @@ def test_right_drag_draws_the_validation_range(selection):
     assert selection.validation_range[1] == pytest.approx(109.0, abs=0.1)
     assert selection.t_start == pytest.approx(76.5, abs=0.1)
     assert selection.range_remove_buttons[kValidation][1].isVisible()
+
+
+def test_cancelled_browse_keeps_the_open_log(selection, monkeypatch):
+    file_name = selection.file_name
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args, **kw: ("", ""))
+
+    selection.browseFiles()
+
+    assert selection.file_name == file_name
+    assert len(selection.input_curve.xData) > 0
+
+
+def test_cancelled_browse_opens_no_data_selection(qapp, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        presets, "presets_file_path", lambda: str(tmp_path / "presets.yaml")
+    )
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args, **kw: ("", ""))
+    monkeypatch.setattr(
+        DataSelectionWindow, "exec_", lambda self: pytest.fail("window opened")
+    )
+    window = autotune.Window()
+
+    window.btn_select_data.click()
+
+    assert window.file_name is None
+
+
+def test_window_is_titled_after_its_button(selection):
+    assert selection.windowTitle() == "Select data"

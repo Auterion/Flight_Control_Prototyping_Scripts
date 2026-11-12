@@ -135,6 +135,7 @@ class DataSelectionWindow(QDialog):
         QDialog.__init__(self)
 
         self.preset_candidates = load_presets()
+        self.file_name = None
 
         self.presets = {}
         self.topic_names = []
@@ -159,7 +160,7 @@ class DataSelectionWindow(QDialog):
         layout_v = QVBoxLayout()
 
         top_group = QHBoxLayout()
-        btn_browse = QPushButton("Browse files")
+        btn_browse = QPushButton("Browse\nlogs")
         btn_browse.clicked.connect(self.browseFiles)
         top_group.addWidget(btn_browse)
 
@@ -203,6 +204,10 @@ class DataSelectionWindow(QDialog):
         layout_v.addWidget(pid_btn_ok)
 
         self.setLayout(layout_v)
+        self.setWindowTitle("Select data")
+        # Square, as high as the preset, input and output rows
+        side = in_out_group.sizeHint().height()
+        btn_browse.setFixedSize(side, side)
 
         if filename:
             self.file_name = filename
@@ -301,8 +306,9 @@ class DataSelectionWindow(QDialog):
         file_name, _ = QFileDialog.getOpenFileName(
             self, "Select ULog file", "", "ULog (*.ulg)", options=options
         )
-        self.file_name = file_name
-        self.openFile()
+        if file_name:
+            self.file_name = file_name
+            self.openFile()
 
     def openFile(self):
         if self.file_name:
