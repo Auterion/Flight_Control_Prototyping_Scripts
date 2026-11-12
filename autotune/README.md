@@ -78,7 +78,7 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
 
 1. Select the portion of the log where the maneuver occurred with a left drag: the estimation range, which the model is fitted to.
 2. Ensure the window starts from level flight and covers the full maneuver.
-3. (Optional) Select another maneuver with a right drag: the validation range. The model is then judged on data it was not fitted to (fits, residuals, measured plant and *Find parameters*): a model that fits the noise of the estimation range does not fit other data. Without a validation range, the model is judged on the estimation range.
+3. (Optional) Select another maneuver with a right drag: the validation range. The model is then judged on data it was not fitted to (fits, residuals and *Find parameters*): a model that fits the noise of the estimation range does not fit other data. Without a validation range, the model is judged on the estimation range.
 4. The ✕ in the corner of a range removes it.
 5. (Experimental) Use the coherence plot to check whether your input-output data have a strong enough linear relationship at the desired frequencies. It shows the coherence of each range in its color. For fixed-wings: \
    i. We are interested in frequencies between 0.5-10Hz. \
@@ -111,8 +111,10 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
    a longer horizon). A longer horizon turns the prediction into the drifting simulation.
    With a preset that has the flown gains, the closed-loop fit replays the logged reference
    through the model and these gains.
-   With a validation range, the fits, the model curve, the residuals and the measured plant
-   on the Bode are those of the validation range.
+   With a validation range, the fits, the model curve and the residuals are those of the
+   validation range. The Bode shows the plant measured on both ranges: a model can only fit
+   both if they agree, otherwise the plant differs between the maneuvers or one of them is
+   poorly excited.
    *Find parameters* picks the orders of least predicted squared error: the mean squared
    error of the prediction plus, for each parameter of the model, the output variance divided
    by the number of samples (Morelli's criterion). A higher order must improve the prediction

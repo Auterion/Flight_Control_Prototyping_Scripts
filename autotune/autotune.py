@@ -413,10 +413,21 @@ def showMarginPoint(marker, x, y, color):
     )
 
 
-def measuredSymbol(is_good):
+def measuredSymbol(is_good, color_=ps.INK, poor_color=ps.MUTED):
     if is_good:
-        return dict(symbol="o", symbolSize=5, symbolPen=None, symbolBrush=ps.INK)
-    return dict(symbol="o", symbolSize=5, symbolPen=ps.pen(ps.MUTED), symbolBrush=None)
+        return dict(symbol="o", symbolSize=5, symbolPen=None, symbolBrush=color_)
+    return dict(
+        symbol="o", symbolSize=5, symbolPen=ps.pen(poor_color), symbolBrush=None
+    )
+
+
+# Colors of the validation range in the data selection
+kValidationMeasuredSymbols = {
+    "measured_validation": measuredSymbol(True, ps.VIOLET),
+    "measured_validation_poor": measuredSymbol(
+        False, poor_color=ps.color(ps.VIOLET, 0.5)
+    ),
+}
 
 
 def isNumber(value):
@@ -615,7 +626,7 @@ class Window(QDialog):
 
         bode_mag_plot = ps.addPlot(layout, 1, 1, title="Bode", ylabel="Magnitude (dB)")
         bode_mag_plot.setLogMode(x=True)
-        ps.addLegend(bode_mag_plot)
+        self.bode_legend = ps.addLegend(bode_mag_plot)
         ps.addReferenceLine(bode_mag_plot, 0, angle=0)
         ps.addReferenceLine(bode_mag_plot, -3, angle=0, color_=ps.MUTED, style="--")
         self.bode_mag_curves = {
@@ -630,6 +641,10 @@ class Window(QDialog):
                 name=html.escape(f"γ² < {kMinGoodCoherence}"),
                 **measuredSymbol(is_good=False),
             ),
+            **{
+                key: bode_mag_plot.plot(pen=None, **symbol)
+                for key, symbol in kValidationMeasuredSymbols.items()
+            },
         }
         self.hover_readouts.append(
             ps.HoverReadout(bode_mag_plot, "f = {:.3g} Hz", "{:.1f} dB")
@@ -668,6 +683,10 @@ class Window(QDialog):
             "measured_poor": bode_phase_plot.plot(
                 pen=None, **measuredSymbol(is_good=False)
             ),
+            **{
+                key: bode_phase_plot.plot(pen=None, **symbol)
+                for key, symbol in kValidationMeasuredSymbols.items()
+            },
         }
         self.bode_margin_text = ps.CornerText(bode_phase_plot, "top-left")
         self.hover_readouts.append(
@@ -1886,24 +1905,49 @@ class Window(QDialog):
             w / (2 * np.pi), np.rad2deg(plant_phase)
         )
 
-        for key in ("measured", "measured_poor"):
-            self.bode_mag_curves[key].setData([], [])
-            self.bode_phase_curves[key].setData([], [])
-        data = self.validationData()
-        if len(data.u) < kMinCoherenceSamples:
+        # Measured from the estimation range too: the response does not depend
+        # on the model, so it shows what the model could not fit, and that
+        # range is usually the best excited one. A validation range whose
+        # response differs is a different plant, or poorly excited
+        has_validation = self.validation is not None
+        ps.setLegendEntry(
+            self.bode_legend,
+            self.bode_mag_curves["measured"],
+            "Plant measured, estimation" if has_validation else "Plant measured",
+        )
+        ps.setLegendEntry(
+            self.bode_legend,
+            self.bode_mag_curves["measured_validation"],
+            "Plant measured, validation" if has_validation else None,
+        )
+        self.plotMeasuredPlant(
+            "measured",
+            LoggedData(self.t, self.u, self.y, self.reference),
+            w / (2 * np.pi),
+            plant_phase,
+        )
+        self.plotMeasuredPlant(
+            "measured_validation", self.validation, w / (2 * np.pi), plant_phase
+        )
+
+    def plotMeasuredPlant(self, key, data, model_f, model_phase):
+        for points_key in (key, f"{key}_poor"):
+            self.bode_mag_curves[points_key].setData([], [])
+            self.bode_phase_curves[points_key].setData([], [])
+        if data is None or len(data.u) < kMinCoherenceSamples:
             return
         f, measured, gamma2 = measured_frequency_response(
             data.u, data.y, self.dt, data.reference
         )
         # Put the measured phase on the branch of the model's to compare them
-        model_phase = np.interp(f, w / (2 * np.pi), plant_phase)
+        model_phase = np.interp(f, model_f, model_phase)
         measured_phase = model_phase + np.angle(measured * np.exp(-1j * model_phase))
         is_good = gamma2 >= kMinGoodCoherence
-        for key, points in (("measured", is_good), ("measured_poor", ~is_good)):
-            self.bode_mag_curves[key].setData(
+        for points_key, points in ((key, is_good), (f"{key}_poor", ~is_good)):
+            self.bode_mag_curves[points_key].setData(
                 f[points], 20 * np.log10(np.abs(measured[points]))
             )
-            self.bode_phase_curves[key].setData(
+            self.bode_phase_curves[points_key].setData(
                 f[points], np.rad2deg(measured_phase[points])
             )
 
