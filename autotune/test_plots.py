@@ -156,6 +156,47 @@ def test_measured_plant_of_poor_coherence_is_set_apart(window):
     assert len(window.bode_phase_curves["measured_poor"].xData) > 100
 
 
+def bode_legend_names(window):
+    return [label.text for _, label in window.bode_legend.items]
+
+
+def test_plant_measured_on_both_ranges_is_shown_apart(window):
+    rng = np.random.default_rng(0)
+    u = rng.standard_normal(4096)
+    u_v = rng.standard_normal(4096)
+    # The validation range sees twice the plant gain
+    window.validation = autotune.LoggedData(
+        np.arange(len(u_v)) * DT, u_v, 2.0 * plant_output(u_v)
+    )
+
+    measure_plant(window, u, plant_output(u))
+
+    f, mag_db = curve_data(window.bode_mag_curves["measured"])
+    assert mag_db == pytest.approx(20 * np.log10(np.abs(plant_response(f))), abs=0.5)
+    f, mag_db = curve_data(window.bode_mag_curves["measured_validation"])
+    assert len(f) > 100
+    assert mag_db == pytest.approx(
+        20 * np.log10(2.0 * np.abs(plant_response(f))), abs=0.5
+    )
+    assert (
+        window.bode_mag_curves["measured_validation"].opts["symbolBrush"] == ps.VIOLET
+    )
+    assert "Plant measured, estimation" in bode_legend_names(window)
+    assert "Plant measured, validation" in bode_legend_names(window)
+
+
+def test_plant_is_measured_on_the_estimation_range_alone_without_validation(window):
+    u = np.random.default_rng(0).standard_normal(4096)
+
+    measure_plant(window, u, plant_output(u))
+
+    assert is_empty(window.bode_mag_curves["measured_validation"])
+    assert is_empty(window.bode_mag_curves["measured_validation_poor"])
+    names = bode_legend_names(window)
+    assert "Plant measured" in names
+    assert not any("validation" in name for name in names)
+
+
 def test_plant_is_measured_from_the_reference_when_logged(window):
     rng = np.random.default_rng(0)
     u = rng.standard_normal(NUM_NOISE_SAMPLES)
