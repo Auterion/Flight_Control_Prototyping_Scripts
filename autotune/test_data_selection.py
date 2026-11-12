@@ -71,6 +71,13 @@ def test_logged_signals_are_plotted(selection):
         assert curve.yData == pytest.approx(values)
 
 
+def test_validation_range_is_explained_over_the_title(selection):
+    title = selection.input_plot.titleLabel
+
+    assert title.text.endswith("validation range</span> ⓘ")
+    assert "Why a validation range?" in title.toolTip()
+
+
 def test_dragging_selects_a_range_snapped_to_samples(selection):
     drag_span(selection, 76.5, 83.5)
 
