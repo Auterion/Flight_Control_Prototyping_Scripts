@@ -37,7 +37,9 @@ Description:
 """
 
 import html
+import os
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 
 import control as ctrl
@@ -84,6 +86,17 @@ from PyQt5.QtWidgets import (
     QWidgetAction,
 )
 from scipy.signal import detrend
+from session import (
+    SessionError,
+    SessionGroupsDialog,
+    isSameLog,
+    kSessionFileFilter,
+    kSessionGroups,
+    loadSession,
+    resolveLogPath,
+    saveSession,
+    withDefaults,
+)
 from system_identification import (
     SystemIdentification,
     arx_predict,
@@ -430,6 +443,23 @@ kValidationMeasuredSymbols = {
 }
 
 
+@contextmanager
+def signalsBlocked(*widgets):
+    previous = [widget.blockSignals(True) for widget in widgets]
+    try:
+        yield
+    finally:
+        for widget, was_blocked in zip(widgets, previous):
+            widget.blockSignals(was_blocked)
+
+
+kSessionLoadNotes = (
+    "Model result also sets the poles, zeros and delays. Data without Model "
+    "result runs the identification. Tuning keeps the saved gains, even on "
+    "another model or with the GMVC tab."
+)
+
+
 def isNumber(value):
     try:
         float(value)
@@ -452,6 +482,8 @@ class Window(QDialog):
             "settling_time": 0.4,
         }
         self.file_name = None
+        # Preset, signals and ranges of the log, as DataSelectionWindow restores them
+        self.data_selection = None
         self.is_system_identified = False
         self.axis = 0
         self.dt = 0.005
@@ -465,6 +497,8 @@ class Window(QDialog):
         self.t = []
         self.u = []
         self.y = []
+        self.input = []
+        self.true_airspeed = []
         self.reference = None
         # Separate LoggedData the model is judged on, None to judge it on the
         # estimation data
@@ -504,6 +538,14 @@ class Window(QDialog):
         layout_h = QHBoxLayout()
         left_menu = QVBoxLayout()
         left_menu.addWidget(self.btn_select_data)
+        session_row = QHBoxLayout()
+        self.btn_save_session = QPushButton("Save session…")
+        self.btn_save_session.clicked.connect(self.saveSessionFile)
+        session_row.addWidget(self.btn_save_session)
+        self.btn_load_session = QPushButton("Load session…")
+        self.btn_load_session.clicked.connect(self.loadSessionFile)
+        session_row.addWidget(self.btn_load_session)
+        left_menu.addLayout(session_row)
 
         id_params_group = QFormLayout()
         self.createPreprocessingWidget(id_params_group)
@@ -1614,20 +1656,23 @@ class Window(QDialog):
 
         est = id.fit(self.u, self.y, method=self.id_method_combo.currentText())
 
-        self.num = id.getNum()
-        self.den = id.getDen()
-        self.Gz = arx_transfer_function(self.num, self.den, self.dt)
-
-        num_coeffs = self.num
-        den_coeffs = self.den[1 : n + 1]
-        self.is_system_identified = True
         self.btn_run_sys_id.setEnabled(False)
+        self.setModel(id.getNum(), id.getDen())
 
-        self.updateTfDisplay(den_coeffs, num_coeffs)
+    def setModel(self, num, den):
+        """Show and analyse the plant model num / den, sampled at self.dt."""
+        self.num = num
+        self.den = den
+        self.Gz = arx_transfer_function(self.num, self.den, self.dt)
+        self.is_system_identified = True
+        self.updateTfDisplay(self.den[1:], self.num)
         self.plotPolesZeros()
         self.plotPlant()
         self.plotResiduals()
         self.replayInputData()
+
+    def hasData(self):
+        return len(self.t) > 0
 
     def predictionHorizon(self):
         return predictionHorizonSamples(self.horizon_spinbox.value(), self.dt)
@@ -1652,7 +1697,10 @@ class Window(QDialog):
     def replayInputData(self):
         if not self.is_system_identified:
             return
+        self.checkStability()
         data = self.validationData()
+        if len(data.t) == 0:
+            return
         d = self.sys_id_delays
         u_detrended = detrend(data.u)
         u_delayed = np.concatenate(
@@ -1666,12 +1714,11 @@ class Window(QDialog):
         self.updateClosedLoopFit()
 
         self.plotInputOutput()
-        self.checkStability()
 
     def updatePredictionFit(self):
-        if not self.is_system_identified:
-            return
         data = self.validationData()
+        if not self.is_system_identified or len(data.u) == 0:
+            return
         fit = compute_prediction_fit(
             self.num,
             self.den,
@@ -1721,11 +1768,7 @@ class Window(QDialog):
     def stabilizeModel(self):
         poles = self.Gz.poles()
         stable_poles = np.where(np.abs(poles) > 1, 1.0 / np.conj(poles), poles)
-        self.den = np.real(np.poly(stable_poles))
-        self.Gz = arx_transfer_function(self.num, self.den, self.dt)
-        self.updateTfDisplay(self.den[1:], self.num)
-        self.plotPolesZeros()
-        self.replayInputData()
+        self.setModel(self.num, np.real(np.poly(stable_poles)))
         self.computeController()
 
     def updateTfDisplay(self, a_coeffs, b_coeffs):
@@ -1768,16 +1811,10 @@ class Window(QDialog):
 
         dt = float(self.line_edit_dt.text())
         self.dt = dt
-        self.Gz = arx_transfer_function(self.num, self.den, self.dt)
-        self.resampleData(dt)
-        self.is_system_identified = True
-        self.plotPolesZeros()
-        self.plotPlant()
-        self.plotResiduals()
-        self.replayInputData()
+        if self.hasData():
+            self.resampleData(dt)
+        self.setModel(self.num, self.den)
         self.computeController()
-        self.btn_update_model.setEnabled(False)
-        return
 
     def isGmvcTabActive(self):
         return self.tuning_tabs.currentWidget() is self.tab_gmvc
@@ -2197,7 +2234,7 @@ class Window(QDialog):
         return input
 
     def plotInputOutput(self, redraw=False):
-        has_airspeed = len(self.true_airspeed) == len(self.input)
+        has_airspeed = self.hasData() and len(self.true_airspeed) == len(self.input)
         if has_airspeed:
             self.u = self.scaledInput(self.input, self.true_airspeed)
             if self.validation is not None:
@@ -2215,7 +2252,7 @@ class Window(QDialog):
         )
         self.input_curve.setData(data.t, data.u)
         self.output_curve.setData(data.t, data.y)
-        if self.is_system_identified:
+        if self.is_system_identified and len(data.t) > 0:
             try:
                 offset = float(self.line_edit_offset.text())
             except ValueError:
@@ -2225,42 +2262,47 @@ class Window(QDialog):
             self.io_plot.getViewBox().resetRange()
 
     def loadLog(self):
-        select = DataSelectionWindow(self.file_name)
+        select = DataSelectionWindow(self.file_name, self.data_selection)
 
         if select.file_name and select.exec_():
-            self.reset()
-            self.file_name = select.file_name
-            self.t = select.t - select.t[0]
-            self.input = select.u
-            self.u = self.input
-            self.y = select.y
-            self.true_airspeed = select.v
-            self.reference = select.r
-            self.flown_gains = select.flown_gains
-            self.validation = None
-            if select.validation is not None:
-                self.validation = LoggedData(
-                    t=select.validation.t - select.validation.t[0],
-                    u=select.validation.u,
-                    y=select.validation.y,
-                    reference=select.validation.r,
-                    flown_gains=select.validation.flown_gains,
-                    input=select.validation.u,
-                    true_airspeed=select.validation.v,
-                )
-            self.flown_gain_form = select.flown_gain_form
-            self.setGainScale(select.flown_gain_scale or 1.0)
-            self.flown_options = select.flown_options or {}
-            self.loadFlownController()
-            trim_airspeed = select.getTrimAirspeed()
-
-            if trim_airspeed is not None:
-                self.line_edit_trim.setValue(trim_airspeed)
-
-            self.refreshInputOutputData()
-            self.btn_find_params.setEnabled(True)
+            self.applyDataSelection(select)
             self.runIdentification()
             self.computeController()
+
+    def applyDataSelection(self, select):
+        """Load the data selected in a DataSelectionWindow, not identified yet."""
+        self.reset()
+        self.file_name = select.file_name
+        self.data_selection = select.currentSelection()
+        self.t = select.t - select.t[0]
+        self.input = select.u
+        self.u = self.input
+        self.y = select.y
+        self.true_airspeed = select.v
+        self.reference = select.r
+        self.flown_gains = select.flown_gains
+        self.validation = None
+        if select.validation is not None:
+            self.validation = LoggedData(
+                t=select.validation.t - select.validation.t[0],
+                u=select.validation.u,
+                y=select.validation.y,
+                reference=select.validation.r,
+                flown_gains=select.validation.flown_gains,
+                input=select.validation.u,
+                true_airspeed=select.validation.v,
+            )
+        self.flown_gain_form = select.flown_gain_form
+        self.setGainScale(select.flown_gain_scale or 1.0)
+        self.flown_options = select.flown_options or {}
+        self.loadFlownController()
+        trim_airspeed = select.getTrimAirspeed()
+
+        if trim_airspeed is not None:
+            self.line_edit_trim.setValue(trim_airspeed)
+
+        self.refreshInputOutputData()
+        self.btn_find_params.setEnabled(True)
 
     def loadFlownController(self):
         if "p_on_feedback" in self.flown_options:
@@ -2296,6 +2338,320 @@ class Window(QDialog):
         self.t = t_new
         if self.validation is not None:
             self.validation = self.validation.resampled(dt)
+
+    def sessionState(self):
+        """State of each session group, None for a group with nothing to save."""
+        return {
+            "data": self.dataState(),
+            "preprocessing": self.preprocessingState(),
+            "model_structure": self.modelStructureState(),
+            "model": self.modelState(),
+            "tuning": self.tuningState(),
+            "others": self.othersState(),
+        }
+
+    def dataState(self):
+        if self.data_selection is None:
+            return None
+        return {"log": os.path.abspath(self.file_name), **self.data_selection}
+
+    def preprocessingState(self):
+        return {
+            "remove_offset": self.remove_offset_box.isChecked(),
+            "hp_cutoff": self.f_hp_spinbox.value(),
+            "lp_cutoff": self.f_lp_spinbox.value(),
+            "input_scaling": self.input_scale_combo.currentText(),
+            "trim_airspeed": self.line_edit_trim.value(),
+        }
+
+    def modelStructureState(self):
+        return {
+            "poles": self.line_edit_poles.value(),
+            "zeros": self.line_edit_zeros.value(),
+            "delays": self.line_edit_delays.value(),
+            "method": self.id_method_combo.currentText(),
+            "prediction_horizon": self.horizon_spinbox.value(),
+        }
+
+    def modelState(self):
+        if not self.is_system_identified:
+            return None
+        return {
+            "dt": float(self.dt),
+            "delays": self.sys_id_delays,
+            "num": [float(b) for b in self.num],
+            "den": [float(a) for a in self.den],
+        }
+
+    def tuningState(self):
+        return {
+            "controller_tab": "GMVC" if self.isGmvcTabActive() else "PID",
+            "gain_form": self.gain_form,
+            "gains": {gain: float(value) for gain, value in self.gains.items()},
+            "pi_no_zero": self.pid_no_zero_box.isChecked(),
+            "negate_output": self.negate_control_box.isChecked(),
+            "gmvc": {
+                "rise_time": float(self.rise_time),
+                "damping_index": float(self.damping_index),
+                "detune": float(self.detune_coeff),
+            },
+        }
+
+    def othersState(self):
+        return {
+            "step_info_max": {
+                key: spinbox.value() for key, spinbox in self.step_info_spinbox.items()
+            },
+            "step_simulation": {
+                key: spinbox.value() for key, spinbox in self.step_sim_spinbox.items()
+            },
+            "model_output_offset": self.line_edit_offset.value(),
+        }
+
+    def applySession(self, session, groups):
+        """Load the groups of a sessionState(), data["log"] being the path of
+        the log.
+
+        The groups are applied in the order of the workflow, each on the
+        result of the previous ones. Returns the groups loaded.
+        """
+        current = self.sessionState()
+        states = {
+            group: withDefaults(session[group], current[group])
+            for group in kSessionGroups
+            if group in groups and session.get(group) is not None
+        }
+        self.cancelParameterSearch()
+
+        if "data" in states and not self.applyDataState(states["data"]):
+            del states["data"]
+        if "preprocessing" in states:
+            self.applyPreprocessingState(states["preprocessing"])
+        if "model_structure" in states:
+            self.applyModelStructureState(states["model_structure"])
+        if "model" in states:
+            self.applyModelState(states["model"])
+        elif "data" in states:
+            self.runIdentification()
+        if "tuning" in states:
+            self.applyTuningState(states["tuning"])
+        elif "data" in states or "model" in states:
+            self.computeController()
+        if "others" in states:
+            self.applyOthersState(states["others"])
+
+        identification_settings = {"data", "preprocessing", "model_structure", "model"}
+        loaded_settings = identification_settings & states.keys()
+        if loaded_settings and not ("data" in states and "model" not in states):
+            # A model is up to date only with the settings it was fitted with
+            self.btn_run_sys_id.setEnabled(
+                self.hasData() and loaded_settings != identification_settings
+            )
+        return list(states)
+
+    def cancelParameterSearch(self):
+        if not hasattr(self, "_param_search_worker"):
+            return
+        worker = self._param_search_worker
+        # Its result, even one already queued, would replace the model orders
+        # being loaded
+        worker.progress.disconnect(self.onParamSearchProgress)
+        worker.finished.disconnect(self.onParamSearchFinished)
+        worker._cancel = True
+        worker.wait()
+        del self._param_search_worker
+        self.btn_find_params.setText("Find parameters")
+
+    def applyDataState(self, state):
+        """Returns False when the selection could not be loaded."""
+        select = DataSelectionWindow(state["log"], state)
+        select.loadSelection()
+        if select.result() != QDialog.Accepted:
+            return False
+        self.applyDataSelection(select)
+        return True
+
+    def applyPreprocessingState(self, state):
+        with signalsBlocked(
+            self.remove_offset_box,
+            self.f_hp_spinbox,
+            self.f_lp_spinbox,
+            self.input_scale_combo,
+            self.line_edit_trim,
+        ):
+            self.remove_offset_box.setChecked(state["remove_offset"])
+            self.f_hp_spinbox.setValue(state["hp_cutoff"])
+            self.f_lp_spinbox.setValue(state["lp_cutoff"])
+            index = self.input_scale_combo.findText(state["input_scaling"])
+            if index > -1:
+                self.input_scale_combo.setCurrentIndex(index)
+            self.line_edit_trim.setValue(state["trim_airspeed"])
+        self.trim_airspeed = self.line_edit_trim.value()
+        if self.hasData():
+            self.plotInputOutput()
+
+    def applyModelStructureState(self, state):
+        self.setModelOrders(state["poles"], state["zeros"], state["delays"])
+        index = self.id_method_combo.findText(state["method"])
+        if index > -1:
+            with signalsBlocked(self.id_method_combo):
+                self.id_method_combo.setCurrentIndex(index)
+        self.horizon_spinbox.setValue(state["prediction_horizon"])
+
+    def setModelOrders(self, n_poles, n_zeros, delays):
+        with signalsBlocked(
+            self.line_edit_poles, self.line_edit_zeros, self.line_edit_delays
+        ):
+            self.line_edit_poles.setValue(n_poles)
+            self.line_edit_zeros.setValue(n_zeros)
+            self.line_edit_delays.setValue(delays)
+        self.sys_id_n_poles = n_poles
+        self.sys_id_n_zeros = n_zeros
+        self.updateCoeffTable()
+
+    def applyModelState(self, state):
+        num = [float(b) for b in state["num"]]
+        den = [float(a) for a in state["den"]]
+        self.setModelOrders(len(den) - 1, len(num) - 1, state["delays"])
+        self.sys_id_delays = state["delays"]
+        if not self.hasData():
+            self.dt = state["dt"]
+        elif state["dt"] != self.dt:
+            self.resampleData(state["dt"])
+        self.setModel(num, den)
+
+    def applyTuningState(self, state):
+        gmvc = state["gmvc"]
+        self.slider_rise_time.setValue(gmvc["rise_time"])
+        self.slider_damping.setValue(gmvc["damping_index"])
+        self.slider_detune.setValue(gmvc["detune"])
+        # As saved rather than as the slider steps round them
+        self.rise_time = gmvc["rise_time"]
+        self.damping_index = gmvc["damping_index"]
+        self.detune_coeff = gmvc["detune"]
+        self.tuning_tabs.setCurrentWidget(
+            self.tab_gmvc if state["controller_tab"] == "GMVC" else self.tab_pid
+        )
+        with signalsBlocked(self.pid_no_zero_box, self.negate_control_box):
+            self.pid_no_zero_box.setChecked(state["pi_no_zero"])
+            self.negate_control_box.setChecked(state["negate_output"])
+        if state["gain_form"] in self.gain_form_radio:
+            self.gain_form_radio[state["gain_form"]].setChecked(True)
+        # Not redesigned by the GMVC: the saved gains are the controller
+        self.gains = {gain: float(value) for gain, value in state["gains"].items()}
+        self.updateKIDSliders()
+        self.updateClosedLoop()
+
+    def applyOthersState(self, state):
+        spinboxes = (
+            *self.step_info_spinbox.values(),
+            *self.step_sim_spinbox.values(),
+            self.line_edit_offset,
+        )
+        with signalsBlocked(*spinboxes):
+            for key, spinbox in self.step_info_spinbox.items():
+                spinbox.setValue(state["step_info_max"][key])
+            for key, spinbox in self.step_sim_spinbox.items():
+                spinbox.setValue(state["step_simulation"][key])
+            self.line_edit_offset.setValue(state["model_output_offset"])
+        self.onStepInfoChanged()
+        self.onStepSimChanged()
+        if self.hasData():
+            self.plotInputOutput()
+
+    def saveSessionFile(self):
+        states = self.sessionState()
+        dialog = SessionGroupsDialog(
+            self, "Save session", states, missing_text="Nothing to save yet"
+        )
+        if not dialog.exec_():
+            return
+        default_path = "autotune_session.yaml"
+        if self.file_name:
+            default_path = os.path.splitext(self.file_name)[0] + "_session.yaml"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save session",
+            default_path,
+            kSessionFileFilter,
+            options=QFileDialog.DontUseNativeDialog,
+        )
+        if not path:
+            return
+        if not path.endswith((".yaml", ".yml")):
+            path += ".yaml"
+        try:
+            saveSession(
+                path, {group: states[group] for group in dialog.selectedGroups()}
+            )
+        except OSError as e:
+            QMessageBox.critical(self, "Save session", f"Cannot write {path}: {e}")
+
+    def loadSessionFile(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load session",
+            os.path.dirname(self.file_name or ""),
+            kSessionFileFilter,
+            options=QFileDialog.DontUseNativeDialog,
+        )
+        if not path:
+            return
+        try:
+            session = loadSession(path)
+        except SessionError as e:
+            QMessageBox.critical(self, "Load session", str(e))
+            return
+        dialog = SessionGroupsDialog(
+            self,
+            "Load session",
+            {group: session.get(group) for group in kSessionGroups},
+            missing_text="Not in this session",
+            notes=kSessionLoadNotes,
+        )
+        if not dialog.exec_():
+            return
+        groups = dialog.selectedGroups()
+        if "data" in groups:
+            log_path = self.locateSessionLog(path, session["data"].get("log", {}))
+            if log_path is None:
+                groups.remove("data")
+            else:
+                session["data"]["log"] = log_path
+        self.applySession(session, groups)
+
+    def locateSessionLog(self, session_path, log_entry):
+        """Path of the log of the session, None to load it without its data."""
+        log_path = resolveLogPath(session_path, log_entry)
+        if log_path is None:
+            name = os.path.basename(log_entry.get("path", ""))
+            answer = QMessageBox.question(
+                self,
+                "Load session",
+                f"The log {name} of the session is not found. Locate it? "
+                "Otherwise the session loads without its data.",
+            )
+            if answer != QMessageBox.Yes:
+                return None
+            log_path, _ = QFileDialog.getOpenFileName(
+                self,
+                f"Locate {name}",
+                os.path.dirname(session_path),
+                "ULog (*.ulg)",
+                options=QFileDialog.DontUseNativeDialog,
+            )
+            if not log_path:
+                return None
+        if not isSameLog(log_path, log_entry):
+            answer = QMessageBox.question(
+                self,
+                "Load session",
+                f"{log_path} differs from the log the session was saved with: "
+                "its ranges may not select the same maneuver. Load it anyway?",
+            )
+            if answer != QMessageBox.Yes:
+                return None
+        return log_path
 
 
 class DoubleSlider(QSlider):
