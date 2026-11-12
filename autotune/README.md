@@ -76,13 +76,15 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
 
 #### Window selection:
 
-1. Select the portion of the log where the maneuver occurred.
+1. Select the portion of the log where the maneuver occurred with a left drag: the estimation range, which the model is fitted to.
 2. Ensure the window starts from level flight and covers the full maneuver.
-3. (Experimental) Use the coherence plot to check whether your input-output data have a strong enough linear relationship at the desired frequencies. For fixed-wings: \
+3. (Optional) Select another maneuver with a right drag: the validation range. The model is then judged on data it was not fitted to (fits, residuals, measured plant and *Find parameters*): a model that fits the noise of the estimation range does not fit other data. Without a validation range, the model is judged on the estimation range.
+4. The ✕ in the corner of a range removes it.
+5. (Experimental) Use the coherence plot to check whether your input-output data have a strong enough linear relationship at the desired frequencies. It shows the coherence of each range in its color. For fixed-wings: \
    i. We are interested in frequencies between 0.5-10Hz. \
    ii. Values > 0.6 are sufficient. \
    iii. If the coherence function is oscillating dramatically, the identified model may be unreliable at those frequencies.
-4. Once you have identified the window, load the selection into the tool.
+6. Once you have identified the window, load the selection into the tool.
 
 <table>
   <tr>
@@ -109,10 +111,16 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
    a longer horizon). A longer horizon turns the prediction into the drifting simulation.
    With a preset that has the flown gains, the closed-loop fit replays the logged reference
    through the model and these gains.
+   With a validation range, the fits, the model curve, the residuals and the measured plant
+   on the Bode are those of the validation range.
    *Find parameters* picks the orders of least predicted squared error: the mean squared
    error of the prediction plus, for each parameter of the model, the output variance divided
    by the number of samples (Morelli's criterion). A higher order must improve the prediction
    by more than this share of the output variance, otherwise it only fits the noise.
+   With a validation range, it picks instead the orders of least mean squared error of the
+   prediction of the validation range (cross-validation): a parameter that only fits the
+   noise of the estimation range does not predict the validation range, so it needs no
+   penalty.
 2. If not, adjust the system order (number of poles and zeros) and/or delay parameters.
 3. Verify that the system is minimum-phase (i.e., zeroes lie inside the unit circle).
 
