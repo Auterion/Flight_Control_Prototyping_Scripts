@@ -9,6 +9,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
 from loop_model import parallelGains  # noqa: E402
+from PyQt5.QtCore import Qt  # noqa: E402
+from PyQt5.QtTest import QTest  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
 import autotune  # noqa: E402
@@ -69,6 +71,23 @@ def test_selecting_parallel_makes_it_editable(window):
     assert all(e.isReadOnly() for e in window.gain_edit["ideal"].values())
     assert window.gain_slider["I"].value() == pytest.approx(0.5, abs=0.01)
     assert window.gain_slider["D"].value() == pytest.approx(0.0008, abs=1e-4)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [lambda w: w.gain_edit["ideal"]["P"], lambda w: w.horizon_spinbox],
+    ids=["gain", "spinbox"],
+)
+def test_enter_in_a_field_does_not_open_a_log(qapp, window, field):
+    clicked = []
+    window.btn_open_log.clicked.disconnect()
+    window.btn_open_log.clicked.connect(lambda: clicked.append(True))
+    field(window).setFocus()
+    qapp.processEvents()
+
+    QTest.keyClick(field(window), Qt.Key_Return)
+
+    assert clicked == []
 
 
 def test_editing_a_parallel_gain_drives_the_ideal_ones(qapp, window):
