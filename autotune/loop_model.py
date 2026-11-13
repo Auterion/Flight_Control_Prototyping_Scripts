@@ -215,16 +215,18 @@ class LoopModel:
         +/-gain_margin_db and phase change within +/-phase_margin_deg.
         """
         omega = self.marginFrequencies()
-        alpha, gain_margin_db, phase_margin_deg = ctrl.disk_margins(
-            self.loop_gain, omega, returnall=True
-        )
+        loop_gain = self.loop_gain(np.exp(1j * omega * self.dt))
+        # Balanced disk (skew 0) as ctrl.disk_margins, without the state-space
+        # frequency response it computes S from: a linear solve per frequency
+        alpha = 1 / np.abs(1 / (1 + loop_gain) - 0.5)
         i_min = np.argmin(alpha)
-        return (
-            alpha[i_min],
-            gain_margin_db[i_min],
-            phase_margin_deg[i_min],
-            omega[i_min],
-        )
+        alpha_min = alpha[i_min]
+        if alpha_min < 2:
+            gain_margin_db = 20 * np.log10((2 + alpha_min) / (2 - alpha_min))
+        else:
+            gain_margin_db = np.inf
+        phase_margin_deg = np.rad2deg(2 * np.arctan(alpha_min / 2))
+        return alpha_min, gain_margin_db, phase_margin_deg, omega[i_min]
 
     def simulate(self, t, r, disturbance):
         _, y = ctrl.forced_response(
