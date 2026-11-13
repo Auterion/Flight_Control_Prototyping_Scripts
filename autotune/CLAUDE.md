@@ -52,10 +52,14 @@ search ranking on it);
 `test_session.py` checks the sessions (every group reproduced exactly after a save and
 load, a model loaded without data, a tuning kept on another model, the identification run
 or flagged depending on the groups loaded, the log found next to the moved session or
-confirmed when it differs, the version and format checks, the group dialog);
+confirmed when it differs, the version and format checks, the group dialog, the session
+restored after an upgrade restart);
 `test_pid_gains.py` drives the PID tab's Ideal/Standard ↔ Parallel form selection and
 its parameter units (preset gain scale), the GMVC feedforward cancelling P on the error,
 and that Enter in a field does not press the "Select data" button;
+`test_updater.py` checks the upgrade reminder on throwaway git repositories (only
+the new commits of the tool, none when the checkout cannot be fast-forwarded, the
+fast-forward, the dependency sync, local changes kept) and its banner;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, estimation
 and validation range selection and removal, restoring a saved selection, coherence of both ranges, plant model against its measured frequency response, residual correlations, robustness plots updated once their tab is shown). `conftest.py` closes the windows a test leaves open: an open window
@@ -91,6 +95,8 @@ autotune.py (Bode/step response validation) → PX4 gains
 - **`data_selection_window.py`** — Interactive pyqtgraph window (left drag selects the estimation range, right drag the optional validation range, ✕ removes a range) for selecting the maneuver time window and inspecting signal quality/coherence before running identification. Loads input/output presets via `presets.py` and lets the user add/edit/delete them through `preset_dialogs.py`.
 
 - **`session.py`** — Saves/loads a session: the state of the interface in a YAML file, by group (data, pre-processing, model structure, model result, tuning, others), with the group dialog. The log is referenced by its path relative to the session, its absolute path and its SHA-256. `Window.sessionState()` / `Window.applySession()` in `autotune.py` capture and restore the groups, and `DataSelectionWindow` restores a saved selection (`currentSelection()`).
+
+- **`updater.py`** — Upgrade reminder: at startup, a background `git fetch` looks for new commits changing the tool on the branch the checkout tracks, and `UpdateBanner` (top of the main window) offers to fast-forward the checkout, sync the dependencies if they changed (`poetry install`, or `uv run` on restart) and restart; `Window.restartWithSession()` saves every group of the session to a temporary file that the new version restores (`--restore-session`) and deletes. Silent when offline, outside a git checkout, or on a branch with local commits.
 
 - **`presets.py`** — Loads/saves input/output presets from the user-editable `presets.yaml` (next to the code). Seeds the file with `DEFAULT_PRESETS` on first run; falls back to defaults if the file is missing or unparseable. A preset can also describe the flown controller (reference signal, gain parameter names, ideal/parallel form, PID options), which pre-loads the PID and drives the closed-loop replay fit.
 

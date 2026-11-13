@@ -11,6 +11,11 @@ Poetry and uv both create the environment and install the dependencies.
 1. Get [uv](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install.sh | sh`
 2. In this directory, start the GUI: `uv run autotune.py`. The first run installs the dependencies.
 
+## Upgrading
+At startup, the tool checks for a new version on the branch of your checkout and shows a banner at the top of the window. *Upgrade* pulls it (fast-forward only, local changes are kept), installs the new dependencies if they changed, and *Restart* starts the new version with the current session restored. To upgrade manually: `git pull`, then `poetry install` (uv installs them on the next `uv run`).
+
+![Upgrade banner](docs/gui_update_banner.png)
+
 ![Autotune GUI main window](docs/gui_main_window.png)
 
 ![Autotune GUI robustness tab](docs/gui_robustness.png)
