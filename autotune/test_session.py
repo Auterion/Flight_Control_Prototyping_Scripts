@@ -421,3 +421,23 @@ def test_loading_data_with_a_tuning_does_not_ask_for_the_flown_gains(
     save_and_load(window, str(tmp_path / "s.yaml"), ["data", "tuning"], into=loaded)
 
     assert loaded.gains == GAINS
+
+
+def test_restart_restores_the_session(selection, monkeypatch):
+    window = load_log(selection, monkeypatch)
+    window.line_edit_poles.setValue(3)
+    window.onSysIdClicked()
+    window.gains = dict(GAINS)
+    window.updateKIDSliders()
+    window.updateClosedLoop()
+    restart_args = []
+    monkeypatch.setattr(autotune, "restart", lambda *args: restart_args.extend(args))
+
+    window.update_banner.btn_restart.click()
+    option, path = restart_args
+    restarted = autotune.Window()
+    restarted.restoreSession(path)
+
+    assert option == "--restore-session"
+    assert restarted.sessionState() == window.sessionState()
+    assert not os.path.exists(path)

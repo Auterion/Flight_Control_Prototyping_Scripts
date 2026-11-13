@@ -36,9 +36,11 @@ Description:
     UI tool for parametric system identification and controller design
 """
 
+import argparse
 import html
 import os
 import sys
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 
@@ -105,6 +107,7 @@ from system_identification import (
     measured_frequency_response,
     residual_correlations,
 )
+from updater import UpdateBanner, restart
 
 
 def computeNRMSE(y, y_est):
@@ -544,8 +547,12 @@ class Window(QDialog):
         self.btn_select_data = QPushButton("Select data")
         self.btn_select_data.clicked.connect(self.loadLog)
 
+        self.update_banner = UpdateBanner()
+        self.update_banner.restartRequested.connect(self.restartWithSession)
+
         # set the layout
         layout_v = QVBoxLayout()
+        layout_v.addWidget(self.update_banner)
         layout_h = QHBoxLayout()
         left_menu = QVBoxLayout()
         left_menu.addWidget(self.btn_select_data)
@@ -601,7 +608,7 @@ class Window(QDialog):
         layout_h.addWidget(self.plot_tabs)
         layout_h.setStretch(1, 1)
         layout_v.addLayout(layout_h)
-        layout_v.setStretch(0, 1)
+        layout_v.setStretch(1, 1)
         bottom_row = QHBoxLayout()
         bottom_row.addWidget(self.tuning_tabs, stretch=1)
         bottom_row.addWidget(self.createStepInfoGroup())
@@ -2703,7 +2710,9 @@ class Window(QDialog):
         )
         if not dialog.exec_():
             return
-        groups = dialog.selectedGroups()
+        self.loadSessionGroups(path, session, dialog.selectedGroups())
+
+    def loadSessionGroups(self, path, session, groups):
         if "data" in groups:
             log_path = self.locateSessionLog(path, session["data"].get("log", {}))
             if log_path is None:
@@ -2744,6 +2753,36 @@ class Window(QDialog):
             if answer != QMessageBox.Yes:
                 return None
         return log_path
+
+    def restartWithSession(self):
+        """Restarts into the upgraded version, which restores the session."""
+        states = {
+            group: state
+            for group, state in self.sessionState().items()
+            if state is not None
+        }
+        fd, path = tempfile.mkstemp(prefix="autotune_restart_", suffix=".yaml")
+        os.close(fd)
+        try:
+            saveSession(path, states)
+        except OSError as e:
+            QMessageBox.critical(
+                self, "Restart", f"Cannot save the session to {path}: {e}"
+            )
+            return
+        restart("--restore-session", path)
+
+    def restoreSession(self, path):
+        """Loads every group of a session saved by restartWithSession(), then
+        deletes it."""
+        try:
+            session = loadSession(path)
+        except SessionError as e:
+            QMessageBox.critical(self, "Restore session", str(e))
+            return
+        groups = [group for group in kSessionGroups if session.get(group) is not None]
+        self.loadSessionGroups(path, session, groups)
+        os.remove(path)
 
 
 class DoubleSlider(QSlider):
@@ -2789,9 +2828,23 @@ class DoubleSlider(QSlider):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="System identification and controller tuning tool for PX4"
+    )
+    parser.add_argument(
+        "--restore-session",
+        metavar="PATH",
+        help="load every group of a session, then delete it (after an upgrade)",
+    )
+    args, qt_args = parser.parse_known_args()
+    # A restart reuses sys.argv: it must not restore this session again
+    sys.argv[1:] = qt_args
     app = QApplication(sys.argv)
 
     main = Window()
     main.show()
+    if args.restore_session:
+        main.restoreSession(args.restore_session)
+    main.update_banner.startCheck()
 
     sys.exit(app.exec_())
