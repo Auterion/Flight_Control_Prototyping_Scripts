@@ -30,6 +30,9 @@ SERIES = [BLUE, ORANGE, AQUA, YELLOW, MAGENTA, GREEN, VIOLET, RED]
 GOOD = "#0ca30c"
 # The status "good" step is too light for text on SURFACE
 GOOD_TEXT = "#006300"
+WARNING = "#eda100"
+# As the "good" step, too light for text
+WARNING_TEXT = "#8a5a00"
 CRITICAL = "#d03b3b"
 
 # The options apply to widgets created afterwards: set them on import, before
@@ -92,6 +95,18 @@ def addReferenceLine(plot, value, angle, color_=AXIS, style="-", width=1.0):
     line = pg.InfiniteLine(value, angle=angle, pen=pen(color_, width, style))
     plot.addItem(line, ignoreBounds=True)
     return line
+
+
+def addBand(plot, color_=INK, alpha=0.07):
+    """Shaded vertical band over the height of plot, hidden until it is given
+    a region, in view coordinates."""
+    band = pg.LinearRegionItem(
+        movable=False, brush=color(color_, alpha), pen=pen(MUTED, 1, ":")
+    )
+    band.setZValue(-10)
+    band.hide()
+    plot.addItem(band, ignoreBounds=True)
+    return band
 
 
 class ResettableViewBox(pg.ViewBox):

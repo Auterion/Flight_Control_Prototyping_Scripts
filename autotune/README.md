@@ -117,6 +117,48 @@ Perform these maneuvers separately for each axis: roll, pitch, and yaw.
 
 <img src="https://github.com/user-attachments/assets/87168b77-1b52-4d6f-bb4d-ace3f76fe4ee" width="700"/>
 
+#### Model Check
+
+A controller tuned on a wrong model can be unstable on the vehicle. *Model check* gives a
+verdict on the model, for the gains currently set:
+
+- **✓ Good**: every check passes.
+- **⚠ Caution**: a check is borderline or could not be made (–): the model is not known to
+  be good.
+- **✕ Do not tune**: the data contradict the model.
+
+The checks compare the model with the plant measured from the data (the points of the Bode
+plot, estimated without a model structure) where the stability of the loop is at stake: the
+band from 1/3 to 3 times its crossover, shaded on the Bode plot. The verdict therefore
+follows the gains: a model can be good for the flown gains and not for a faster tuning,
+whose band leaves the frequencies the maneuver excited.
+
+| Check | Passes when |
+|-------|-------------|
+| Excitation | The plant is measured reliably (coherence ≥ 0.6, the black points of the Bode plot) on both sides of the crossover, and at 70% or more of the frequencies of the band |
+| Prediction fit | It is at least 70% (fails below 60%) |
+| Model vs measured plant | Over the band, the model is within 1 dB and 8° of the measured plant (median; fails beyond 3 dB or 15°) |
+| Margins on the measured plant | The gains have at most 10° less phase margin and 30% less modulus margin on the measured plant than on the model (fails beyond 20° or 50%) |
+| Flown gains on the model | The model is stable with the gains flown in the log, when the preset gives them |
+
+A loop can be safe at its crossover: it has none, or more than 90° of phase margin there,
+as a low feedback gain next to a feedforward (e.g. a fixed-wing rate loop). It is then
+checked where its gain comes the closest to −1 instead. When its gain stays far from −1 at
+all frequencies (modulus margin of 0.75 or more), no band has to be excited, and the model
+is compared over all the measured frequencies.
+
+Click the verdict for the details of each check: what it found, what it takes to pass and,
+when it does not pass, what to do. *Show this band on the Bode plot* zooms the Bode plot on
+the band, where the model can be compared with the measured points (a double click on the
+plot restores its range). This window can stay open: it follows the gains.
+
+While the model is not good, a banner over the gains gives the reason. On *Do not tune*, the
+gains are also struck through until *Use anyway*, which holds until the next model.
+
+Without a *reference* in the preset, the plant is measured from the input, which the feedback
+biases where it dominates the excitation. When the residuals show this feedback (Residuals
+tab, lags ≤ 0), the excitation cannot be checked and the verdict is a caution at best.
+
 #### Tuning Gains
 
 The PID tab starts from the gains flown in the log, when the preset gives them. Once you

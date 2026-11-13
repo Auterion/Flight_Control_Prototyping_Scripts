@@ -48,15 +48,26 @@ import control as ctrl
 import plot_style as ps
 import pyqtgraph as pg
 from data_extractor import *
-from data_selection_window import (
-    DataSelectionWindow,
-    kMinCoherenceSamples,
-    kMinGoodCoherence,
-)
+from data_selection_window import DataSelectionWindow
 from loop_model import LoopModel, idealGains, parallelGains, scaledGains
+from model_check import (
+    ModelEvidence,
+    checkModel,
+    feedbackCorrelation,
+    kDoNotTune,
+    kGoodFit,
+    kPoorFit,
+    measurePlant,
+)
+from model_check_widgets import (
+    ModelCheckBadge,
+    ModelCheckBanner,
+    ModelCheckPanel,
+    kModelCheckHint,
+)
 from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QColor, QFont, QPalette
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -104,6 +115,8 @@ from system_identification import (
     SystemIdentification,
     arx_predict,
     arx_transfer_function,
+    kMinCoherenceSamples,
+    kMinGoodCoherence,
     measured_frequency_response,
     residual_correlations,
 )
@@ -206,6 +219,10 @@ kMaxModelOrder = 7
 kMaxCoefficientRowsShown = 7
 # As the residual analysis of Ljung's System Identification Toolbox
 kResidualLags = 25
+# Frequencies shown on each side of the band of the model check, as a ratio:
+# the points next to it show where the excitation stops
+kBandZoomMargin = 2.0
+kPanelGap = 10
 
 kGainFormLabels = {
     "ideal": "Ideal/Standard\nKp * [1 + Ki + Kd]",
@@ -281,9 +298,9 @@ class LoggedData:
 
 def showFit(label, fit):
     label.setText(f"{fit:.1f}%")
-    if fit >= 80:
+    if fit >= kGoodFit:
         label.setStyleSheet("color: green")
-    elif fit >= 60:
+    elif fit >= kPoorFit:
         label.setStyleSheet("color: orange")
     else:
         label.setStyleSheet("color: red")
@@ -540,6 +557,14 @@ class Window(QDialog):
         # (loop, stability_margins, is_stable) not plotted yet on the hidden
         # robustness tab
         self.pending_robustness = None
+        # (LoopModel, its stability margins) of the current gains
+        self.checked_loop = None
+        self.model_evidence = None
+        self.prediction_fit = None
+        self.model_check = None
+        # "Use anyway" of a model not to tune on, until the next model
+        self.is_model_check_overridden = False
+        self.are_gains_struck = False
         self.general_plots = self.createGeneralPlots()
         self.robustness_plots = self.createRobustnessPlots()
         self.residual_plots = self.createResidualPlots()
@@ -571,6 +596,7 @@ class Window(QDialog):
         self.createModelOrderWidgets(id_params_group)
         self.createMethodWidget(id_params_group)
         self.createRunSysIdButton(id_params_group)
+        self.createModelCheckWidget(id_params_group)
         self.createFitWidget(id_params_group)
         self.createStabilityWidget(id_params_group)
 
@@ -597,6 +623,8 @@ class Window(QDialog):
         self.tab_gmvc = QWidget()
         self.tab_gmvc.setLayout(self.createGmvcLayout())
         self.tuning_tabs.addTab(self.tab_gmvc, "GMVC")
+        # Next to the tabs: over the gains of both, without taking a row
+        self.tuning_tabs.setCornerWidget(self.model_check_banner, Qt.TopRightCorner)
 
         self.plot_tabs = QTabWidget()
         self.plot_tabs.addTab(self.general_plots, "General")
@@ -634,6 +662,8 @@ class Window(QDialog):
         self.btn_stabilize.setVisible(False)
         self.is_system_identified = False
         self.pending_robustness = None
+        self.prediction_fit = None
+        self.forgetModelCheck()
         for curve in (*self.robustnessCurves(), *self.residualCurves()):
             curve.setData([], [])
         for text in (
@@ -753,6 +783,13 @@ class Window(QDialog):
         self.bode_margin_text = ps.CornerText(bode_phase_plot, "top-left")
         self.hover_readouts.append(
             ps.HoverReadout(bode_phase_plot, "f = {:.3g} Hz", "{:.1f} deg")
+        )
+        self.bode_check_bands = [
+            ps.addBand(plot) for plot in (bode_mag_plot, bode_phase_plot)
+        ]
+        # Not a curve: the legend sample of the bands
+        self.bode_check_band_sample = bode_mag_plot.plot(
+            pen=None, fillLevel=0.0, fillBrush=self.bode_check_bands[0].brush
         )
 
         # Qt shares the free space evenly on top of each column's preferred
@@ -1012,15 +1049,11 @@ class Window(QDialog):
         data = self.validationData()
         if len(data.u) == 0:
             return
-        sys_id = SystemIdentification(dt=self.dt)
-        sys_id.f_hp = self.f_hp_spinbox.value()
-        sys_id.f_lp = self.f_lp_spinbox.value()
-        sys_id.remove_offset = self.remove_offset_box.isChecked()
         auto, cross, bound = residual_correlations(
             self.num,
             self.den,
             self.sys_id_delays,
-            *sys_id.preprocess(data.u, data.y),
+            *self.preprocessed(data.u, data.y),
             kResidualLags,
         )
         lags = np.arange(-kResidualLags, kResidualLags + 1)
@@ -1049,6 +1082,14 @@ class Window(QDialog):
                 ),
             ]
         )
+
+    def preprocessed(self, u, y):
+        """u and y as the model is fitted to them."""
+        sys_id = SystemIdentification(dt=self.dt)
+        sys_id.f_hp = self.f_hp_spinbox.value()
+        sys_id.f_lp = self.f_lp_spinbox.value()
+        sys_id.remove_offset = self.remove_offset_box.isChecked()
+        return sys_id.preprocess(u, y)
 
     @staticmethod
     def plotCorrelation(curves, lags, correlation, bound):
@@ -1149,6 +1190,19 @@ class Window(QDialog):
         self.btn_find_params.clicked.connect(self.onFindParamsClicked)
         self.btn_find_params.setEnabled(False)
         layout.addRow(self.btn_find_params)
+
+    def createModelCheckWidget(self, layout):
+        self.model_check_badge = ModelCheckBadge()
+        self.model_check_badge.clicked.connect(self.showModelCheckPanel)
+        name_label = QLabel("Model check ⓘ")
+        name_label.setToolTip(kModelCheckHint)
+        layout.addRow(name_label, self.model_check_badge)
+
+        self.model_check_panel = ModelCheckPanel(self)
+        self.model_check_panel.evidenceRequested.connect(self.showEvidence)
+        self.model_check_banner = ModelCheckBanner()
+        self.model_check_banner.detailsRequested.connect(self.showModelCheckPanel)
+        self.model_check_banner.overrideRequested.connect(self.overrideModelCheck)
 
     def createFitWidget(self, layout):
         self.horizon_spinbox = QDoubleSpinBox()
@@ -1712,6 +1766,7 @@ class Window(QDialog):
         self.den = den
         self.Gz = arx_transfer_function(self.num, self.den, self.dt)
         self.is_system_identified = True
+        self.forgetModelCheck()
         self.updateTfDisplay(self.den[1:], self.num)
         self.plotPolesZeros()
         self.plotPlant()
@@ -1775,7 +1830,9 @@ class Window(QDialog):
             self.predictionHorizon(),
             self.remove_offset_box.isChecked(),
         )
+        self.prediction_fit = fit
         showFit(self.lbl_fit, fit)
+        self.updateModelCheck()
 
     def updateClosedLoopFit(self):
         flown_controller = self.flownController()
@@ -1920,6 +1977,154 @@ class Window(QDialog):
         self.plotBode(loop, stability_margins, is_stable)
         self.pending_robustness = (loop, stability_margins, is_stable)
         self.plotRobustness()
+
+        self.checked_loop = (loop, stability_margins)
+        self.updateModelCheck()
+
+    def forgetModelCheck(self):
+        """Until the loop of the next model is closed: nothing is checked."""
+        self.checked_loop = None
+        self.model_evidence = None
+        self.is_model_check_overridden = False
+        self.showModelCheck(None)
+
+    def updateModelCheck(self):
+        """Check the model for the loop closed with the current gains."""
+        model_check = None
+        if (
+            self.checked_loop is not None
+            and self.prediction_fit is not None
+            and self.hasData()
+        ):
+            if self.model_evidence is None:
+                self.model_evidence = self.gatherModelEvidence()
+            model_check = checkModel(
+                *self.checked_loop, self.model_evidence, self.prediction_fit
+            )
+        self.showModelCheck(model_check)
+
+    def gatherModelEvidence(self):
+        """What the estimation data say about the model, whatever the gains."""
+        flown_loop_is_stable = None
+        if self.flown_gains is not None:
+            flown_loop_is_stable = LoopModel(
+                self.num,
+                self.den,
+                self.dt,
+                self.sys_id_delays,
+                self.flown_gains,
+                **self.flown_options,
+            ).isStable()
+        return ModelEvidence(
+            measured=measurePlant(self.u, self.y, self.dt, self.reference),
+            num_samples=len(self.u),
+            has_reference=self.reference is not None,
+            feedback_correlation=feedbackCorrelation(
+                self.num,
+                self.den,
+                self.sys_id_delays,
+                *self.preprocessed(self.u, self.y),
+                kResidualLags,
+            ),
+            flown_loop_is_stable=flown_loop_is_stable,
+            has_validation=self.validation is not None,
+        )
+
+    def showModelCheck(self, model_check):
+        self.model_check = model_check
+        self.model_check_badge.showCheck(model_check)
+        self.model_check_panel.showCheck(model_check)
+        self.model_check_banner.showCheck(model_check, self.is_model_check_overridden)
+        self.strikeGains(
+            model_check is not None
+            and model_check.level == kDoNotTune
+            and not self.is_model_check_overridden
+        )
+        self.showCheckBand(None if model_check is None else model_check.band)
+
+    def showCheckBand(self, band):
+        """Shade the band (Hz) the model is checked over on the Bode plot."""
+        for item in self.bode_check_bands:
+            item.setVisible(band is not None)
+            if band is not None:
+                item.setRegion(np.log10(band))
+        ps.setLegendEntry(
+            self.bode_legend,
+            self.bode_check_band_sample,
+            None if band is None else "Band of the model check",
+        )
+
+    def strikeGains(self, is_struck):
+        """Gains of a model not to tune on are shown struck through: they stay
+        readable and editable, as changing them can clear the verdict."""
+        if is_struck == self.are_gains_struck:
+            return
+        self.are_gains_struck = is_struck
+        for edits in self.gain_edit.values():
+            for edit in edits.values():
+                font = edit.font()
+                font.setStrikeOut(is_struck)
+                edit.setFont(font)
+                palette = QPalette()
+                if is_struck:
+                    palette.setColor(QPalette.Text, QColor(ps.MUTED))
+                edit.setPalette(palette)
+
+    def overrideModelCheck(self):
+        self.is_model_check_overridden = True
+        self.showModelCheck(self.model_check)
+
+    def showModelCheckPanel(self):
+        panel = self.model_check_panel
+        if not panel.was_placed:
+            panel.was_placed = True
+            # Left of the Bode plot, which its links point to
+            plots = self.general_plots
+            bode_left = plots.mapToGlobal(
+                plots.mapFromScene(self.bode_mag_plot.sceneBoundingRect().topLeft())
+            ).x()
+            screen = self.screen().availableGeometry()
+            panel.move(
+                max(bode_left - panel.width() - kPanelGap, screen.left()),
+                max(self.mapToGlobal(self.rect().topLeft()).y(), screen.top()),
+            )
+        panel.show()
+        panel.raise_()
+        panel.activateWindow()
+
+    def showEvidence(self, plot):
+        """Show what a check of the model points to: the band it is checked
+        over on the Bode plot, or the residuals."""
+        if plot == "residuals":
+            self.plot_tabs.setCurrentWidget(self.residual_plots)
+            return
+        self.plot_tabs.setCurrentWidget(self.general_plots)
+        if self.model_check is not None and self.model_check.band is not None:
+            self.zoomBodeOnBand(self.model_check.band)
+
+    def zoomBodeOnBand(self, band):
+        """Zoom the Bode plot on the band (Hz) and on the plant there, model
+        and measured. A double click restores the default range."""
+        f_low, f_high = band[0] / kBandZoomMargin, band[1] * kBandZoomMargin
+        # The phase plot follows: its X axis is linked
+        self.bode_mag_plot.getViewBox().setXRange(
+            np.log10(f_low), np.log10(f_high), padding=0
+        )
+        for plot, curves in (
+            (self.bode_mag_plot, self.bode_mag_curves),
+            (self.bode_phase_plot, self.bode_phase_curves),
+        ):
+            shown = [
+                curves[key].yData[
+                    (curves[key].xData >= f_low) & (curves[key].xData <= f_high)
+                ]
+                for key in ("plant", "measured")
+                if curves[key].xData is not None
+            ]
+            values = np.concatenate(shown) if shown else np.array([])
+            values = values[np.isfinite(values)]
+            if len(values) > 0:
+                plot.getViewBox().setYRange(values.min(), values.max(), padding=0.15)
 
     def plotRobustness(self):
         """Robustness plots of the last loop, once their tab is shown: the root
