@@ -24,14 +24,7 @@ from PyQt5.QtWidgets import (
 )
 from scipy import signal
 from searchable_combo_box import SearchableComboBox
-
-# Coherence is averaged over num_samples // 4 long segments: below, the
-# frequency resolution fs / nperseg is too coarse for a rate loop
-kMinCoherenceSamples = 256
-# Coherence above which the frequency response is accurate enough to
-# identify from (Tischler and Remple, Aircraft and Rotorcraft System
-# Identification)
-kMinGoodCoherence = 0.6
+from system_identification import kMinCoherenceSamples, kMinGoodCoherence
 
 kMissingSamplesWarning = (
     "The selected range contains missing (NaN) samples, e.g. while the motor is "

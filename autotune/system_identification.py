@@ -44,6 +44,14 @@ from arx_rls import ArxRls
 from scipy.optimize import lsq_linear
 from scipy.signal import coherence, csd, lfilter
 
+# Coherence is averaged over num_samples // 4 long segments: below, the
+# frequency resolution fs / nperseg is too coarse for a rate loop
+kMinCoherenceSamples = 256
+# Coherence above which the frequency response is accurate enough to
+# identify from (Tischler and Remple, Aircraft and Rotorcraft System
+# Identification)
+kMinGoodCoherence = 0.6
+
 
 def apply_filters(u, y, f_hp, f_lp, dt):
     n_steps = len(u)
