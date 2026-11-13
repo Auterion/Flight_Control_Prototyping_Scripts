@@ -534,6 +534,9 @@ class Window(QDialog):
         self.step_sim_spinbox = {}
 
         self.hover_readouts = []
+        # (loop, stability_margins, is_stable) not plotted yet on the hidden
+        # robustness tab
+        self.pending_robustness = None
         self.general_plots = self.createGeneralPlots()
         self.robustness_plots = self.createRobustnessPlots()
         self.residual_plots = self.createResidualPlots()
@@ -592,6 +595,7 @@ class Window(QDialog):
         self.plot_tabs.addTab(self.general_plots, "General")
         self.plot_tabs.addTab(self.robustness_plots, "Robustness")
         self.plot_tabs.addTab(self.residual_plots, "Residuals")
+        self.plot_tabs.currentChanged.connect(self.plotRobustness)
 
         layout_h.addLayout(left_menu)
         layout_h.addWidget(self.plot_tabs)
@@ -622,6 +626,7 @@ class Window(QDialog):
         self.lbl_stability.setStyleSheet("")
         self.btn_stabilize.setVisible(False)
         self.is_system_identified = False
+        self.pending_robustness = None
         for curve in (*self.robustnessCurves(), *self.residualCurves()):
             curve.setData([], [])
         for text in (
@@ -1905,9 +1910,20 @@ class Window(QDialog):
 
         stability_margins = loop.stabilityMargins()
         is_stable = loop.isStable()
-        self.plotBode(
-            loop.loop_gain, loop.reference_to_output, stability_margins, is_stable
-        )
+        self.plotBode(loop, stability_margins, is_stable)
+        self.pending_robustness = (loop, stability_margins, is_stable)
+        self.plotRobustness()
+
+    def plotRobustness(self):
+        """Robustness plots of the last loop, once their tab is shown: the root
+        locus and the disk margins take most of the time of a gain change."""
+        if (
+            self.pending_robustness is None
+            or self.plot_tabs.currentWidget() is not self.robustness_plots
+        ):
+            return
+        loop, stability_margins, is_stable = self.pending_robustness
+        self.pending_robustness = None
         self.plotNyquist(loop, stability_margins, is_stable)
         self.plotSensitivities(loop, is_stable)
         self.plotRootLocus(loop, stability_margins[0], is_stable)
@@ -1926,7 +1942,7 @@ class Window(QDialog):
         self.step_response_curve.setData(t, y)
         self.updateStepInfoEnvelope()
 
-    def plotBode(self, open_loop, closed_loop, stability_margins, is_stable):
+    def plotBode(self, loop, stability_margins, is_stable):
         gain_margin, phase_margin, _, phase_crossover, gain_crossover, _ = (
             stability_margins
         )
@@ -1952,8 +1968,11 @@ class Window(QDialog):
             }
 
         w = np.geomspace(0.1, np.pi / self.dt, 500)
-        mag_ol, phase_ol, _ = ctrl.frequency_response(open_loop, omega=w)
-        mag_cl, phase_cl, _ = ctrl.frequency_response(closed_loop, omega=w)
+        mag_ol, phase_ol, _ = ctrl.frequency_response(loop.loop_gain, omega=w)
+        # From the transfer functions: the state-space closed loop needs a
+        # linear solve per frequency
+        closed_loop = loop.sensitivities(w)["TF"]
+        mag_cl, phase_cl = np.abs(closed_loop), np.angle(closed_loop)
         f = w / (2 * np.pi)
 
         self.bode_mag_curves["open"].setData(f, 20 * np.log10(mag_ol))

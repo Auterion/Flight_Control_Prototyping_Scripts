@@ -58,7 +58,7 @@ its parameter units (preset gain scale), the GMVC feedforward cancelling P on th
 and that Enter in a field does not press the "Select data" button;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, estimation
-and validation range selection and removal, restoring a saved selection, coherence of both ranges, plant model against its measured frequency response, residual correlations). `conftest.py` closes the windows a test leaves open: an open window
+and validation range selection and removal, restoring a saved selection, coherence of both ranges, plant model against its measured frequency response, residual correlations, robustness plots updated once their tab is shown). `conftest.py` closes the windows a test leaves open: an open window
 repainted while its pyqtgraph scene is garbage collected segfaults. These run in CI via
 `.github/workflows/autotune_tests.yml`.
 

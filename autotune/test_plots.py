@@ -46,6 +46,7 @@ def window(qapp):
     window.gains = dict(GAINS)
     window.plotPolesZeros()
     window.plotPlant()
+    window.plot_tabs.setCurrentWidget(window.robustness_plots)
     window.updateClosedLoop()
     return window
 
@@ -462,6 +463,34 @@ def test_open_loop_has_no_root_locus(window):
 
     assert window.root_locus_text.text() == "Kp = 0: the loop is open"
     assert legend_labels(window.root_locus_legend) == []
+    assert is_empty(window.loci_curve)
+
+
+def test_robustness_plots_wait_for_their_tab(window):
+    window.plot_tabs.setCurrentWidget(window.general_plots)
+    nyquist = curve_data(window.nyquist_curve)[0].copy()
+
+    change_gains(window, P=0.5)
+
+    assert curve_data(window.nyquist_curve)[0] == pytest.approx(nyquist)
+
+    window.plot_tabs.setCurrentWidget(window.robustness_plots)
+
+    x, y = curve_data(window.nyquist_curve)
+    w = np.geomspace(1e-2, np.pi / DT, 2000)
+    expected = loop_model(window).loop_gain(np.exp(1j * w * DT))
+    assert x + 1j * y == pytest.approx(expected, abs=1e-9)
+    assert window.closed_loop_pole_markers.getData()[0] is not None
+
+
+def test_reset_drops_the_robustness_plots_not_shown_yet(window):
+    window.plot_tabs.setCurrentWidget(window.general_plots)
+    change_gains(window, P=0.5)
+
+    window.reset()
+    window.plot_tabs.setCurrentWidget(window.robustness_plots)
+
+    assert is_empty(window.nyquist_curve)
     assert is_empty(window.loci_curve)
 
 
