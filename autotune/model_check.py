@@ -10,21 +10,22 @@ verdict therefore follows the gains.
 from dataclasses import dataclass
 
 import numpy as np
+from checks import (
+    Check,
+    Verdict,
+    degrees,
+    hertz,
+    kCaution,
+    kFail,
+    kPass,
+    kUnchecked,
+)
 from system_identification import (
     kMinCoherenceSamples,
     kMinGoodCoherence,
     measured_frequency_response,
     residual_correlations,
 )
-
-kPass = "pass"
-kCaution = "caution"
-kFail = "fail"
-# Could not be checked: the model is not known to be good
-kUnchecked = "unchecked"
-
-kGood = "good"
-kDoNotTune = "do_not_tune"
 
 # With more phase margin, the loop gain crosses 1 with a positive real part:
 # farther from -1 than without feedback. The stability of such a loop, e.g. a
@@ -88,21 +89,6 @@ class ModelEvidence:
 
 
 @dataclass
-class Check:
-    """One check of the model: value is what it found, criterion what it
-    takes to pass, reason the finding in a few words, hint what to change
-    when it does not pass and evidence the plot showing it."""
-
-    name: str
-    state: str
-    value: str
-    criterion: str = ""
-    reason: str = ""
-    hint: str = ""
-    evidence: str | None = None
-
-
-@dataclass
 class CriticalFrequency:
     """Where the stability of a loop is at stake: its gain crossover or, for
     a loop safe there, where its gain comes the closest to -1."""
@@ -123,32 +109,13 @@ def around(critical):
 
 
 @dataclass
-class ModelCheck:
+class ModelCheck(Verdict):
     """critical is the CriticalFrequency the model was checked around, band
     the (lowest, highest) frequencies in Hz it was checked over: both None
     for a loop whose gain stays far from -1 at all frequencies."""
 
     critical: CriticalFrequency | None
     band: tuple | None
-    checks: list
-
-    @property
-    def level(self):
-        states = {check.state for check in self.checks}
-        if kFail in states:
-            return kDoNotTune
-        if states & {kCaution, kUnchecked}:
-            return kCaution
-        return kGood
-
-    @property
-    def deciding(self):
-        """The check that sets the level, None when the model is good."""
-        for state in (kFail, kCaution, kUnchecked):
-            for check in self.checks:
-                if check.state == state:
-                    return check
-        return None
 
 
 @dataclass
@@ -265,16 +232,6 @@ def compareInBand(loop, measured, critical):
     comparison.model_modulus = float(np.min(np.abs(1 + model_loop)))
     comparison.measured_modulus = float(np.min(np.abs(1 + measured_loop)))
     return comparison
-
-
-def hertz(f):
-    if f >= 10:
-        return f"{f:.0f}"
-    return f"{f:.1f}" if f >= 1 else f"{f:.2f}"
-
-
-def degrees(angle):
-    return f"{angle:.0f}°".replace("-", "−")
 
 
 def bandText(comparison):
@@ -556,4 +513,4 @@ def checkModel(loop, stability_margins, evidence, prediction_fit):
     ]
     if evidence.flown_loop_is_stable is not None:
         checks.append(checkFlownLoop(evidence.flown_loop_is_stable))
-    return ModelCheck(critical, checkedBand(critical, loop.dt), checks)
+    return ModelCheck(checks, critical, checkedBand(critical, loop.dt))

@@ -56,6 +56,10 @@ a loop far from −1, closed-loop data without a reference, the prediction fit a
 the x500 log: the swept range good, the weakly excited one not to tune on; the badge, the
 banner, the struck gains and their "Use anyway", the details, the band shaded on the Bode
 plot and the link zooming on it);
+`test_tuning_check.py` checks the tuning check (good with enough margins, a caution for each
+margin below its limit, unstable; its badge over the gains following them, the banner
+putting the worst warning first, the details opened at the tuning check, the link to the
+robustness plots);
 `test_session.py` checks the sessions (every group reproduced exactly after a save and
 load, a model loaded without data, a tuning kept on another model, the identification run
 or flagged depending on the groups loaded, the log found next to the moved session or
@@ -88,12 +92,13 @@ poetry run isort --profile black autotune/
 ```
 ULog Flight Log → data_extractor.py → data_selection_window.py →
 system_identification.py (ARX/RLS) → pid_design.py (GMVC) →
-autotune.py (Bode/step response validation, model_check.py verdict) → PX4 gains
+autotune.py (Bode/step response validation, model_check.py and tuning_check.py
+verdicts) → PX4 gains
 ```
 
 ### Module responsibilities
 
-- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in three pyqtgraph tabs (General: logged data, poles/zeros, step response, Bode; Robustness: Nyquist with margins, sensitivities, root locus; Residuals: residual autocorrelation and residual-input cross-correlation), and the model check: its verdict next to the fits, its band on the Bode plot, its banner over the gains.
+- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in three pyqtgraph tabs (General: logged data, poles/zeros, step response, Bode; Robustness: Nyquist with margins, sensitivities, root locus; Residuals: residual autocorrelation and residual-input cross-correlation), and the checks: the verdict of the model check next to the fits and its band on the Bode plot, the verdict of the tuning check and the banner of both over the gains.
 
 - **`data_extractor.py`** — Parses PX4 ULog binary logs using `pyulog`. Extracts and interpolates signals (rates, setpoints, actuator outputs, airspeed). Returns numpy arrays aligned to a common time base.
 
@@ -120,9 +125,13 @@ autotune.py (Bode/step response validation, model_check.py verdict) → PX4 gain
 
 - **`loop_model.py`** — `LoopModel`: the closed loop (identified plant + PX4 PID, delay inside the loop) as a two-degree-of-freedom controller `u = C_r r - C_y y`. Provides the time simulation, loop gain, closed-loop poles/stability, stability margins and gang-of-six sensitivities used by the plots in `autotune.py`.
 
+- **`checks.py`** — What the model check and the tuning check share: a `Check` (state, what it found, what it takes to pass, what to do) and a `Verdict`, whose level (good / caution / bad) is that of its worst check. No Qt.
+
 - **`model_check.py`** — `checkModel`: verdict on the model for the loop closed with the current gains (good / caution / do not tune), the worst of its checks: excitation of the band from 1/3 to 3 times the critical frequency, prediction fit, model against the measured plant over that band, phase and modulus margins on the measured plant against those on the model, stability of the model with the flown gains. The critical frequency is the gain crossover or, for a loop safe there (none, or over 90° of phase margin), where the loop gain is the closest to −1; a loop whose gain stays far from −1 has none and is compared over all the measured frequencies. `ModelEvidence` holds what does not depend on the gains. No Qt.
 
-- **`model_check_widgets.py`** — Widgets of a `ModelCheck`: `ModelCheckBadge` (verdict next to the fits, clicked for the details), `ModelCheckPanel` (non-modal details of each check in plain sentences, following the gains, with links to the plots) and `ModelCheckBanner` (reason over the gains, in the corner of the tuning tabs, with "Use anyway" on a model not to tune on).
+- **`tuning_check.py`** — `checkTuning`: verdict on the gains (good / low margins / unstable) from the stability of the loop closed on the model and its gain, phase, modulus and delay margins against their limits, those the plots color the margins by. No Qt.
+
+- **`check_widgets.py`** — Widgets of both checks: `CheckBadge` (verdict of a check, clicked for the details: the model's next to the fits, the tuning's over the gains), `ChecksPanel` (non-modal details of each check in plain sentences, following the gains, with links to the plots), `ChecksBanner` (reasons of the checks that are not good, the worst first, with "Use anyway" on a model not to tune on) and `ChecksCorner` (banner and tuning badge, in the corner of the tuning tabs).
 
 - **`pid_analyse_window.py`** — Secondary pyqtgraph window with the step response of the flown controller, estimated from the logged data by Wiener deconvolution over sliding windows.
 

@@ -11,6 +11,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import numpy as np  # noqa: E402
 import presets  # noqa: E402
 import pytest  # noqa: E402
+from check_widgets import kNoModelCheckText, modelCheckHtml  # noqa: E402
+from checks import (  # noqa: E402
+    hertz,
+    kBad,
+    kCaution,
+    kFail,
+    kGood,
+    kPass,
+    kUnchecked,
+)
 from data_selection_window import DataSelectionWindow  # noqa: E402
 from loop_model import LoopModel  # noqa: E402
 from model_check import (  # noqa: E402
@@ -18,18 +28,10 @@ from model_check import (  # noqa: E402
     checkModel,
     compareInBand,
     feedbackCorrelation,
-    hertz,
-    kCaution,
-    kDoNotTune,
-    kFail,
     kFeedbackCorrelation,
-    kGood,
-    kPass,
-    kUnchecked,
     measurePlant,
     worstPhaseMargin,
 )
-from model_check_widgets import checksHtml, kNoCheckText  # noqa: E402
 from pid_design import computePidGmvc  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 from scipy.signal import chirp  # noqa: E402
@@ -144,7 +146,7 @@ def test_model_with_twice_the_gain_is_not_to_tune_on(swept_loop):
 
     model_check = check(wrong_model, FLOWN_GAINS, *swept_loop)
 
-    assert model_check.level == kDoNotTune
+    assert model_check.level == kBad
     assert model_check.deciding.name == "Model vs measured plant"
     loop = LoopModel(*wrong_model[:2], DT, DELAY, FLOWN_GAINS)
     comparison = compareInBand(
@@ -173,7 +175,7 @@ def test_missed_delay_only_matters_for_a_fast_loop():
 
     assert slow.critical.f < 1.0 < 3.0 < fast.critical.f
     assert slow.level == kGood
-    assert fast.level == kDoNotTune
+    assert fast.level == kBad
     assert fast.deciding.name == "Model vs measured plant"
 
 
@@ -187,7 +189,7 @@ def test_resonance_missed_by_the_model_fails_the_phase_margin():
 
     model_check = check(MODEL, gains, u, y, r)
 
-    assert model_check.level == kDoNotTune
+    assert model_check.level == kBad
     assert states(model_check)["Margins on the measured plant"] == kFail
     assert "phase margin" in model_check.checks[3].reason
 
@@ -206,7 +208,7 @@ def test_crossover_above_the_excited_band_is_a_caution():
 
 @pytest.mark.parametrize(
     "prediction_fit, state, level",
-    [(75.0, kPass, kGood), (65.0, kCaution, kCaution), (50.0, kFail, kDoNotTune)],
+    [(75.0, kPass, kGood), (65.0, kCaution, kCaution), (50.0, kFail, kBad)],
 )
 def test_prediction_fit_is_a_floor(swept_loop, prediction_fit, state, level):
     model_check = check(MODEL, FLOWN_GAINS, *swept_loop, prediction_fit)
@@ -268,7 +270,7 @@ def test_loop_safe_at_its_crossover_is_checked_where_it_is_closest_to_minus_one(
     assert model_check.critical.f > 5 * crossover / (2 * np.pi)
     assert model_check.level == kGood
     assert "phase margin" not in model_check.checks[3].value
-    assert check(wrong_model, LOW_GAINS, u, y, r).level == kDoNotTune
+    assert check(wrong_model, LOW_GAINS, u, y, r).level == kBad
 
 
 def test_loop_far_from_minus_one_needs_no_excitation(swept_loop):
@@ -283,7 +285,7 @@ def test_loop_far_from_minus_one_needs_no_excitation(swept_loop):
     assert model_check.level == kGood
     assert model_check.checks[0].value.startswith("Not needed with these gains")
     assert model_check.checks[2].value.startswith("Over the measured frequencies")
-    assert wrong.level == kDoNotTune
+    assert wrong.level == kBad
     assert wrong.deciding.name == "Model vs measured plant"
 
 
@@ -324,7 +326,7 @@ def test_flown_gains_are_checked_when_known(swept_loop):
     assert "Flown gains on the model" not in states(unknown)
     assert states(stable)["Flown gains on the model"] == kPass
     assert stable.level == kGood
-    assert unstable.level == kDoNotTune
+    assert unstable.level == kBad
     assert unstable.deciding.name == "Flown gains on the model"
 
 
@@ -355,7 +357,7 @@ def test_details_list_each_check_and_link_the_plot_of_those_not_passed(swept_loo
     wrong_model = ([2 * b for b in NUM], DEN, DELAY)
     model_check = check(wrong_model, FLOWN_GAINS, *swept_loop)
 
-    details = checksHtml(model_check)
+    details = modelCheckHtml(model_check)
 
     for name in states(model_check):
         assert name in details
@@ -364,7 +366,7 @@ def test_details_list_each_check_and_link_the_plot_of_those_not_passed(swept_loo
     assert f"The checks look at the band {low}–{high} Hz" in details
     assert f"the {hertz(model_check.critical.f)} Hz crossover of the loop" in details
     assert details.count('<a href="bode">') == 1
-    assert "<a href" not in checksHtml(model_check, with_links=False)
+    assert "<a href" not in modelCheckHtml(model_check, with_links=False)
 
 
 def test_checks_say_what_they_found_and_what_to_do():
@@ -412,6 +414,17 @@ def load_log(selection, monkeypatch, t_range):
     return window
 
 
+def model_warning(window):
+    """Warning of the model shown over the gains, None without one."""
+    banner = window.checks_banner
+    if banner.isHidden():
+        return None
+    for sentence in banner.label.text().split(" · "):
+        if sentence.startswith(("⚠ Caution", "✕ Do not tune")):
+            return sentence
+    return None
+
+
 def are_gains_struck(window):
     struck = {
         edit.font().strikeOut()
@@ -434,8 +447,8 @@ def test_window_without_data_checks_no_model(qapp):
 
     assert window.model_check is None
     assert window.model_check_badge.text() == "—"
-    assert window.model_check_banner.isHidden()
-    assert window.model_check_panel.text.toPlainText() == kNoCheckText
+    assert model_warning(window) is None
+    assert kNoModelCheckText in window.checks_panel.text.toPlainText()
     assert not are_gains_struck(window)
 
 
@@ -444,21 +457,22 @@ def test_model_of_the_swept_range_is_good(selection, monkeypatch):
 
     assert window.model_check.level == kGood
     assert window.model_check_badge.text() == "✓ Good ▸"
-    assert window.model_check_banner.isHidden()
+    assert model_warning(window) is None
     assert not are_gains_struck(window)
     assert "Excitation" in window.model_check_badge.toolTip()
-    assert "Flown gains on the model" in window.model_check_panel.text.toPlainText()
+    assert "Flown gains on the model" in window.checks_panel.text.toPlainText()
 
 
 def test_model_of_the_weakly_excited_range_is_not_to_tune_on(selection, monkeypatch):
     window = load_log(selection, monkeypatch, WEAKLY_EXCITED_RANGE)
-    banner = window.model_check_banner
+    banner = window.checks_banner
 
-    assert window.model_check.level == kDoNotTune
+    assert window.model_check.level == kBad
     assert window.model_check_badge.text() == "✕ Do not tune ▸"
-    assert not banner.isHidden()
+    assert model_warning(window) == (
+        f"✕ Do not tune: {window.model_check.deciding.reason}"
+    )
     assert banner.label.text().startswith("✕ Do not tune: ")
-    assert window.model_check.deciding.reason in banner.label.text()
     assert not banner.btn_override.isHidden()
     assert are_gains_struck(window)
 
@@ -467,7 +481,7 @@ def test_use_anyway_shows_the_gains_as_usable_until_the_next_model(
     selection, monkeypatch
 ):
     window = load_log(selection, monkeypatch, WEAKLY_EXCITED_RANGE)
-    banner = window.model_check_banner
+    banner = window.checks_banner
 
     banner.btn_override.click()
 
@@ -494,15 +508,15 @@ def test_verdict_follows_the_gains(selection, monkeypatch):
 
     assert window.model_check.level == kCaution
     assert window.model_check.deciding.name == "Excitation"
-    assert window.model_check_banner.label.text().startswith("⚠ Caution: ")
-    assert window.model_check_banner.btn_override.isHidden()
+    assert model_warning(window).startswith("⚠ Caution: ")
+    assert window.checks_banner.btn_override.isHidden()
     assert not are_gains_struck(window)
 
     window.gains["P"] = flown_p
     window.updateClosedLoop()
 
     assert window.model_check.level == kGood
-    assert window.model_check_banner.isHidden()
+    assert model_warning(window) is None
 
 
 def test_prediction_horizon_updates_the_check(selection, monkeypatch):
@@ -523,20 +537,20 @@ def test_selecting_other_data_forgets_the_check(selection, monkeypatch):
 
     assert window.model_check is None
     assert window.model_check_badge.text() == "—"
-    assert window.model_check_banner.isHidden()
+    assert window.checks_banner.isHidden()
     assert not are_gains_struck(window)
 
 
 def test_badge_and_banner_open_the_details(selection, monkeypatch):
     window = load_log(selection, monkeypatch, WEAKLY_EXCITED_RANGE)
-    panel = window.model_check_panel
+    panel = window.checks_panel
     assert panel.isHidden()
 
     window.model_check_badge.click()
     assert not panel.isHidden()
 
     panel.hide()
-    window.model_check_banner.btn_details.click()
+    window.checks_banner.btn_details.click()
     assert not panel.isHidden()
     assert "Model vs measured plant" in panel.text.toPlainText()
 
@@ -578,7 +592,7 @@ def test_details_link_zooms_the_bode_plot_on_the_band(selection, monkeypatch):
     window.plot_tabs.setCurrentWidget(window.robustness_plots)
     f_low, f_high = window.model_check.band
 
-    window.model_check_panel.evidenceRequested.emit("bode")
+    window.checks_panel.evidenceRequested.emit("bode")
 
     assert window.plot_tabs.currentWidget() is window.general_plots
     x_min, x_max = window.bode_mag_plot.getViewBox().viewRange()[0]
@@ -598,7 +612,7 @@ def test_details_link_zooms_the_bode_plot_on_the_band(selection, monkeypatch):
 def test_details_link_shows_the_residuals(selection, monkeypatch):
     window = load_log(selection, monkeypatch, WEAKLY_EXCITED_RANGE)
 
-    window.model_check_panel.evidenceRequested.emit("residuals")
+    window.checks_panel.evidenceRequested.emit("residuals")
 
     assert window.plot_tabs.currentWidget() is window.residual_plots
 
@@ -609,12 +623,12 @@ def test_details_are_placed_once_then_stay_where_they_are_put(
     window = load_log(selection, monkeypatch, SWEPT_RANGE)
     window.show()
     qapp.processEvents()
-    panel = window.model_check_panel
+    panel = window.checks_panel
 
-    window.showModelCheckPanel()
+    window.showChecksPanel("model")
     panel.move(123, 45)
     panel.hide()
-    window.showModelCheckPanel()
+    window.showChecksPanel("model")
 
     assert (panel.x(), panel.y()) == (123, 45)
 
@@ -624,10 +638,10 @@ def test_banner_leaves_the_tabs_their_width(selection, monkeypatch, qapp):
     window.show()
     qapp.processEvents()
     tabs = window.tuning_tabs
-    banner = window.model_check_banner
+    corner = window.checks_corner
 
-    assert banner.sizeHint().width() <= tabs.width() - tabs.tabBar().sizeHint().width()
-    assert banner.height() <= tabs.tabBar().height()
+    assert corner.sizeHint().width() <= tabs.width() - tabs.tabBar().sizeHint().width()
+    assert corner.height() <= tabs.tabBar().height()
 
 
 def test_fit_colors_follow_the_thresholds_of_the_check(qapp):

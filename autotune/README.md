@@ -159,6 +159,27 @@ Without a *reference* in the preset, the plant is measured from the input, which
 biases where it dominates the excitation. When the residuals show this feedback (Residuals
 tab, lags ≤ 0), the excitation cannot be checked and the verdict is a caution at best.
 
+#### Tuning Check
+
+The model check tells whether the model can be trusted; *Tuning check*, over the gains,
+tells whether the gains currently set leave enough stability margin on that model:
+
+- **✓ Good**: the loop is stable and every margin reaches its minimum.
+- **⚠ Low margins**: a margin is below its minimum.
+- **✕ Unstable**: the loop closed on the model is unstable.
+
+| Margin | Minimum |
+|--------|---------|
+| Gain margin | 6 dB |
+| Phase margin | 45° |
+| Modulus margin (distance of the loop gain to −1) | 0.5, a sensitivity peak of 6 dB |
+| Delay margin | 1 sample of the model, whose delay may be underestimated by one |
+
+Click the verdict for the details of each margin, in the same window as those of the model
+check. While the tuning is not good, the banner over the gains gives the reason, next to
+that of the model check. The margins are those of the model: they hold as far as the model
+check is good.
+
 #### Tuning Gains
 
 The PID tab starts from the gains flown in the log, when the preset gives them. Once you

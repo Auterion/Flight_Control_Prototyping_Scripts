@@ -47,6 +47,15 @@ from dataclasses import dataclass, replace
 import control as ctrl
 import plot_style as ps
 import pyqtgraph as pg
+from check_widgets import (
+    CheckBadge,
+    ChecksCorner,
+    ChecksPanel,
+    kModel,
+    kModelCheckHint,
+    kTuning,
+)
+from checks import kBad
 from data_extractor import *
 from data_selection_window import DataSelectionWindow
 from loop_model import LoopModel, idealGains, parallelGains, scaledGains
@@ -54,16 +63,9 @@ from model_check import (
     ModelEvidence,
     checkModel,
     feedbackCorrelation,
-    kDoNotTune,
     kGoodFit,
     kPoorFit,
     measurePlant,
-)
-from model_check_widgets import (
-    ModelCheckBadge,
-    ModelCheckBanner,
-    ModelCheckPanel,
-    kModelCheckHint,
 )
 from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
@@ -120,6 +122,7 @@ from system_identification import (
     measured_frequency_response,
     residual_correlations,
 )
+from tuning_check import MarginLimits, checkTuning
 from updater import UpdateBanner, restart
 
 
@@ -562,6 +565,7 @@ class Window(QDialog):
         self.model_evidence = None
         self.prediction_fit = None
         self.model_check = None
+        self.tuning_check = None
         # "Use anyway" of a model not to tune on, until the next model
         self.is_model_check_overridden = False
         self.are_gains_struck = False
@@ -624,7 +628,7 @@ class Window(QDialog):
         self.tab_gmvc.setLayout(self.createGmvcLayout())
         self.tuning_tabs.addTab(self.tab_gmvc, "GMVC")
         # Next to the tabs: over the gains of both, without taking a row
-        self.tuning_tabs.setCornerWidget(self.model_check_banner, Qt.TopRightCorner)
+        self.tuning_tabs.setCornerWidget(self.checks_corner, Qt.TopRightCorner)
 
         self.plot_tabs = QTabWidget()
         self.plot_tabs.addTab(self.general_plots, "General")
@@ -663,7 +667,7 @@ class Window(QDialog):
         self.is_system_identified = False
         self.pending_robustness = None
         self.prediction_fit = None
-        self.forgetModelCheck()
+        self.forgetChecks()
         for curve in (*self.robustnessCurves(), *self.residualCurves()):
             curve.setData([], [])
         for text in (
@@ -1192,17 +1196,20 @@ class Window(QDialog):
         layout.addRow(self.btn_find_params)
 
     def createModelCheckWidget(self, layout):
-        self.model_check_badge = ModelCheckBadge()
-        self.model_check_badge.clicked.connect(self.showModelCheckPanel)
+        self.model_check_badge = CheckBadge(kModel)
+        self.model_check_badge.clicked.connect(lambda: self.showChecksPanel(kModel))
         name_label = QLabel("Model check ⓘ")
         name_label.setToolTip(kModelCheckHint)
         layout.addRow(name_label, self.model_check_badge)
 
-        self.model_check_panel = ModelCheckPanel(self)
-        self.model_check_panel.evidenceRequested.connect(self.showEvidence)
-        self.model_check_banner = ModelCheckBanner()
-        self.model_check_banner.detailsRequested.connect(self.showModelCheckPanel)
-        self.model_check_banner.overrideRequested.connect(self.overrideModelCheck)
+        self.checks_panel = ChecksPanel(self)
+        self.checks_panel.evidenceRequested.connect(self.showEvidence)
+        self.checks_corner = ChecksCorner()
+        self.checks_banner = self.checks_corner.banner
+        self.checks_banner.detailsRequested.connect(self.showChecksPanel)
+        self.checks_banner.overrideRequested.connect(self.overrideModelCheck)
+        self.tuning_check_badge = self.checks_corner.tuning_badge
+        self.tuning_check_badge.clicked.connect(lambda: self.showChecksPanel(kTuning))
 
     def createFitWidget(self, layout):
         self.horizon_spinbox = QDoubleSpinBox()
@@ -1766,7 +1773,7 @@ class Window(QDialog):
         self.den = den
         self.Gz = arx_transfer_function(self.num, self.den, self.dt)
         self.is_system_identified = True
-        self.forgetModelCheck()
+        self.forgetChecks()
         self.updateTfDisplay(self.den[1:], self.num)
         self.plotPolesZeros()
         self.plotPlant()
@@ -1978,15 +1985,27 @@ class Window(QDialog):
         self.pending_robustness = (loop, stability_margins, is_stable)
         self.plotRobustness()
 
+        self.tuning_check = checkTuning(
+            loop,
+            stability_margins,
+            is_stable,
+            MarginLimits(
+                self.kMinGainMarginDb,
+                self.kMinPhaseMarginDeg,
+                self.kMinModulusMargin,
+                self.kMinDelayMarginSamples,
+            ),
+        )
         self.checked_loop = (loop, stability_margins)
         self.updateModelCheck()
 
-    def forgetModelCheck(self):
+    def forgetChecks(self):
         """Until the loop of the next model is closed: nothing is checked."""
         self.checked_loop = None
         self.model_evidence = None
+        self.tuning_check = None
         self.is_model_check_overridden = False
-        self.showModelCheck(None)
+        self.showChecks(None)
 
     def updateModelCheck(self):
         """Check the model for the loop closed with the current gains."""
@@ -2001,7 +2020,7 @@ class Window(QDialog):
             model_check = checkModel(
                 *self.checked_loop, self.model_evidence, self.prediction_fit
             )
-        self.showModelCheck(model_check)
+        self.showChecks(model_check)
 
     def gatherModelEvidence(self):
         """What the estimation data say about the model, whatever the gains."""
@@ -2030,14 +2049,17 @@ class Window(QDialog):
             has_validation=self.validation is not None,
         )
 
-    def showModelCheck(self, model_check):
+    def showChecks(self, model_check):
+        """Show model_check and the tuning check of the current gains."""
         self.model_check = model_check
         self.model_check_badge.showCheck(model_check)
-        self.model_check_panel.showCheck(model_check)
-        self.model_check_banner.showCheck(model_check, self.is_model_check_overridden)
+        self.checks_panel.showChecks(model_check, self.tuning_check)
+        self.checks_corner.showChecks(
+            model_check, self.tuning_check, self.is_model_check_overridden
+        )
         self.strikeGains(
             model_check is not None
-            and model_check.level == kDoNotTune
+            and model_check.level == kBad
             and not self.is_model_check_overridden
         )
         self.showCheckBand(None if model_check is None else model_check.band)
@@ -2072,10 +2094,11 @@ class Window(QDialog):
 
     def overrideModelCheck(self):
         self.is_model_check_overridden = True
-        self.showModelCheck(self.model_check)
+        self.showChecks(self.model_check)
 
-    def showModelCheckPanel(self):
-        panel = self.model_check_panel
+    def showChecksPanel(self, kind):
+        """Show the details of the checks, at those of kind."""
+        panel = self.checks_panel
         if not panel.was_placed:
             panel.was_placed = True
             # Left of the Bode plot, which its links point to
@@ -2091,12 +2114,17 @@ class Window(QDialog):
         panel.show()
         panel.raise_()
         panel.activateWindow()
+        panel.showSection(kind)
 
     def showEvidence(self, plot):
-        """Show what a check of the model points to: the band it is checked
-        over on the Bode plot, or the residuals."""
-        if plot == "residuals":
-            self.plot_tabs.setCurrentWidget(self.residual_plots)
+        """Show what a check points to: the band the model is checked over on
+        the Bode plot, the residuals or the margins of the robustness tab."""
+        other_tabs = {
+            "residuals": self.residual_plots,
+            "robustness": self.robustness_plots,
+        }
+        if plot in other_tabs:
+            self.plot_tabs.setCurrentWidget(other_tabs[plot])
             return
         self.plot_tabs.setCurrentWidget(self.general_plots)
         if self.model_check is not None and self.model_check.band is not None:
