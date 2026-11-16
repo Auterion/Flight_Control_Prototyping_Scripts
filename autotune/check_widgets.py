@@ -179,7 +179,14 @@ class CheckBadge(QPushButton):
         self.prefix = prefix
         self.setFlat(True)
         self.setCursor(Qt.PointingHandCursor)
+        # Not by the style sheet: the size hint measures the texts with it
+        font = self.font()
+        font.setBold(True)
+        self.setFont(font)
         self.showCheck(None)
+
+    def verdictText(self, level):
+        return f"{self.prefix}{kLevelLabels[self.kind][level]} ▸"
 
     def showCheck(self, verdict):
         if self.kind == kModel:
@@ -190,13 +197,26 @@ class CheckBadge(QPushButton):
             self.setText(f"{self.prefix}—")
             color = ps.INK
         else:
-            self.setText(f"{self.prefix}{kLevelLabels[self.kind][verdict.level]} ▸")
+            self.setText(self.verdictText(verdict.level))
             color = kLevelColors[verdict.level]
         self.setStyleSheet(
             "QPushButton { border: none; padding: 0; text-align: left;"
-            f" font-weight: bold; color: {color}; }}"
+            f" color: {color}; }}"
             " QPushButton:hover { text-decoration: underline; }"
         )
+
+    def sizeHint(self):
+        """As wide as its widest verdict: a change of verdict must not move
+        the layout around the badge."""
+        hint = super().sizeHint()
+        widest = max(
+            self.textWidth(self.verdictText(level)) for level in kLevelLabels[self.kind]
+        )
+        return QSize(hint.width() - self.textWidth(self.text()) + widest, hint.height())
+
+    def textWidth(self, text):
+        # As QPushButton measures its text for its size hint
+        return self.fontMetrics().size(Qt.TextShowMnemonic, text).width()
 
 
 class ChecksPanel(QDialog):

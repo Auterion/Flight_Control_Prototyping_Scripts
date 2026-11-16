@@ -59,7 +59,7 @@ the Bode plot for any loop, with or without data, and the link zooming on it);
 `test_tuning_check.py` checks the tuning check (good with enough margins, a caution for each
 margin below its limit, unstable; its badge over the gains following them, the banner
 putting the worst warning first, the details opened at the tuning check, the link to the
-robustness plots);
+robustness plots, a badge as wide whatever its verdict);
 `test_session.py` checks the sessions (every group reproduced exactly after a save and
 load, a model loaded without data, a tuning kept on another model, the identification run
 or flagged depending on the groups loaded, the log found next to the moved session or

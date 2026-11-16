@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 from check_widgets import (  # noqa: E402
+    CheckBadge,
     kNoModelCheckText,
     kNoTuningCheckText,
     kTuning,
@@ -199,6 +200,19 @@ def test_tuning_verdict_follows_the_gains(window):
 
     assert window.tuning_check_badge.text() == "Tuning check: ✓ Good ▸"
     assert banner_text(window) is None
+
+
+def test_badge_is_as_wide_whatever_its_verdict(qapp):
+    badge = CheckBadge(kTuning, prefix="Tuning check: ")
+    widths = set()
+
+    for verdict in (None, check(SLOW_GAINS), check(TIGHT_GAINS), check(UNSTABLE_GAINS)):
+        badge.showCheck(verdict)
+        widths.add(badge.sizeHint().width())
+
+    assert len(widths) == 1
+    widest_text = badge.fontMetrics().horizontalAdvance("Tuning check: ⚠ Low margins ▸")
+    assert widths.pop() >= widest_text
 
 
 def test_tuning_check_uses_the_limits_of_the_plots(window):
