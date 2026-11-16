@@ -24,7 +24,7 @@ kTuning = "tuning"
 
 # A shape per level and state: they do not rely on the color alone
 kLevelLabels = {
-    kModel: {kGood: "✓ Good", kCaution: "⚠ Caution", kBad: "✕ Do not tune"},
+    kModel: {kGood: "✓ Good", kCaution: "⚠ Caution", kBad: "✕ Bad"},
     kTuning: {kGood: "✓ Good", kCaution: "⚠ Low margins", kBad: "✕ Unstable"},
 }
 kVerdicts = {
@@ -75,7 +75,7 @@ kModelCheckHint = (
     "<b>✓ Good:</b> every check passes.<br>"
     "<b>⚠ Caution:</b> a check is borderline or could not be made (–): the "
     "model is not verified.<br>"
-    "<b>✕ Do not tune:</b> the data contradict the model.<br><br>"
+    "<b>✕ Bad:</b> the data contradict the model.<br><br>"
     "Click the verdict for the details of each check."
 )
 kTuningNote = (

@@ -125,7 +125,7 @@ verdict on the model, for the gains currently set:
 - **✓ Good**: every check passes.
 - **⚠ Caution**: a check is borderline or could not be made (–): the model is not known to
   be good.
-- **✕ Do not tune**: the data contradict the model.
+- **✕ Bad**: the data contradict the model.
 
 The checks compare the model with the plant measured from the data (the points of the Bode
 plot, estimated without a model structure) where the stability of the loop is at stake: the
@@ -156,10 +156,10 @@ plot restores its range). This window can stay open: it follows the gains.
 
 <img src="docs/gui_checks_details.png" width="600"/>
 
-While the model is not good, a banner over the gains gives the reason. On *Do not tune*, the
+While the model is not good, a banner over the gains gives the reason. On *Bad*, the
 gains are also struck through until *Use anyway*, which holds until the next model.
 
-![Model not to tune on](docs/gui_model_check.png)
+![Bad model](docs/gui_model_check.png)
 
 Without a *reference* in the preset, the plant is measured from the input, which the feedback
 biases where it dominates the excitation. When the residuals show this feedback (Residuals

@@ -568,7 +568,7 @@ class Window(QDialog):
         self.prediction_fit = None
         self.model_check = None
         self.tuning_check = None
-        # "Use anyway" of a model not to tune on, until the next model
+        # "Use anyway" of a bad model, until the next model
         self.is_model_check_overridden = False
         self.are_gains_struck = False
         self.general_plots = self.createGeneralPlots()
@@ -2081,7 +2081,7 @@ class Window(QDialog):
         )
 
     def strikeGains(self, is_struck):
-        """Gains of a model not to tune on are shown struck through: they stay
+        """Gains of a bad model are shown struck through: they stay
         readable and editable, as changing them can clear the verdict."""
         if is_struck == self.are_gains_struck:
             return
