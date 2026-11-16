@@ -52,6 +52,8 @@ kEvidenceLinks = {
     "residuals": "Show the residuals",
     "robustness": "Show the margins on the Nyquist plot",
 }
+# Of a note on the tool, as the upgrade banner: not a state of the checks
+kDisclaimerColors = ("#e8f1fc", ps.BLUE)
 kBannerColors = {
     kCaution: ("#fdf3d7", ps.WARNING),
     kBad: ("#fbe9e9", ps.CRITICAL),
@@ -77,6 +79,10 @@ kModelCheckHint = (
     "model is not verified.<br>"
     "<b>✕ Bad:</b> the data contradict the model.<br><br>"
     "Click the verdict for the details of each check."
+)
+kChecksDisclaimer = (
+    "These checks are automated and based on good-practice rules. They do not "
+    "guarantee a stable or good behavior on the actual vehicle."
 )
 kTuningNote = (
     "The margins are those of the loop closed on the model: they hold as far "
@@ -235,12 +241,31 @@ class ChecksPanel(QDialog):
         )
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        # Over the text, not in it: it stays in view whatever the scroll
+        layout.addWidget(self.createDisclaimer())
         layout.addWidget(self.text)
         self.setLayout(layout)
         self.resize(*kPanelSize)
         # Placed by its owner when first shown, then left where the user puts it
         self.was_placed = False
         self.showChecks(None, None)
+
+    def createDisclaimer(self):
+        self.disclaimer = QLabel(f"ⓘ {kChecksDisclaimer}")
+        self.disclaimer.setWordWrap(True)
+        frame = QFrame()
+        frame.setObjectName("checksDisclaimer")
+        background, border = kDisclaimerColors
+        frame.setStyleSheet(
+            f"#checksDisclaimer {{ background: {background};"
+            f" border-bottom: 1px solid {border}; }}"
+        )
+        layout = QHBoxLayout()
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.addWidget(self.disclaimer)
+        frame.setLayout(layout)
+        return frame
 
     def showChecks(self, model_check, tuning_check):
         # A gain change must not scroll the checks being read back to the top

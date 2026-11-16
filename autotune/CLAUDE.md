@@ -58,8 +58,8 @@ banner, the struck gains and their "Use anyway", the details, the band of intere
 the Bode plot for any loop, with or without data, and the link zooming on it);
 `test_tuning_check.py` checks the tuning check (good with enough margins, a caution for each
 margin below its limit, unstable; its badge over the gains following them, the banner
-putting the worst warning first, the details opened at the tuning check, the link to the
-robustness plots, a badge as wide whatever its verdict);
+putting the worst warning first, the details opened at the tuning check under their
+disclaimer, the link to the robustness plots, a badge as wide whatever its verdict);
 `test_session.py` checks the sessions (every group reproduced exactly after a save and
 load, a model loaded without data, a tuning kept on another model, the identification run
 or flagged depending on the groups loaded, the log found next to the moved session or
@@ -131,7 +131,7 @@ verdicts) → PX4 gains
 
 - **`tuning_check.py`** — `checkTuning`: verdict on the gains (good / low margins / unstable) from the stability of the loop closed on the model and its gain, phase, modulus and delay margins against their limits, those the plots color the margins by. No Qt.
 
-- **`check_widgets.py`** — Widgets of both checks: `CheckBadge` (verdict of a check, clicked for the details: the model's next to the fits, the tuning's over the gains), `ChecksPanel` (non-modal details of each check in plain sentences, following the gains, with links to the plots), `ChecksBanner` (reasons of the checks that are not good, the worst first, with "Use anyway" on a bad model) and `ChecksCorner` (banner and tuning badge, in the corner of the tuning tabs).
+- **`check_widgets.py`** — Widgets of both checks: `CheckBadge` (verdict of a check, clicked for the details: the model's next to the fits, the tuning's over the gains), `ChecksPanel` (non-modal details of each check in plain sentences, following the gains, with links to the plots, under a disclaimer that stays in view), `ChecksBanner` (reasons of the checks that are not good, the worst first, with "Use anyway" on a bad model) and `ChecksCorner` (banner and tuning badge, in the corner of the tuning tabs).
 
 - **`pid_analyse_window.py`** — Secondary pyqtgraph window with the step response of the flown controller, estimated from the logged data by Wiener deconvolution over sliding windows.
 
