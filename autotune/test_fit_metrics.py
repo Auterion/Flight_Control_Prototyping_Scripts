@@ -300,6 +300,10 @@ def test_loading_a_log_measures_the_step_response_of_the_flown_loop(
 
     t, response = window.flown_step_response_curve.getData()
     assert t[-1] == pytest.approx(0.5, abs=0.02)
+    # The flown gains are pre-loaded: both model responses are the same
+    assert window.flown_model_step_curve.yData == pytest.approx(
+        window.step_response_curve.yData
+    )
     assert response[t > 0.2] == pytest.approx(1.0, abs=0.15)
 
 

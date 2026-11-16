@@ -106,6 +106,91 @@ def test_no_step_response_is_measured_without_a_reference(window):
     assert legend_labels(window.step_legend) == ["Model"]
 
 
+FLOWN_GAINS = {"P": 0.4, "I": 0.2, "D": 0.01, "FF": 0.0}
+
+
+def fly(window, gains, **options):
+    window.flown_gains = dict(gains)
+    window.flown_options = options
+    window.updateClosedLoop()
+
+
+def test_model_step_response_with_the_flown_gains_is_shown(window):
+    fly(window, FLOWN_GAINS)
+
+    t, y = window.flown_model_step_curve.getData()
+    disturbance = np.where(
+        t >= window.kDisturbanceTime, window.disturbance_amplitude, 0.0
+    )
+    flown_loop = LoopModel(NUM, DEN, DT, DELAYS, FLOWN_GAINS)
+    assert t == pytest.approx(window.step_response_curve.xData)
+    assert y == pytest.approx(flown_loop.simulate(t, np.ones_like(t), disturbance))
+    assert legend_labels(window.step_legend) == ["Model", "Model, flown gains"]
+
+
+def test_model_with_the_flown_gains_is_listed_before_the_measured_response(window):
+    window.t, window.reference, window.y = reference_tracking_log()
+    window.plotFlownStepResponse()
+
+    fly(window, FLOWN_GAINS)
+
+    assert legend_labels(window.step_legend) == [
+        "Model",
+        "Model, flown gains",
+        "Measured, flown gains",
+    ]
+
+
+def test_model_step_response_with_the_flown_gains_uses_the_flown_options(window):
+    fly(window, FLOWN_GAINS, p_on_feedback=True, negate_output=False)
+
+    t, y = window.flown_model_step_curve.getData()
+    disturbance = np.where(
+        t >= window.kDisturbanceTime, window.disturbance_amplitude, 0.0
+    )
+    flown_loop = LoopModel(NUM, DEN, DT, DELAYS, FLOWN_GAINS, p_on_feedback=True)
+    assert y == pytest.approx(flown_loop.simulate(t, np.ones_like(t), disturbance))
+
+
+def test_tuning_the_gains_keeps_the_response_with_the_flown_gains(window, monkeypatch):
+    fly(window, FLOWN_GAINS)
+    flown_response = window.flown_model_step_curve.yData.copy()
+    loops_built = []
+    monkeypatch.setattr(
+        autotune,
+        "LoopModel",
+        lambda *args, **kwargs: loops_built.append(args) or LoopModel(*args, **kwargs),
+    )
+
+    change_gains(window, P=0.5)
+
+    assert window.flown_model_step_curve.yData == pytest.approx(flown_response)
+    # Only the loop of the gains being tuned is built again
+    assert len(loops_built) == 1
+
+
+def test_step_simulation_settings_apply_to_the_response_with_the_flown_gains(window):
+    fly(window, FLOWN_GAINS)
+
+    window.step_sim_spinbox["step_duration"].setValue(1.5)
+
+    assert window.flown_model_step_curve.xData[-1] == pytest.approx(1.5, abs=DT)
+
+
+def test_no_model_step_response_without_flown_gains(window):
+    assert is_empty(window.flown_model_step_curve)
+    assert legend_labels(window.step_legend) == ["Model"]
+
+
+def test_no_model_step_response_with_unstable_flown_gains(window):
+    fly(window, FLOWN_GAINS)
+
+    fly(window, UNSTABLE_GAINS)
+
+    assert is_empty(window.flown_model_step_curve)
+    assert legend_labels(window.step_legend) == ["Model"]
+
+
 def test_poles_and_zeros_are_those_of_the_model(window):
     poles_x, poles_y = window.pole_markers.getData()
     expected = window.Gz.poles()
