@@ -725,7 +725,7 @@ class Window(QDialog):
 
         bode_mag_plot = ps.addPlot(layout, 1, 1, title="Bode", ylabel="Magnitude (dB)")
         bode_mag_plot.setLogMode(x=True)
-        self.bode_legend = ps.addLegend(bode_mag_plot)
+        self.bode_legend = ps.addLegend(bode_mag_plot, "bottom-left")
         ps.addReferenceLine(bode_mag_plot, 0, angle=0)
         ps.addReferenceLine(bode_mag_plot, -3, angle=0, color_=ps.MUTED, style="--")
         self.bode_mag_curves = {
