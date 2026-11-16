@@ -54,6 +54,11 @@ kValidationRangeHint = (
 )
 
 
+# The input and the output do not start and stop on the same sample: a range
+# selected up to the end of one is not out of the other
+kRangeMargin = 0.1
+
+
 def hasMissingSamples(*signals):
     return any(np.isnan(values).any() for values in signals)
 
@@ -258,7 +263,7 @@ class DataSelectionWindow(QDialog):
             (kValidation, "validation_range"),
         ):
             t_range = selection.get(key)
-            if t_range is None:
+            if t_range is None or not self.isInData(t_range):
                 self.removeRange(kind)
                 continue
             # Already snapped to the samples when selected
@@ -400,6 +405,9 @@ class DataSelectionWindow(QDialog):
 
     def openFile(self):
         if self.file_name:
+            # Before the signals change: the ranges selected in another log
+            # mean nothing in this one
+            self.forgetRanges()
             self.data_extractor = DataExtractor(self.file_name)
             self.topics = self.data_extractor.get_topics_list()
             list_names = [
@@ -545,11 +553,13 @@ class DataSelectionWindow(QDialog):
         self.index_u = index
         (self.t, self.u) = self.data_extractor.getPreview(self.topics[index])
         self.plotU()
+        self.removeRangesOutsideData()
 
     def selectYData(self, index):
         self.index_y = index
         (self.t, self.y) = self.data_extractor.getPreview(self.topics[index])
         self.plotY()
+        self.removeRangesOutsideData()
 
     def getTrimAirspeed(self):
         return self.data_extractor.getTrimAirspeed()
@@ -686,13 +696,38 @@ class DataSelectionWindow(QDialog):
     def removeRange(self, kind):
         """Without a validation range the model is judged on the estimation
         one, without an estimation range it is fitted to the whole log."""
+        self.forgetRange(kind)
+        self.plotCoherence()
+
+    def forgetRange(self, kind):
         if kind == kValidation:
             self.validation_range = None
         else:
             (self.t_start, self.t_stop) = (None, None)
         for item in (*self.selection_regions[kind], *self.range_remove_buttons[kind]):
             item.hide()
-        self.plotCoherence()
+
+    def forgetRanges(self):
+        for kind in (kEstimation, kValidation):
+            self.forgetRange(kind)
+        self.clearCoherence()
+
+    def isInData(self, t_range):
+        return (
+            len(self.t) > 0
+            and self.t[0] - kRangeMargin <= t_range[0]
+            and t_range[1] <= self.t[-1] + kRangeMargin
+        )
+
+    def removeRangesOutsideData(self):
+        for kind, t_range in (
+            (kEstimation, (self.t_start, self.t_stop)),
+            (kValidation, self.validation_range),
+        ):
+            if t_range is None or t_range[0] is None:
+                continue
+            if not self.isInData(t_range):
+                self.removeRange(kind)
 
     def setSelectionRegion(self, kind, t_start, t_stop):
         for region, remove_button in zip(
@@ -784,11 +819,10 @@ class DataSelectionWindow(QDialog):
         if len(self.t) == 0 or len(self.u) == 0 or len(self.y) == 0:
             return
 
+        self.clearCoherence()
         warnings = []
         info_lines = []
         for kind, curve in self.coherence_curves.items():
-            curve.setData([], [])
-            ps.setLegendEntry(self.coherence_legend, curve, None)
             if kind == kValidation and self.validation_range is None:
                 continue
             name = f"{kind.capitalize()} range"
@@ -803,6 +837,14 @@ class DataSelectionWindow(QDialog):
         self.coherence_info_text.setLines(info_lines)
         self.label_warning.setText("\n".join(warnings))
         self.label_warning.setVisible(bool(warnings))
+
+    def clearCoherence(self):
+        for curve in self.coherence_curves.values():
+            curve.setData([], [])
+            ps.setLegendEntry(self.coherence_legend, curve, None)
+        self.coherence_info_text.setLines([])
+        self.label_warning.setText("")
+        self.label_warning.setVisible(False)
 
     def rangeCoherence(self, kind):
         """(freq, coherence, info) of the range, (None, None, warning) when
