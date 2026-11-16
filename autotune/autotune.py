@@ -239,6 +239,11 @@ kGainFormat = {"ideal": "{:.3f}", "parallel": "{:.4f}"}
 # parameter units), except FF left at 0 (no feedforward) rather than its -1
 # slider end
 kMinimumGains = {"P": 0.001, "I": 0.0, "D": 0.0, "FF": 0.0}
+kReloadGainsHint = (
+    "Reload the gains and PID options flown in the log. Needs a preset "
+    "with <i>gains</i> whose parameters are in the log."
+)
+
 # (min, max, step) of each slider. Parallel Ki and Kd are the ideal ones
 # scaled by Kp, typically below 1: finer steps keep them from rounding to 0
 kGainSliderRanges = {
@@ -538,6 +543,7 @@ class Window(QDialog):
         # estimation data
         self.validation = None
         self.flown_gains = None
+        self.flown_gain_compression = 1.0
         self.flown_gain_form = None
         self.flown_options = {}
         self.num = []
@@ -1462,10 +1468,7 @@ class Window(QDialog):
         self.btn_reload_gains.setIcon(
             self.style().standardIcon(QStyle.SP_BrowserReload)
         )
-        self.btn_reload_gains.setToolTip(
-            "Reload the gains and PID options flown in the log. Needs a preset "
-            "with <i>gains</i> whose parameters are in the log."
-        )
+        self.btn_reload_gains.setToolTip(kReloadGainsHint)
         self.btn_reload_gains.setEnabled(False)
         self.btn_reload_gains.clicked.connect(self.reloadFlownController)
         layout_pid.addWidget(self.btn_reload_gains, 0, 0)
@@ -1699,6 +1702,7 @@ class Window(QDialog):
             self.flown_gains is not None
             and (self.gains != self.flown_gains or options_changed)
         )
+        self.btn_reload_gains.setToolTip(kReloadGainsHint + self.gainCompressionNote())
 
     def createGmvcLayout(self):
         layout_gmvc = QFormLayout()
@@ -2603,6 +2607,7 @@ class Window(QDialog):
         self.true_airspeed = select.v
         self.reference = select.r
         self.flown_gains = select.flown_gains
+        self.flown_gain_compression = select.flown_gain_compression
         self.validation = None
         if select.validation is not None:
             self.validation = LoggedData(
@@ -2657,11 +2662,19 @@ class Window(QDialog):
             self,
             "Select data",
             "Replace the current tuning with the gains flown in this log?\n\n"
-            f"Flown gains ({form}): {flown_gains}",
+            f"Flown gains ({form}): {flown_gains}{self.gainCompressionNote()}",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         return answer == QMessageBox.Yes
+
+    def gainCompressionNote(self):
+        if self.flown_gain_compression == 1.0:
+            return ""
+        return (
+            f" (the parameters times {self.flown_gain_compression:.2f}, their "
+            "mean gain compression over the estimation range)"
+        )
 
     def reloadFlownController(self):
         with signalsBlocked(self.pid_no_zero_box, self.negate_control_box):

@@ -11,9 +11,13 @@ A preset may also describe the flown controller: the logged ``reference`` of
 the loop, the parameters holding its ``gains`` (P, I, D and FF) in
 ``gain_form`` "parallel" (default) or "ideal", the ``gain_scale`` that turns
 the parameter values into gains (default 1, e.g. 0.001 for PX4's ICE_IDLE_RPM_P
-and ICE_IDLE_RPM_I, defined per 1000 rpm), and the ``pi_no_zero`` and
-``negate_output`` PID options (default false). They pre-load the PID of the
-interface and replay the flown closed loop through the identified model.
+and ICE_IDLE_RPM_I, defined per 1000 rpm), the logged ``gain_compression``
+by which the controller multiplied these gains in flight (e.g.
+gain_compression/compression_gains[1].0 for the pitch rate of a PX4
+fixed-wing; its mean over the selected range is used), and the
+``pi_no_zero`` and ``negate_output`` PID options (default false). They
+pre-load the PID of the interface and replay the flown closed loop through the
+identified model.
 """
 
 import os

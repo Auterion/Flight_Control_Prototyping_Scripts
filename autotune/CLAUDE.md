@@ -43,7 +43,7 @@ closed-loop model (loop gain, closed-loop poles, sensitivities);
 `test_pid_design.py` checks the GMVC design (the closed form for one delay, any delay,
 any number of poles and zeros) and the feedforward putting P on the measurement; `test_fit_metrics.py`
 checks the gain-form conversion, the loading of the flown controller from a preset
-(its pre-loading in the main window, a tuning kept when
+(its gains times their mean gain compression over each range, told with the flown gains; its pre-loading in the main window, a tuning kept when
 loading other data unless the flown gains are confirmed, the reload button and its state), the closed-loop replay fit, the prediction
 fit (not spoiled by the drift of an integrator) and the predicted squared error the
 parameter search ranks by (penalizing the parameters that do not improve the prediction),
@@ -110,9 +110,9 @@ verdicts) → PX4 gains
 
 - **`updater.py`** — Upgrade reminder: at startup, a background `git fetch` looks for new commits changing the tool on the branch the checkout tracks, and `UpdateBanner` (top of the main window) offers to fast-forward the checkout, sync the dependencies if they changed (`poetry install`, or `uv run` on restart) and restart; `Window.restartWithSession()` saves every group of the session to a temporary file that the new version restores (`--restore-session`) and deletes. Silent when offline, outside a git checkout, or on a branch with local commits.
 
-- **`presets.py`** — Loads/saves input/output presets from the user-editable `presets.yaml` (next to the code). Seeds the file with `DEFAULT_PRESETS` on first run; falls back to defaults if the file is missing or unparseable. A preset can also describe the flown controller (reference signal, gain parameter names, ideal/parallel form, PID options), which pre-loads the PID and drives the closed-loop replay fit.
+- **`presets.py`** — Loads/saves input/output presets from the user-editable `presets.yaml` (next to the code). Seeds the file with `DEFAULT_PRESETS` on first run; falls back to defaults if the file is missing or unparseable. A preset can also describe the flown controller (reference signal, gain parameter names, ideal/parallel form, gain scale, logged gain compression that multiplied the gains in flight, PID options), which pre-loads the PID and drives the closed-loop replay fit.
 
-- **`preset_dialogs.py`** — `PresetEditDialog`: a Qt dialog to add, edit, or delete a preset, with an old→new signal diff that switches to "create" mode when the preset is renamed, and the controller reference, gain parameters, form and PID options.
+- **`preset_dialogs.py`** — `PresetEditDialog`: a Qt dialog to add, edit, or delete a preset, with an old→new signal diff that switches to "create" mode when the preset is renamed, and the controller reference, gain parameters, gain scale, gain compression, form and PID options.
 
 - **`system_identification.py`** — Preprocesses signals (bias removal, filtering) and runs weighted RLS to fit an ARX model. Returns numerator/denominator polynomial coefficients.
   Also measures the frequency response from the data (Welch averages, from the logged

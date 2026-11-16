@@ -171,6 +171,17 @@ class PresetEditDialog(QDialog):
         )
         form.addRow(QLabel("Gain scale"), self.edit_gain_scale)
 
+        self.combo_gain_compression = self._optionalCombo(
+            topic_list, src.get("gain_compression", "")
+        )
+        self.combo_gain_compression.setToolTip(
+            "Logged gain by which the controller multiplied its gains in flight, "
+            "e.g. gain_compression/compression_gains[1].0 for the pitch rate of "
+            "a PX4 fixed-wing. The flown gains are the parameters times its mean "
+            "over the selected range."
+        )
+        form.addRow(QLabel("Gain compression"), self.combo_gain_compression)
+
         form_row = QHBoxLayout()
         self.radio_ideal = QRadioButton("Ideal/Standard: Kp * [1 + Ki + Kd]")
         self.radio_parallel = QRadioButton("Parallel: Kp + Ki + Kd")
@@ -314,6 +325,9 @@ class PresetEditDialog(QDialog):
             preset["gains"] = gains
             if gain_scale != 1.0:
                 preset["gain_scale"] = gain_scale
+            gain_compression = self.combo_gain_compression.currentText().strip()
+            if gain_compression:
+                preset["gain_compression"] = gain_compression
         # Also selects the form of the PID tab, gains or not
         preset["gain_form"] = "ideal" if self.radio_ideal.isChecked() else "parallel"
         if self.check_pi_no_zero.isChecked():
