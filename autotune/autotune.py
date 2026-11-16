@@ -1971,8 +1971,11 @@ class Window(QDialog):
 
     def updateKIDSliders(self):
         gains = self.gainsInForm(self.gain_form)
-        for gain, slider in self.gain_slider.items():
-            slider.setValue(gains[gain])
+        # A slider with the focus would take the gain back from its position,
+        # rounded to its step
+        with signalsBlocked(*self.gain_slider.values()):
+            for gain, slider in self.gain_slider.items():
+                slider.setValue(gains[gain])
         self.showGains()
 
     def updateClosedLoop(self):

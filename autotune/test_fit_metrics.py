@@ -701,6 +701,27 @@ def test_reload_button_restores_the_flown_controller(selection, monkeypatch):
     assert not np.array_equal(window.step_response_curve.yData, tuned_response)
 
 
+def test_one_click_reloads_the_flown_gains_after_moving_a_slider(
+    qapp, selection, monkeypatch
+):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    window.show()
+    window.activateWindow()
+    slider = window.gain_slider["P"]
+    slider.setFocus()
+    qapp.processEvents()
+    slider.setValue(slider.value() + 0.05)
+    assert slider.hasFocus()
+    assert window.btn_reload_gains.isEnabled()
+
+    window.btn_reload_gains.click()
+
+    # Not the gain of the position of the slider, rounded to its step
+    assert window.gains == window.flown_gains
+    assert not window.btn_reload_gains.isEnabled()
+
+
 def test_reload_button_keeps_the_gains_with_the_gmvc_tab(selection, monkeypatch):
     select_preset(selection, "Rollrate")
     window = load_log(selection, monkeypatch)
