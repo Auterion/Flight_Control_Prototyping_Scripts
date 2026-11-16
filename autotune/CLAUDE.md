@@ -54,8 +54,8 @@ a missed delay that only matters for a fast loop, a missed resonance, a crossove
 excited band, a range too short for the band, a loop checked where it is the closest to −1,
 a loop far from −1, closed-loop data without a reference, the prediction fit as a floor; on
 the x500 log: the swept range good, the weakly excited one not to tune on; the badge, the
-banner, the struck gains and their "Use anyway", the details, the band shaded on the Bode
-plot and the link zooming on it);
+banner, the struck gains and their "Use anyway", the details, the band of interest shaded on
+the Bode plot for any loop, with or without data, and the link zooming on it);
 `test_tuning_check.py` checks the tuning check (good with enough margins, a caution for each
 margin below its limit, unstable; its badge over the gains following them, the banner
 putting the worst warning first, the details opened at the tuning check, the link to the
@@ -98,7 +98,7 @@ verdicts) → PX4 gains
 
 ### Module responsibilities
 
-- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in three pyqtgraph tabs (General: logged data, poles/zeros, step response, Bode; Robustness: Nyquist with margins, sensitivities, root locus; Residuals: residual autocorrelation and residual-input cross-correlation), and the checks: the verdict of the model check next to the fits and its band on the Bode plot, the verdict of the tuning check and the banner of both over the gains.
+- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in three pyqtgraph tabs (General: logged data, poles/zeros, step response, Bode; Robustness: Nyquist with margins, sensitivities, root locus; Residuals: residual autocorrelation and residual-input cross-correlation), and the checks: the verdict of the model check next to the fits, the band of interest of the loop on the Bode plot, the verdict of the tuning check and the banner of both over the gains.
 
 - **`data_extractor.py`** — Parses PX4 ULog binary logs using `pyulog`. Extracts and interpolates signals (rates, setpoints, actuator outputs, airspeed). Returns numpy arrays aligned to a common time base.
 
@@ -127,7 +127,7 @@ verdicts) → PX4 gains
 
 - **`checks.py`** — What the model check and the tuning check share: a `Check` (state, what it found, what it takes to pass, what to do) and a `Verdict`, whose level (good / caution / bad) is that of its worst check. No Qt.
 
-- **`model_check.py`** — `checkModel`: verdict on the model for the loop closed with the current gains (good / caution / do not tune), the worst of its checks: excitation of the band from 1/3 to 3 times the critical frequency, prediction fit, model against the measured plant over that band, phase and modulus margins on the measured plant against those on the model, stability of the model with the flown gains. The critical frequency is the gain crossover or, for a loop safe there (none, or over 90° of phase margin), where the loop gain is the closest to −1; a loop whose gain stays far from −1 has none and is compared over all the measured frequencies. `ModelEvidence` holds what does not depend on the gains. No Qt.
+- **`model_check.py`** — `checkModel`: verdict on the model for the loop closed with the current gains (good / caution / do not tune), the worst of its checks: excitation of the band from 1/3 to 3 times the critical frequency, prediction fit, model against the measured plant over that band, phase and modulus margins on the measured plant against those on the model, stability of the model with the flown gains. The critical frequency is the gain crossover or, for a loop safe there (none, or over 90° of phase margin), where the loop gain is the closest to −1; a loop whose gain stays far from −1 has none and is compared over all the measured frequencies. `frequencyOfInterest` centers the band the Bode plot shades for any loop: the critical frequency or, without one, the crossover, else the closest approach to −1. `ModelEvidence` holds what does not depend on the gains. No Qt.
 
 - **`tuning_check.py`** — `checkTuning`: verdict on the gains (good / low margins / unstable) from the stability of the loop closed on the model and its gain, phase, modulus and delay margins against their limits, those the plots color the margins by. No Qt.
 

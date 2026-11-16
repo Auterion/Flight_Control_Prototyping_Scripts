@@ -27,7 +27,9 @@ from model_check import (  # noqa: E402
     ModelEvidence,
     checkModel,
     compareInBand,
+    criticalFrequency,
     feedbackCorrelation,
+    frequencyOfInterest,
     kFeedbackCorrelation,
     measurePlant,
     worstPhaseMargin,
@@ -289,6 +291,38 @@ def test_loop_far_from_minus_one_needs_no_excitation(swept_loop):
     assert wrong.deciding.name == "Model vs measured plant"
 
 
+def test_band_of_interest_is_the_one_the_model_is_checked_over(swept_loop):
+    model_check = check(MODEL, FLOWN_GAINS, *swept_loop)
+    margins = LoopModel(*MODEL[:2], DT, DELAY, FLOWN_GAINS).stabilityMargins()
+
+    assert frequencyOfInterest(margins) == model_check.critical
+
+
+def test_loop_far_from_minus_one_has_the_band_of_its_crossover():
+    # As LOW_GAINS, with a feedback gain too low to come close to -1
+    gains = dict(LOW_GAINS, P=0.3)
+    margins = LoopModel(*LAG_PLANT[:2], DT, LAG_PLANT[2], gains).stabilityMargins()
+    _, phase_margin, _, _, crossover, _ = margins
+    assert phase_margin > 90.0 and criticalFrequency(margins) is None
+
+    center = frequencyOfInterest(margins)
+
+    assert center.is_crossover
+    assert center.f == pytest.approx(crossover / (2 * np.pi))
+
+
+def test_loop_gain_below_one_has_the_band_of_its_closest_approach_to_minus_one():
+    gains = dict(LOW_GAINS, P=0.3, I=0.0)
+    margins = LoopModel(*LAG_PLANT[:2], DT, LAG_PLANT[2], gains).stabilityMargins()
+    _, _, _, _, crossover, closest = margins
+    assert not np.isfinite(crossover) and criticalFrequency(margins) is None
+
+    center = frequencyOfInterest(margins)
+
+    assert not center.is_crossover
+    assert center.f == pytest.approx(closest / (2 * np.pi))
+
+
 def test_feedback_correlates_the_residuals_with_later_inputs(swept_loop):
     u, y, _ = swept_loop
     u_hover, y_hover = closed_loop(MODEL, FLOWN_GAINS, np.zeros(1000), noise_std=0.05)
@@ -435,15 +469,20 @@ def are_gains_struck(window):
     return struck.pop()
 
 
-def test_window_without_data_checks_no_model(qapp):
+def model_window(model, gains):
+    """Window of a loop closed on a model, without data."""
     window = autotune.Window()
-    window.num, window.den, window.dt = NUM, DEN, DT
-    window.sys_id_delays = DELAY
-    window.Gz = arx_transfer_function(NUM, DEN, DT)
+    window.num, window.den, window.sys_id_delays = model
+    window.dt = DT
+    window.Gz = arx_transfer_function(window.num, window.den, DT)
     window.is_system_identified = True
-    window.gains = dict(FLOWN_GAINS)
-
+    window.gains = dict(gains)
     window.updateClosedLoop()
+    return window
+
+
+def test_window_without_data_checks_no_model(qapp):
+    window = model_window(MODEL, FLOWN_GAINS)
 
     assert window.model_check is None
     assert window.model_check_badge.text() == "—"
@@ -559,7 +598,7 @@ def bode_band(window):
     """Bands shaded on the Bode magnitude and phase plots, in Hz."""
     return [
         tuple(10 ** np.array(band.getRegion())) if band.isVisible() else None
-        for band in window.bode_check_bands
+        for band in window.bode_bands
     ]
 
 
@@ -572,7 +611,7 @@ def test_bode_plot_shades_the_band_of_the_check(selection, monkeypatch):
     band = window.model_check.band
 
     assert bode_band(window) == [pytest.approx(band)] * 2
-    assert "Band of the model check" in bode_legend_names(window)
+    assert "Band around the crossover" in bode_legend_names(window)
 
     window.gains["P"] *= 0.5
     window.updateClosedLoop()
@@ -584,7 +623,26 @@ def test_bode_plot_shades_the_band_of_the_check(selection, monkeypatch):
     window.reset()
 
     assert bode_band(window) == [None, None]
-    assert "Band of the model check" not in bode_legend_names(window)
+    assert "Band around the crossover" not in bode_legend_names(window)
+
+
+def test_bode_plot_shades_the_band_without_data(qapp):
+    window = model_window(MODEL, FLOWN_GAINS)
+    _, _, _, _, crossover, _ = window.checked_loop[1]
+    f_crossover = crossover / (2 * np.pi)
+
+    assert window.model_check is None
+    assert bode_band(window) == [pytest.approx((f_crossover / 3, 3 * f_crossover))] * 2
+    assert "Band around the crossover" in bode_legend_names(window)
+
+
+def test_bode_plot_names_what_the_band_is_around(qapp):
+    window = model_window(LAG_PLANT, LOW_GAINS)
+    *_, closest = window.checked_loop[1]
+    f_closest = closest / (2 * np.pi)
+
+    assert bode_band(window) == [pytest.approx((f_closest / 3, 3 * f_closest))] * 2
+    assert "Band around the closest approach to −1" in bode_legend_names(window)
 
 
 def test_details_link_zooms_the_bode_plot_on_the_band(selection, monkeypatch):

@@ -185,17 +185,33 @@ def criticalFrequency(stability_margins):
     return None
 
 
-def checkedBand(critical, dt):
-    """(lowest, highest) frequencies in Hz the model is checked over, None
-    when it is checked over all the measured frequencies."""
-    if critical is None:
+def frequencyOfInterest(stability_margins):
+    """Center of the band shown for a loop, as a CriticalFrequency: the
+    critical one or, for a loop whose gain stays far from -1, its gain
+    crossover, else its closest approach to -1."""
+    critical = criticalFrequency(stability_margins)
+    if critical is not None:
+        return critical
+    _, _, _, _, gain_crossover, modulus_frequency = stability_margins
+    if np.isfinite(gain_crossover):
+        return CriticalFrequency(gain_crossover / (2 * np.pi), is_crossover=True)
+    if np.isfinite(modulus_frequency):
+        return CriticalFrequency(modulus_frequency / (2 * np.pi), is_crossover=False)
+    return None
+
+
+def bandAround(frequency, dt):
+    """(lowest, highest) frequencies in Hz of the band around a
+    CriticalFrequency, None without one."""
+    if frequency is None:
         return None
-    return critical.f / kBandFactor, min(critical.f * kBandFactor, 0.5 / dt)
+    return frequency.f / kBandFactor, min(frequency.f * kBandFactor, 0.5 / dt)
 
 
 def compareInBand(loop, measured, critical):
-    """BandComparison over the checkedBand of the loop."""
-    band = checkedBand(critical, loop.dt)
+    """BandComparison over the band around critical, over all the measured
+    frequencies without one."""
+    band = bandAround(critical, loop.dt)
     if band is None:
         in_band = np.ones(len(measured.f), dtype=bool)
         f_low, f_high = measured.f[0], 0.5 / loop.dt
@@ -513,4 +529,4 @@ def checkModel(loop, stability_margins, evidence, prediction_fit):
     ]
     if evidence.flown_loop_is_stable is not None:
         checks.append(checkFlownLoop(evidence.flown_loop_is_stable))
-    return ModelCheck(checks, critical, checkedBand(critical, loop.dt))
+    return ModelCheck(checks, critical, bandAround(critical, loop.dt))
