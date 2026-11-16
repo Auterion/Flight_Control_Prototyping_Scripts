@@ -556,6 +556,18 @@ def test_verdict_follows_the_gains(selection, monkeypatch):
     assert model_warning(window) is None
 
 
+def test_verdict_change_does_not_resize_the_badge(selection, monkeypatch):
+    window = load_log(selection, monkeypatch, SWEPT_RANGE)
+    assert window.model_check.level == kGood
+    width = window.model_check_badge.sizeHint().width()
+
+    window.gains["P"] *= 0.01
+    window.updateClosedLoop()
+
+    assert window.model_check.level == kCaution
+    assert window.model_check_badge.sizeHint().width() == width
+
+
 def test_prediction_horizon_updates_the_check(selection, monkeypatch):
     window = load_log(selection, monkeypatch, SWEPT_RANGE)
     assert window.model_check.checks[1].state == kPass
