@@ -240,6 +240,18 @@ def test_loading_a_log_preloads_the_flown_pid(selection, monkeypatch):
     assert window.lbl_closed_loop_fit.text().endswith("%")
 
 
+def test_loading_a_log_measures_the_step_response_of_the_flown_loop(
+    selection, monkeypatch
+):
+    select_preset(selection, "Rollrate")
+
+    window = load_log(selection, monkeypatch)
+
+    t, response = window.flown_step_response_curve.getData()
+    assert t[-1] == pytest.approx(0.5, abs=0.02)
+    assert response[t > 0.2] == pytest.approx(1.0, abs=0.15)
+
+
 def test_validation_range_loads_its_own_data_reference_and_gains(selection):
     select_preset(selection, "Rollrate")
     selection.validation_range = (103.0, 109.0)

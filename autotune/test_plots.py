@@ -75,6 +75,37 @@ def test_step_response_follows_the_gains(window):
     assert y == pytest.approx(expected)
 
 
+def reference_tracking_log():
+    """A loop following its reference like a first-order lag of 30 ms."""
+    t = np.arange(0.0, 20.0, DT)
+    rng = np.random.default_rng(0)
+    reference = np.repeat(rng.choice([-1.0, 1.0], size=len(t) // 40), 40)
+    alpha = DT / (0.03 + DT)
+    return t, reference, lfilter([alpha], [1, alpha - 1], reference)
+
+
+def test_step_response_measured_with_the_flown_gains_is_shown(window):
+    window.t, window.reference, window.y = reference_tracking_log()
+
+    window.plotFlownStepResponse()
+
+    t, y = window.flown_step_response_curve.getData()
+    assert t[0] == 0.0
+    assert y[t > 0.2] == pytest.approx(1.0, abs=0.05)
+    assert legend_labels(window.step_legend) == ["Model", "Measured, flown gains"]
+
+
+def test_no_step_response_is_measured_without_a_reference(window):
+    window.t, window.reference, window.y = reference_tracking_log()
+    window.plotFlownStepResponse()
+
+    window.reference = None
+    window.plotFlownStepResponse()
+
+    assert is_empty(window.flown_step_response_curve)
+    assert legend_labels(window.step_legend) == ["Model"]
+
+
 def test_poles_and_zeros_are_those_of_the_model(window):
     poles_x, poles_y = window.pole_markers.getData()
     expected = window.Gz.poles()
