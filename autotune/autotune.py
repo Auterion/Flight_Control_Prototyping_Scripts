@@ -544,6 +544,7 @@ class Window(QDialog):
         self.validation = None
         self.flown_gains = None
         self.flown_gain_compression = 1.0
+        self.flown_model_step_inputs = None
         self.flown_gain_form = None
         self.flown_options = {}
         self.num = []
@@ -665,6 +666,8 @@ class Window(QDialog):
         self.measured_step_info = None
         for curve in self.generalCurves():
             curve.setData([], [])
+        self.flown_model_step_inputs = None
+        self.updateStepLegend()
         self.bode_margin_text.setLines([])
         self.showBodeBand(None)
         self.lbl_fit.setText("—")
@@ -769,6 +772,8 @@ class Window(QDialog):
         self.step_reference_curve = step_plot.plot(pen=ps.pen(ps.INK, 1, "--"))
         self.flown_step_response_curve = step_plot.plot(pen=ps.pen(ps.ORANGE, 1.5))
         self.step_response_curve = step_plot.plot(pen=ps.pen(ps.BLUE, 2), name="Model")
+        # Over the model's: dashes of both show where they are the same
+        self.flown_model_step_curve = step_plot.plot(pen=ps.pen(ps.ORANGE, 1.5, "--"))
         envelope_pen = ps.pen(ps.CRITICAL, 1, "--")
         self.overshoot_limit_curve = step_plot.plot(pen=envelope_pen)
         self.settling_time_curve = step_plot.plot(pen=envelope_pen)
@@ -836,6 +841,7 @@ class Window(QDialog):
             self.step_reference_curve,
             self.flown_step_response_curve,
             self.step_response_curve,
+            self.flown_model_step_curve,
             self.overshoot_limit_curve,
             self.settling_time_curve,
         ]
@@ -1989,6 +1995,7 @@ class Window(QDialog):
             t >= self.kDisturbanceTime, self.disturbance_amplitude, 0.0
         )
         self.plotClosedLoop(t, loop.simulate(t, reference, disturbance))
+        self.plotFlownModelStepResponse(t, reference, disturbance)
 
         stability_margins = loop.stabilityMargins()
         is_stable = loop.isStable()
@@ -2203,11 +2210,52 @@ class Window(QDialog):
         if response is None:
             t, response = [], []
         self.flown_step_response_curve.setData(t, response)
-        ps.setLegendEntry(
-            self.step_legend,
-            self.flown_step_response_curve,
-            "Measured, flown gains" if len(t) > 0 else None,
+        self.updateStepLegend()
+
+    def plotFlownModelStepResponse(self, t, reference, disturbance):
+        """Response of the model closed with the gains flown in the estimation
+        range, to the same step and disturbance as with the current gains.
+        None when the log does not give these gains or when that loop is
+        unstable."""
+        inputs = (
+            list(self.num),
+            list(self.den),
+            self.dt,
+            self.sys_id_delays,
+            self.flown_gains and dict(self.flown_gains),
+            dict(self.flown_options),
+            (self.step_duration, self.kDisturbanceTime, self.disturbance_amplitude),
         )
+        # The gains being tuned do not change it
+        if inputs == self.flown_model_step_inputs:
+            return
+        self.flown_model_step_inputs = inputs
+
+        response = []
+        if self.flown_gains is not None:
+            loop = LoopModel(
+                self.num,
+                self.den,
+                self.dt,
+                self.sys_id_delays,
+                self.flown_gains,
+                **self.flown_options,
+            )
+            if loop.isStable():
+                response = loop.simulate(t, reference, disturbance)
+        self.flown_model_step_curve.setData(t[: len(response)], response)
+        self.updateStepLegend()
+
+    def updateStepLegend(self):
+        """The responses with the flown gains are listed while they are
+        shown, the model's first."""
+        for curve, name in (
+            (self.flown_model_step_curve, "Model, flown gains"),
+            (self.flown_step_response_curve, "Measured, flown gains"),
+        ):
+            ps.setLegendEntry(self.step_legend, curve, None)
+            if curve.xData is not None and len(curve.xData) > 0:
+                ps.setLegendEntry(self.step_legend, curve, name)
 
     def plotBode(self, loop, stability_margins, is_stable):
         gain_margin, phase_margin, _, phase_crossover, gain_crossover, _ = (
