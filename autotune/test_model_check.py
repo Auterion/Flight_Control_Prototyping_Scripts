@@ -143,7 +143,7 @@ def test_true_model_of_a_swept_loop_is_good(swept_loop):
     )
 
 
-def test_model_with_twice_the_gain_is_not_to_tune_on(swept_loop):
+def test_model_with_twice_the_gain_is_bad(swept_loop):
     wrong_model = ([2 * b for b in NUM], DEN, DELAY)
 
     model_check = check(wrong_model, FLOWN_GAINS, *swept_loop)
@@ -395,7 +395,7 @@ def test_details_list_each_check_and_link_the_plot_of_those_not_passed(swept_loo
 
     for name in states(model_check):
         assert name in details
-    assert "✕ Do not tune" in details
+    assert "✕ Bad" in details
     low, high = (hertz(f) for f in model_check.band)
     assert f"The checks look at the band {low}–{high} Hz" in details
     assert f"the {hertz(model_check.critical.f)} Hz crossover of the loop" in details
@@ -454,7 +454,7 @@ def model_warning(window):
     if banner.isHidden():
         return None
     for sentence in banner.label.text().split(" · "):
-        if sentence.startswith(("⚠ Caution", "✕ Do not tune")):
+        if sentence.startswith(("⚠ Caution", "✕ Bad")):
             return sentence
     return None
 
@@ -502,16 +502,14 @@ def test_model_of_the_swept_range_is_good(selection, monkeypatch):
     assert "Flown gains on the model" in window.checks_panel.text.toPlainText()
 
 
-def test_model_of_the_weakly_excited_range_is_not_to_tune_on(selection, monkeypatch):
+def test_model_of_the_weakly_excited_range_is_bad(selection, monkeypatch):
     window = load_log(selection, monkeypatch, WEAKLY_EXCITED_RANGE)
     banner = window.checks_banner
 
     assert window.model_check.level == kBad
-    assert window.model_check_badge.text() == "✕ Do not tune ▸"
-    assert model_warning(window) == (
-        f"✕ Do not tune: {window.model_check.deciding.reason}"
-    )
-    assert banner.label.text().startswith("✕ Do not tune: ")
+    assert window.model_check_badge.text() == "✕ Bad ▸"
+    assert model_warning(window) == f"✕ Bad: {window.model_check.deciding.reason}"
+    assert banner.label.text().startswith("✕ Bad: ")
     assert not banner.btn_override.isHidden()
     assert are_gains_struck(window)
 

@@ -53,7 +53,7 @@ search ranking on it);
 a missed delay that only matters for a fast loop, a missed resonance, a crossover outside the
 excited band, a range too short for the band, a loop checked where it is the closest to −1,
 a loop far from −1, closed-loop data without a reference, the prediction fit as a floor; on
-the x500 log: the swept range good, the weakly excited one not to tune on; the badge, the
+the x500 log: the swept range good, the weakly excited one bad; the badge, the
 banner, the struck gains and their "Use anyway", the details, the band of interest shaded on
 the Bode plot for any loop, with or without data, and the link zooming on it);
 `test_tuning_check.py` checks the tuning check (good with enough margins, a caution for each
@@ -127,11 +127,11 @@ verdicts) → PX4 gains
 
 - **`checks.py`** — What the model check and the tuning check share: a `Check` (state, what it found, what it takes to pass, what to do) and a `Verdict`, whose level (good / caution / bad) is that of its worst check. No Qt.
 
-- **`model_check.py`** — `checkModel`: verdict on the model for the loop closed with the current gains (good / caution / do not tune), the worst of its checks: excitation of the band from 1/3 to 3 times the critical frequency, prediction fit, model against the measured plant over that band, phase and modulus margins on the measured plant against those on the model, stability of the model with the flown gains. The critical frequency is the gain crossover or, for a loop safe there (none, or over 90° of phase margin), where the loop gain is the closest to −1; a loop whose gain stays far from −1 has none and is compared over all the measured frequencies. `frequencyOfInterest` centers the band the Bode plot shades for any loop: the critical frequency or, without one, the crossover, else the closest approach to −1. `ModelEvidence` holds what does not depend on the gains. No Qt.
+- **`model_check.py`** — `checkModel`: verdict on the model for the loop closed with the current gains (good / caution / bad), the worst of its checks: excitation of the band from 1/3 to 3 times the critical frequency, prediction fit, model against the measured plant over that band, phase and modulus margins on the measured plant against those on the model, stability of the model with the flown gains. The critical frequency is the gain crossover or, for a loop safe there (none, or over 90° of phase margin), where the loop gain is the closest to −1; a loop whose gain stays far from −1 has none and is compared over all the measured frequencies. `frequencyOfInterest` centers the band the Bode plot shades for any loop: the critical frequency or, without one, the crossover, else the closest approach to −1. `ModelEvidence` holds what does not depend on the gains. No Qt.
 
 - **`tuning_check.py`** — `checkTuning`: verdict on the gains (good / low margins / unstable) from the stability of the loop closed on the model and its gain, phase, modulus and delay margins against their limits, those the plots color the margins by. No Qt.
 
-- **`check_widgets.py`** — Widgets of both checks: `CheckBadge` (verdict of a check, clicked for the details: the model's next to the fits, the tuning's over the gains), `ChecksPanel` (non-modal details of each check in plain sentences, following the gains, with links to the plots), `ChecksBanner` (reasons of the checks that are not good, the worst first, with "Use anyway" on a model not to tune on) and `ChecksCorner` (banner and tuning badge, in the corner of the tuning tabs).
+- **`check_widgets.py`** — Widgets of both checks: `CheckBadge` (verdict of a check, clicked for the details: the model's next to the fits, the tuning's over the gains), `ChecksPanel` (non-modal details of each check in plain sentences, following the gains, with links to the plots), `ChecksBanner` (reasons of the checks that are not good, the worst first, with "Use anyway" on a bad model) and `ChecksCorner` (banner and tuning badge, in the corner of the tuning tabs).
 
 - **`pid_analyse_window.py`** — Secondary pyqtgraph window with the step response of the flown controller, estimated from the logged data by Wiener deconvolution over sliding windows.
 

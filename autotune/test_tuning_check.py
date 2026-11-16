@@ -294,7 +294,7 @@ def test_banner_puts_the_worst_warning_first(window):
     assert banner.btn_override.isHidden()
 
     banner.showChecks(Verdict(kBad, "model"), Verdict(kCaution, "tuning"), False)
-    assert banner.label.text() == "✕ Do not tune: model · ⚠ Low margins: tuning"
+    assert banner.label.text() == "✕ Bad: model · ⚠ Low margins: tuning"
     assert not banner.btn_override.isHidden()
 
     banner.showChecks(Verdict(kCaution, "model"), Verdict(kCaution, "tuning"), False)
