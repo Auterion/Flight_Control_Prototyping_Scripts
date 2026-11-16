@@ -157,6 +157,57 @@ def test_gain_scale_multiplies_the_parameter_values(selection):
     assert selection.flown_gains == pytest.approx(idealGains(scaled), rel=1e-5)
 
 
+# Stands for a logged gain compression, which the x500 log does not have
+COMPRESSION_SIGNAL = "actuator_controls_0/control[3].0"
+
+
+def mean_compression(selection, t):
+    index = selection.topic_names.index(COMPRESSION_SIGNAL)
+    return selection.data_extractor.getAlignedData(selection.topics[index], t).mean()
+
+
+def compressed(gains, compression):
+    return {
+        **gains,
+        "P": gains["P"] * compression,
+        "FF": gains["FF"] * compression,
+    }
+
+
+def test_flown_gains_are_the_parameters_times_their_mean_gain_compression(selection):
+    select_preset(selection, "Rollrate", gain_compression=COMPRESSION_SIGNAL)
+    selection.loadSelection()
+
+    compression = mean_compression(selection, selection.t)
+    assert 0.1 < compression < 0.9
+    assert selection.flown_gain_compression == pytest.approx(compression)
+    # Ki and Kd of the ideal form, ratios to Kp, are not compressed again
+    assert selection.flown_gains == pytest.approx(
+        compressed(idealGains(X500_ROLL_GAINS), compression), rel=1e-5
+    )
+
+
+def test_validation_range_has_its_own_gain_compression(selection):
+    select_preset(selection, "Rollrate", gain_compression=COMPRESSION_SIGNAL)
+    selection.validation_range = (103.0, 109.0)
+    selection.loadSelection()
+
+    validation = selection.validation
+    compression = mean_compression(selection, validation.t)
+    assert compression != pytest.approx(selection.flown_gain_compression, rel=1e-3)
+    assert validation.flown_gains == pytest.approx(
+        compressed(idealGains(X500_ROLL_GAINS), compression), rel=1e-5
+    )
+
+
+def test_gain_compression_missing_from_the_log_does_not_change_the_gains(selection):
+    select_preset(selection, "Rollrate", gain_compression="gain_compression/none.0")
+    selection.loadSelection()
+
+    assert selection.flown_gain_compression == 1.0
+    assert selection.flown_gains == pytest.approx(idealGains(X500_ROLL_GAINS), rel=1e-5)
+
+
 def test_gain_scale_is_loaded_with_the_preset(selection):
     select_preset(selection, "Rollrate", gain_scale=0.001)
     selection.loadSelection()
@@ -557,6 +608,33 @@ def test_loading_data_asks_before_replacing_a_tuning(selection, monkeypatch):
     assert window.gains == TUNED_GAINS
     assert window.pid_no_zero_box.isChecked()
     assert float(window.gain_edit["ideal"]["P"].text()) == pytest.approx(0.5)
+
+
+def test_gain_compression_is_told_with_the_flown_gains(selection, monkeypatch):
+    select_preset(selection, "Rollrate", gain_compression=COMPRESSION_SIGNAL)
+    window = load_log(selection, monkeypatch)
+    tune(window)
+    asked = answer_flown_gains_question(monkeypatch, autotune.QMessageBox.No)
+
+    window.loadLog()
+
+    note = f"the parameters times {selection.flown_gain_compression:.2f}"
+    assert note in asked[0][2]
+    assert note in window.btn_reload_gains.toolTip()
+
+
+def test_flown_gains_without_gain_compression_are_told_as_the_parameters(
+    selection, monkeypatch
+):
+    select_preset(selection, "Rollrate")
+    window = load_log(selection, monkeypatch)
+    tune(window)
+    asked = answer_flown_gains_question(monkeypatch, autotune.QMessageBox.No)
+
+    window.loadLog()
+
+    assert "the parameters times" not in asked[0][2]
+    assert window.btn_reload_gains.toolTip() == autotune.kReloadGainsHint
 
 
 def test_tuning_is_replaced_by_the_flown_gains_when_confirmed(selection, monkeypatch):

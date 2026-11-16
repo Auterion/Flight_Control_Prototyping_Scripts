@@ -143,6 +143,7 @@ class DataSelectionWindow(QDialog):
         self.flown_gains = None
         self.flown_gain_form = None
         self.flown_gain_scale = None
+        self.flown_gain_compression = 1.0
         self.flown_options = None
         self.t_start = None
         self.t_stop = None
@@ -296,6 +297,10 @@ class DataSelectionWindow(QDialog):
             self.flown_gain_scale,
             self.flown_options,
         ) = self.getFlownController(self.t)
+        preset = self.matchingPreset()
+        self.flown_gain_compression = (
+            1.0 if preset is None else self.getGainCompression(preset, self.t)
+        )
         self.accept()
 
     def getInputOutputData(self, t_start=None, t_stop=None):
@@ -315,11 +320,8 @@ class DataSelectionWindow(QDialog):
         arguments. Each is None when the preset does not provide it or
         the selected signals no longer match the preset.
         """
-        preset = self.preset_candidates.get(self.combo_preset.currentText())
-        if preset is None or self.findInputOutputIndex(preset) != (
-            self.index_u,
-            self.index_y,
-        ):
+        preset = self.matchingPreset()
+        if preset is None:
             return (None, None, None, None, None)
 
         options = {
@@ -334,24 +336,57 @@ class DataSelectionWindow(QDialog):
 
         return (
             reference,
-            self.getFlownGains(preset, t[0]),
+            self.getFlownGains(preset, t),
             preset.get("gain_form", "parallel"),
             preset.get("gain_scale", 1.0),
             options,
         )
 
+    def matchingPreset(self):
+        """Selected preset, None when the selected signals are no longer its
+        own."""
+        preset = self.preset_candidates.get(self.combo_preset.currentText())
+        if preset is None or self.findInputOutputIndex(preset) != (
+            self.index_u,
+            self.index_y,
+        ):
+            return None
+        return preset
+
     def getFlownGains(self, preset, t):
+        """Gains flown over the time base t, in ideal form: those of the
+        parameters at its start, times the mean gain compression."""
         if "gains" not in preset:
             return None
         values = {
-            gain: self.data_extractor.getParameter(param, t)
+            gain: self.data_extractor.getParameter(param, t[0])
             for gain, param in preset["gains"].items()
         }
         if None in values.values():
             return None
         scale = preset.get("gain_scale", 1.0)
         values = {gain: value * scale for gain, value in values.items()}
-        return idealGains(values, preset.get("gain_form", "parallel"))
+        gains = idealGains(values, preset.get("gain_form", "parallel"))
+        if gains is None:
+            return None
+        compression = self.getGainCompression(preset, t)
+        # Ki and Kd of the ideal form are ratios to Kp
+        return {
+            **gains,
+            "P": gains["P"] * compression,
+            "FF": gains["FF"] * compression,
+        }
+
+    def getGainCompression(self, preset, t):
+        """Mean over the time base t of the gain compression signal of the
+        preset, 1 without one in the preset or in the log."""
+        index = self.combo_u.findText(preset.get("gain_compression", ""))
+        if "gain_compression" not in preset or index < 0:
+            return 1.0
+        compression = self.data_extractor.getAlignedData(self.topics[index], t)
+        if np.isnan(compression).all():
+            return 1.0
+        return float(np.nanmean(compression))
 
     def browseFiles(self):
         options = QFileDialog.Options()

@@ -221,6 +221,37 @@ def test_gain_scale_without_gains_is_not_saved(make):
     assert "gain_scale" not in d.preset
 
 
+def test_gain_compression_is_saved_with_the_gains(make):
+    d = make("Rollrate")
+    assert d.combo_gain_compression.currentText() == ""
+    d.combo_gain_compression.setEditText("a/ref.0")
+
+    d._on_confirm()
+
+    assert d.result_action == "save"
+    assert d.preset["gain_compression"] == "a/ref.0"
+
+
+def test_stored_gain_compression_is_shown_and_kept(qapp):
+    existing = {"Fw": {"input": "a/in.0", "output": "a/out.0"}}
+    existing["Fw"].update(gains={"P": "A_P"}, gain_compression="b/ref.0")
+    d = PresetEditDialog(None, False, "Fw", existing, TOPICS, SEL_IN, SEL_OUT, PARAMS)
+    assert d.combo_gain_compression.currentText() == "b/ref.0"
+
+    d._on_confirm()
+
+    assert d.preset["gain_compression"] == "b/ref.0"
+
+
+def test_gain_compression_without_gains_is_not_saved(make):
+    d = make("Pitchrate")
+    d.combo_gain_compression.setEditText("a/ref.0")
+
+    d._on_confirm()
+
+    assert "gain_compression" not in d.preset
+
+
 @pytest.mark.parametrize("text", ["0", "-1", ""])
 def test_non_positive_gain_scale_is_rejected(make, no_modals, text):
     d = make("Rollrate")
