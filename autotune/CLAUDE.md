@@ -73,7 +73,7 @@ the new commits of the tool, none when the checkout cannot be fast-forwarded, th
 fast-forward, the dependency sync, local changes kept) and its banner;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, estimation
-and validation range selection and removal, restoring a saved selection, coherence of both ranges, plant model against its measured frequency response, residual correlations, robustness plots updated once their tab is shown, the step response measured with the flown gains: from the reference of the preset, whatever the units of the signals, not biased by the quiet parts of the log, its metrics, next to the model's on the step response plot). `conftest.py` closes the windows a test leaves open: an open window
+and validation range selection and removal, restoring a saved selection, ranges forgotten when another log is opened or when out of the data, coherence of both ranges, plant model against its measured frequency response, residual correlations, robustness plots updated once their tab is shown, the step response measured with the flown gains: from the reference of the preset, whatever the units of the signals, not biased by the quiet parts of the log, its metrics, next to the model's on the step response plot). `conftest.py` closes the windows a test leaves open: an open window
 repainted while its pyqtgraph scene is garbage collected segfaults. These run in CI via
 `.github/workflows/autotune_tests.yml`.
 

@@ -456,6 +456,85 @@ def test_selection_without_ranges_is_the_whole_log(selection):
     assert restored.t_start is None and restored.validation_range is None
 
 
+def browse(selection, monkeypatch, log_name):
+    log = os.path.join(os.path.dirname(selection.file_name), log_name)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args, **kw: (log, ""))
+    selection.browseFiles()
+
+
+def test_browsing_another_log_forgets_the_ranges(selection, monkeypatch):
+    drag_span(selection, 76.5, 83.5)
+    drag_validation_span(selection, 103.0, 109.0)
+
+    browse(selection, monkeypatch, "quadrotor_sitl_jmavsim.ulg")
+
+    assert (selection.t_start, selection.t_stop) == (None, None)
+    assert selection.validation_range is None
+    saved = selection.currentSelection()
+    assert saved["estimation_range"] is None and saved["validation_range"] is None
+    for kind in (kEstimation, kValidation):
+        for item in (
+            *selection.selection_regions[kind],
+            *selection.range_remove_buttons[kind],
+        ):
+            assert not item.isVisible()
+        assert is_empty(selection.coherence_curves[kind])
+    assert legend_names(selection) == []
+    assert selection.coherence_info_text.text() == ""
+
+
+def test_ranges_selected_in_the_new_log_are_its_only_ranges(selection, monkeypatch):
+    drag_validation_span(selection, 103.0, 109.0)
+    browse(selection, monkeypatch, "quadrotor_sitl_jmavsim.ulg")
+
+    drag_span(selection, 50.0, 65.0)
+    selection.loadSelection()
+
+    assert selection.validation is None
+    assert selection.t[0] == pytest.approx(50.0, abs=0.1)
+
+
+def test_restored_range_out_of_the_log_is_removed(selection):
+    drag_span(selection, 76.5, 83.5)
+    drag_validation_span(selection, 103.0, 109.0)
+    saved = selection.currentSelection()
+    log_end = selection.t[-1]
+    saved["validation_range"] = [log_end + 100.0, log_end + 106.0]
+
+    restored = DataSelectionWindow(selection.file_name, saved)
+
+    assert restored.validation_range is None
+    assert not restored.selection_regions[kValidation][0].isVisible()
+    assert (restored.t_start, restored.t_stop) == tuple(saved["estimation_range"])
+
+
+def test_range_out_of_a_newly_selected_signal_is_removed(selection, monkeypatch):
+    drag_span(selection, 76.5, 83.5)
+    drag_validation_span(selection, 103.0, 109.0)
+    t, values = selection.data_extractor.getPreview(selection.topics[selection.index_u])
+    stops_early = t < 100.0
+    monkeypatch.setattr(
+        selection.data_extractor,
+        "getPreview",
+        lambda field_def: (t[stops_early], values[stops_early]),
+    )
+
+    selection.selectUData(selection.index_u)
+
+    assert selection.validation_range is None
+    assert not selection.selection_regions[kValidation][0].isVisible()
+    assert selection.t_start == pytest.approx(76.5, abs=0.1)
+    assert selection.selection_regions[kEstimation][0].isVisible()
+
+
+def test_range_up_to_the_end_of_the_log_is_kept_with_another_signal(selection):
+    drag_span(selection, selection.t[-1] - 5.0, selection.t[-1])
+
+    selection.selectUData(selection.index_u)
+
+    assert selection.t_stop is not None
+
+
 def test_cancelled_browse_keeps_the_open_log(selection, monkeypatch):
     file_name = selection.file_name
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args, **kw: ("", ""))
