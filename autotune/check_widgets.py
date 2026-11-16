@@ -1,17 +1,10 @@
-"""Widgets showing a ModelCheck: the verdict, its details and its warning."""
+"""Widgets showing the model check and the tuning check: their verdicts,
+their details and their warning."""
 
 import html
 
 import plot_style as ps
-from model_check import (
-    hertz,
-    kCaution,
-    kDoNotTune,
-    kFail,
-    kGood,
-    kPass,
-    kUnchecked,
-)
+from checks import hertz, kBad, kCaution, kFail, kGood, kPass, kUnchecked
 from PyQt5.QtCore import QSize, Qt, pyqtSignal
 from PyQt5.QtGui import QPainter
 from PyQt5.QtWidgets import (
@@ -23,15 +16,30 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QTextBrowser,
     QVBoxLayout,
+    QWidget,
 )
 
+kModel = "model"
+kTuning = "tuning"
+
 # A shape per level and state: they do not rely on the color alone
-kLevelLabels = {kGood: "✓ Good", kCaution: "⚠ Caution", kDoNotTune: "✕ Do not tune"}
-kLevelColors = {
-    kGood: ps.GOOD_TEXT,
-    kCaution: ps.WARNING_TEXT,
-    kDoNotTune: ps.CRITICAL,
+kLevelLabels = {
+    kModel: {kGood: "✓ Good", kCaution: "⚠ Caution", kBad: "✕ Do not tune"},
+    kTuning: {kGood: "✓ Good", kCaution: "⚠ Low margins", kBad: "✕ Unstable"},
 }
+kVerdicts = {
+    kModel: {
+        kGood: "the data confirm the model for the current gains.",
+        kCaution: "the model is not verified for the current gains.",
+        kBad: "the data contradict the model for the current gains.",
+    },
+    kTuning: {
+        kGood: "the current gains keep the recommended stability margins.",
+        kCaution: "the current gains leave too little stability margin.",
+        kBad: "the loop is unstable with the current gains.",
+    },
+}
+kLevelColors = {kGood: ps.GOOD_TEXT, kCaution: ps.WARNING_TEXT, kBad: ps.CRITICAL}
 kStateIcons = {kPass: "✓", kCaution: "⚠", kFail: "✕", kUnchecked: "–"}
 kStateColors = {
     kPass: ps.GOOD_TEXT,
@@ -42,23 +50,20 @@ kStateColors = {
 kEvidenceLinks = {
     "bode": "Show this band on the Bode plot",
     "residuals": "Show the residuals",
-}
-kVerdicts = {
-    kGood: "the data confirm the model for the current gains.",
-    kCaution: "the model is not verified for the current gains.",
-    kDoNotTune: "the data contradict the model for the current gains.",
+    "robustness": "Show the margins on the Nyquist plot",
 }
 kBannerColors = {
     kCaution: ("#fdf3d7", ps.WARNING),
-    kDoNotTune: ("#fbe9e9", ps.CRITICAL),
+    kBad: ("#fbe9e9", ps.CRITICAL),
 }
 
 kNameColumnWidth = 170
 kPanelSize = (760, 680)
 
-kNoCheckText = (
+kNoModelCheckText = (
     "No model checked yet: the check needs data, an identified model and gains."
 )
+kNoTuningCheckText = "No tuning checked yet: the check needs a model and gains."
 kModelCheckHint = (
     "<b>Can the model be trusted to tune these gains?</b><br>"
     "A controller tuned on a wrong model can be unstable on the vehicle. The "
@@ -73,17 +78,21 @@ kModelCheckHint = (
     "<b>✕ Do not tune:</b> the data contradict the model.<br><br>"
     "Click the verdict for the details of each check."
 )
+kTuningNote = (
+    "The margins are those of the loop closed on the model: they hold as far "
+    "as the model does, which the model check tells."
+)
 
 
-def verdictSentence(model_check):
+def verdictSentence(kind, verdict):
     """The verdict and the check that decides it, in one line."""
-    sentence = kLevelLabels[model_check.level]
-    deciding = model_check.deciding
+    sentence = kLevelLabels[kind][verdict.level]
+    deciding = verdict.deciding
     return sentence if deciding is None else f"{sentence}: {deciding.reason}"
 
 
 def bandSentence(model_check):
-    """Where the checks look, and why there."""
+    """Where the checks of the model look, and why there."""
     critical = model_check.critical
     if critical is None:
         return (
@@ -106,12 +115,12 @@ def bandSentence(model_check):
     )
 
 
-def checksHtml(model_check, with_links=True):
-    """The verdict, where the checks look and one table row per check. The
+def verdictHtml(kind, verdict, note, with_links):
+    """The verdict, a note on its checks and one table row per check. The
     links name the plot that shows a check that did not pass."""
-    level = model_check.level
+    level = verdict.level
     rows = []
-    for check in model_check.checks:
+    for check in verdict.checks:
         details = html.escape(check.value)
         if check.criterion:
             details += (
@@ -132,31 +141,56 @@ def checksHtml(model_check, with_links=True):
             f"<td>{details}</td></tr>"
         )
     return (
-        f'<p><b style="color:{kLevelColors[level]}">{kLevelLabels[level]}:</b> '
-        f"{kVerdicts[level]}</p>"
-        f"<p>{html.escape(bandSentence(model_check))}</p>"
+        f'<p><b style="color:{kLevelColors[level]}">{kLevelLabels[kind][level]}:'
+        f"</b> {kVerdicts[kind][level]}</p>"
+        f"<p>{html.escape(note)}</p>"
         f'<table cellspacing="0" cellpadding="4">{"".join(rows)}</table>'
     )
 
 
-class ModelCheckBadge(QPushButton):
-    """The verdict, clicked to open its details."""
+def modelCheckHtml(model_check, with_links=True):
+    if model_check is None:
+        return f"<p>{kNoModelCheckText}</p>"
+    return verdictHtml(kModel, model_check, bandSentence(model_check), with_links)
 
-    def __init__(self, parent=None):
+
+def tuningCheckHtml(tuning_check, with_links=True):
+    if tuning_check is None:
+        return f"<p>{kNoTuningCheckText}</p>"
+    return verdictHtml(kTuning, tuning_check, kTuningNote, with_links)
+
+
+def checksHtml(model_check, tuning_check):
+    """Both checks, each under a heading named as its kind to scroll to."""
+    return (
+        f'<h3><a name="{kModel}">Model check</a></h3>{modelCheckHtml(model_check)}'
+        f'<h3><a name="{kTuning}">Tuning check</a></h3>'
+        f"{tuningCheckHtml(tuning_check)}"
+    )
+
+
+class CheckBadge(QPushButton):
+    """The verdict of a check of a kind, clicked to open its details."""
+
+    def __init__(self, kind, prefix="", parent=None):
         super().__init__(parent)
+        self.kind = kind
+        self.prefix = prefix
         self.setFlat(True)
         self.setCursor(Qt.PointingHandCursor)
         self.showCheck(None)
 
-    def showCheck(self, model_check):
-        if model_check is None:
-            self.setText("—")
-            self.setToolTip(kNoCheckText)
+    def showCheck(self, verdict):
+        if self.kind == kModel:
+            self.setToolTip(modelCheckHtml(verdict, with_links=False))
+        else:
+            self.setToolTip(tuningCheckHtml(verdict, with_links=False))
+        if verdict is None:
+            self.setText(f"{self.prefix}—")
             color = ps.INK
         else:
-            self.setText(f"{kLevelLabels[model_check.level]} ▸")
-            self.setToolTip(checksHtml(model_check, with_links=False))
-            color = kLevelColors[model_check.level]
+            self.setText(f"{self.prefix}{kLevelLabels[self.kind][verdict.level]} ▸")
+            color = kLevelColors[verdict.level]
         self.setStyleSheet(
             "QPushButton { border: none; padding: 0; text-align: left;"
             f" font-weight: bold; color: {color}; }}"
@@ -164,14 +198,15 @@ class ModelCheckBadge(QPushButton):
         )
 
 
-class ModelCheckPanel(QDialog):
-    """Details of each check. Not modal: it follows the gains while tuning."""
+class ChecksPanel(QDialog):
+    """Details of each check of the model and of the tuning. Not modal: it
+    follows the gains while tuning."""
 
     evidenceRequested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Model check")
+        self.setWindowTitle("Model and tuning checks")
         self.text = QTextBrowser()
         self.text.setOpenLinks(False)
         self.text.anchorClicked.connect(
@@ -184,16 +219,17 @@ class ModelCheckPanel(QDialog):
         self.resize(*kPanelSize)
         # Placed by its owner when first shown, then left where the user puts it
         self.was_placed = False
-        self.showCheck(None)
+        self.showChecks(None, None)
 
-    def showCheck(self, model_check):
+    def showChecks(self, model_check, tuning_check):
         # A gain change must not scroll the checks being read back to the top
         scroll_bar = self.text.verticalScrollBar()
         position = scroll_bar.value()
-        self.text.setHtml(
-            kNoCheckText if model_check is None else checksHtml(model_check)
-        )
+        self.text.setHtml(checksHtml(model_check, tuning_check))
         scroll_bar.setValue(position)
+
+    def showSection(self, kind):
+        self.text.scrollToAnchor(kind)
 
 
 class ElidedLabel(QLabel):
@@ -204,21 +240,24 @@ class ElidedLabel(QLabel):
         QPainter(self).drawText(self.rect(), Qt.AlignLeft | Qt.AlignVCenter, text)
 
 
-class ModelCheckBanner(QFrame):
-    """One-line warning of a model that is not good, shown where the gains are
-    read. Made for the corner of a QTabWidget, which sizes it by its hint."""
+class ChecksBanner(QFrame):
+    """One-line warning of the checks that are not good."""
 
-    detailsRequested = pyqtSignal()
+    # Kind of the first check that is not good
+    detailsRequested = pyqtSignal(str)
     overrideRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("modelCheckBanner")
+        self.setObjectName("checksBanner")
+        self.warned_kind = kModel
         self.label = ElidedLabel()
         # The text is cut rather than widening the window
         self.label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.btn_details = QPushButton("Details")
-        self.btn_details.clicked.connect(self.detailsRequested)
+        self.btn_details.clicked.connect(
+            lambda: self.detailsRequested.emit(self.warned_kind)
+        )
         self.btn_override = QPushButton("Use anyway")
         self.btn_override.setToolTip(
             "Show the gains as usable although the data contradict the model"
@@ -233,26 +272,60 @@ class ModelCheckBanner(QFrame):
         self.setLayout(layout)
         self.hide()
 
-    def showCheck(self, model_check, is_overridden):
-        if model_check is None or model_check.level == kGood:
+    def showChecks(self, model_check, tuning_check, is_overridden):
+        warned = [
+            (kind, verdict)
+            for kind, verdict in ((kModel, model_check), (kTuning, tuning_check))
+            if verdict is not None and verdict.level != kGood
+        ]
+        if not warned:
             self.hide()
             return
-        level = model_check.level
-        background, border = kBannerColors[level]
+        # The worst first: the end of the line is cut in a narrow window
+        warned.sort(key=lambda kind_verdict: kind_verdict[1].level != kBad)
+        self.warned_kind = warned[0][0]
+        is_bad = any(verdict.level == kBad for _, verdict in warned)
+        background, border = kBannerColors[kBad if is_bad else kCaution]
         self.setStyleSheet(
-            f"#modelCheckBanner {{ background: {background};"
+            f"#checksBanner {{ background: {background};"
             f" border: 1px solid {border}; border-radius: 4px; }}"
         )
-        sentence = verdictSentence(model_check)
+        sentence = " · ".join(
+            verdictSentence(kind, verdict) for kind, verdict in warned
+        )
         self.label.setText(sentence)
         self.label.setToolTip(sentence)
-        self.btn_override.setVisible(level == kDoNotTune and not is_overridden)
+        self.btn_override.setVisible(
+            model_check is not None and model_check.level == kBad and not is_overridden
+        )
         self.show()
+
+
+class ChecksCorner(QWidget):
+    """The warning of the checks and the verdict of the tuning, where the
+    gains are read. Made for the corner of a QTabWidget, which sizes it by
+    its hint."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.banner = ChecksBanner()
+        self.tuning_badge = CheckBadge(kTuning, prefix="Tuning check: ")
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 4, 0)
+        layout.addWidget(self.banner, stretch=1)
+        layout.addWidget(self.tuning_badge)
+        self.setLayout(layout)
+
+    def showChecks(self, model_check, tuning_check, is_overridden):
+        self.banner.showChecks(model_check, tuning_check, is_overridden)
+        self.tuning_badge.showCheck(tuning_check)
         self.updateGeometry()
 
     def sizeHint(self):
         hint = super().sizeHint()
-        width = hint.width() + self.label.sizeHint().width()
+        width = hint.width()
+        if not self.banner.isHidden():
+            width += self.banner.label.sizeHint().width()
         tabs = self.parentWidget()
         if tabs is not None and hasattr(tabs, "tabBar"):
             # A wider corner would squeeze the tabs
