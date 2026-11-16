@@ -152,8 +152,12 @@ when it does not pass, what to do. *Show this band on the Bode plot* zooms the B
 the band, where the model can be compared with the measured points (a double click on the
 plot restores its range). This window can stay open: it follows the gains.
 
+<img src="docs/gui_checks_details.png" width="600"/>
+
 While the model is not good, a banner over the gains gives the reason. On *Do not tune*, the
 gains are also struck through until *Use anyway*, which holds until the next model.
+
+![Model not to tune on](docs/gui_model_check.png)
 
 Without a *reference* in the preset, the plant is measured from the input, which the feedback
 biases where it dominates the excitation. When the residuals show this feedback (Residuals
@@ -179,6 +183,8 @@ Click the verdict for the details of each margin, in the same window as those of
 check. While the tuning is not good, the banner over the gains gives the reason, next to
 that of the model check. The margins are those of the model: they hold as far as the model
 check is good.
+
+![Tuning with low margins](docs/gui_tuning_check.png)
 
 #### Tuning Gains
 
