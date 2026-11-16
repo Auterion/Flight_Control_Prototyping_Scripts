@@ -129,9 +129,10 @@ verdict on the model, for the gains currently set:
 
 The checks compare the model with the plant measured from the data (the points of the Bode
 plot, estimated without a model structure) where the stability of the loop is at stake: the
-band from 1/3 to 3 times its crossover, shaded on the Bode plot. The verdict therefore
-follows the gains: a model can be good for the flown gains and not for a faster tuning,
-whose band leaves the frequencies the maneuver excited.
+band from 1/3 to 3 times its crossover. The Bode plot always shades this band, with or
+without data to check the model on. The verdict therefore follows the gains: a model can be
+good for the flown gains and not for a faster tuning, whose band leaves the frequencies the
+maneuver excited.
 
 | Check | Passes when |
 |-------|-------------|
@@ -145,7 +146,8 @@ A loop can be safe at its crossover: it has none, or more than 90° of phase mar
 as a low feedback gain next to a feedforward (e.g. a fixed-wing rate loop). It is then
 checked where its gain comes the closest to −1 instead. When its gain stays far from −1 at
 all frequencies (modulus margin of 0.75 or more), no band has to be excited, and the model
-is compared over all the measured frequencies.
+is compared over all the measured frequencies. The Bode plot then still shades the band
+around its crossover, or around its closest approach to −1 when its gain stays below 1.
 
 Click the verdict for the details of each check: what it found, what it takes to pass and,
 when it does not pass, what to do. *Show this band on the Bode plot* zooms the Bode plot on

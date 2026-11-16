@@ -61,8 +61,10 @@ from data_selection_window import DataSelectionWindow
 from loop_model import LoopModel, idealGains, parallelGains, scaledGains
 from model_check import (
     ModelEvidence,
+    bandAround,
     checkModel,
     feedbackCorrelation,
+    frequencyOfInterest,
     kGoodFit,
     kPoorFit,
     measurePlant,
@@ -657,6 +659,7 @@ class Window(QDialog):
         for curve in self.generalCurves():
             curve.setData([], [])
         self.bode_margin_text.setLines([])
+        self.showBodeBand(None)
         self.lbl_fit.setText("—")
         self.lbl_fit.setStyleSheet("")
         self.lbl_closed_loop_fit.setText("—")
@@ -788,12 +791,12 @@ class Window(QDialog):
         self.hover_readouts.append(
             ps.HoverReadout(bode_phase_plot, "f = {:.3g} Hz", "{:.1f} deg")
         )
-        self.bode_check_bands = [
+        self.bode_bands = [
             ps.addBand(plot) for plot in (bode_mag_plot, bode_phase_plot)
         ]
         # Not a curve: the legend sample of the bands
-        self.bode_check_band_sample = bode_mag_plot.plot(
-            pen=None, fillLevel=0.0, fillBrush=self.bode_check_bands[0].brush
+        self.bode_band_sample = bode_mag_plot.plot(
+            pen=None, fillLevel=0.0, fillBrush=self.bode_bands[0].brush
         )
 
         # Qt shares the free space evenly on top of each column's preferred
@@ -2062,18 +2065,19 @@ class Window(QDialog):
             and model_check.level == kBad
             and not self.is_model_check_overridden
         )
-        self.showCheckBand(None if model_check is None else model_check.band)
 
-    def showCheckBand(self, band):
-        """Shade the band (Hz) the model is checked over on the Bode plot."""
-        for item in self.bode_check_bands:
+    def showBodeBand(self, center):
+        """Shade the band around center, the frequencyOfInterest of the loop,
+        on the Bode plot. None hides it."""
+        band = bandAround(center, self.dt)
+        for item in self.bode_bands:
             item.setVisible(band is not None)
             if band is not None:
                 item.setRegion(np.log10(band))
         ps.setLegendEntry(
             self.bode_legend,
-            self.bode_check_band_sample,
-            None if band is None else "Band of the model check",
+            self.bode_band_sample,
+            None if center is None else f"Band around {center.name}",
         )
 
     def strikeGains(self, is_struck):
@@ -2220,6 +2224,7 @@ class Window(QDialog):
         self.bode_phase_curves["open"].setData(f, np.rad2deg(phase_ol))
         self.bode_phase_curves["closed"].setData(f, np.rad2deg(phase_cl))
         self.bode_margin_text.setLines(margins.values())
+        self.showBodeBand(frequencyOfInterest(stability_margins))
 
         f_range = (np.log10(f[0]), np.log10(f[-1]))
         self.bode_mag_plot.getViewBox().setDefaultRange(f_range, (-20, 20))

@@ -98,7 +98,8 @@ def bandSentence(model_check):
         return (
             "With these gains, the loop gain stays far from −1 at all "
             "frequencies: the model is compared with the data over all the "
-            "measured frequencies."
+            "measured frequencies, not only over the band shaded on the Bode "
+            "plot."
         )
     low, high = (hertz(f) for f in model_check.band)
     if critical.is_crossover:
