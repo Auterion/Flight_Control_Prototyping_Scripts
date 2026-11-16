@@ -186,6 +186,9 @@ check. While the tuning is not good, the banner over the gains gives the reason,
 that of the model check. The margins are those of the model: they hold as far as the model
 check is good.
 
+Both checks are automated and based on good-practice rules: they do not guarantee a stable
+or good behavior on the actual vehicle, as the top of the details window reminds.
+
 ![Tuning with low margins](docs/gui_tuning_check.png)
 
 #### Tuning Gains

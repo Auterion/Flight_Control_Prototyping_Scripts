@@ -12,6 +12,7 @@ import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 from check_widgets import (  # noqa: E402
     CheckBadge,
+    kChecksDisclaimer,
     kNoModelCheckText,
     kNoTuningCheckText,
     kTuning,
@@ -271,6 +272,22 @@ def test_details_scroll_to_the_tuning_check(window, qapp):
     qapp.processEvents()
 
     assert panel.text.verticalScrollBar().value() > 0
+
+
+def test_details_keep_a_disclaimer_over_the_checks(window, qapp):
+    window.show()
+    qapp.processEvents()
+    panel = window.checks_panel
+    panel.resize(panel.width(), 200)
+
+    window.showChecksPanel(kTuning)
+    qapp.processEvents()
+
+    assert panel.text.verticalScrollBar().value() > 0
+    assert panel.disclaimer.isVisible()
+    assert "do not guarantee" in panel.disclaimer.text()
+    assert panel.disclaimer.geometry().height() > 0
+    assert kChecksDisclaimer not in panel.text.toPlainText()
 
 
 def test_margin_link_shows_the_robustness_plots(window):
