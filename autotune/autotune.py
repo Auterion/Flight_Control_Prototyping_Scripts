@@ -69,6 +69,7 @@ from model_check import (
     kPoorFit,
     measurePlant,
 )
+from pid_analyse_window import compute_step_responses
 from pid_design import computePidGmvc
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPalette
@@ -758,8 +759,10 @@ class Window(QDialog):
             ylabel="Amplitude (rad/s)",
         )
         ps.xOnlyMouse(step_plot)
+        self.step_legend = ps.addLegend(step_plot, "bottom-right")
         self.step_reference_curve = step_plot.plot(pen=ps.pen(ps.INK, 1, "--"))
-        self.step_response_curve = step_plot.plot(pen=ps.pen(ps.BLUE, 2))
+        self.flown_step_response_curve = step_plot.plot(pen=ps.pen(ps.ORANGE, 1.5))
+        self.step_response_curve = step_plot.plot(pen=ps.pen(ps.BLUE, 2), name="Model")
         envelope_pen = ps.pen(ps.CRITICAL, 1, "--")
         self.overshoot_limit_curve = step_plot.plot(pen=envelope_pen)
         self.settling_time_curve = step_plot.plot(pen=envelope_pen)
@@ -825,6 +828,7 @@ class Window(QDialog):
             *self.bode_mag_curves.values(),
             *self.bode_phase_curves.values(),
             self.step_reference_curve,
+            self.flown_step_response_curve,
             self.step_response_curve,
             self.overshoot_limit_curve,
             self.settling_time_curve,
@@ -2186,6 +2190,21 @@ class Window(QDialog):
         self.step_response_curve.setData(t, y)
         self.updateStepInfoEnvelope()
 
+    def plotFlownStepResponse(self):
+        """Response of the flown loop to a step of its reference, measured
+        from the estimation range."""
+        response = None
+        if self.reference is not None:
+            t, response, _ = compute_step_responses(self.reference, self.y, self.t)
+        if response is None:
+            t, response = [], []
+        self.flown_step_response_curve.setData(t, response)
+        ps.setLegendEntry(
+            self.step_legend,
+            self.flown_step_response_curve,
+            "Measured, flown gains" if len(t) > 0 else None,
+        )
+
     def plotBode(self, loop, stability_margins, is_stable):
         gain_margin, phase_margin, _, phase_crossover, gain_crossover, _ = (
             stability_margins
@@ -2655,6 +2674,7 @@ class Window(QDialog):
             dt = max(get_delta_mean(self.t), 0.008)
             self.resampleData(dt)
             self.plotInputOutput(redraw=True)
+            self.plotFlownStepResponse()
 
     def resampleData(self, dt):
         self.dt = dt

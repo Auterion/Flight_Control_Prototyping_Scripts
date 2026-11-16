@@ -73,7 +73,7 @@ the new commits of the tool, none when the checkout cannot be fast-forwarded, th
 fast-forward, the dependency sync, local changes kept) and its banner;
 `test_plots.py`, `test_data_selection.py` and `test_pid_analysis.py` check the data
 shown by the pyqtgraph plots (curves, margins, legends, kept zoom, linked axes, estimation
-and validation range selection and removal, restoring a saved selection, coherence of both ranges, plant model against its measured frequency response, residual correlations, robustness plots updated once their tab is shown). `conftest.py` closes the windows a test leaves open: an open window
+and validation range selection and removal, restoring a saved selection, coherence of both ranges, plant model against its measured frequency response, residual correlations, robustness plots updated once their tab is shown, the step response measured with the flown gains: from the reference of the preset, whatever the units of the signals, not biased by the quiet parts of the log, its metrics, next to the model's on the step response plot). `conftest.py` closes the windows a test leaves open: an open window
 repainted while its pyqtgraph scene is garbage collected segfaults. These run in CI via
 `.github/workflows/autotune_tests.yml`.
 
@@ -98,7 +98,7 @@ verdicts) → PX4 gains
 
 ### Module responsibilities
 
-- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in three pyqtgraph tabs (General: logged data, poles/zeros, step response, Bode; Robustness: Nyquist with margins, sensitivities, root locus; Residuals: residual autocorrelation and residual-input cross-correlation), and the checks: the verdict of the model check next to the fits, the band of interest of the loop on the Bode plot, the verdict of the tuning check and the banner of both over the gains.
+- **`autotune.py`** — Main PyQt5 GUI window (~900 lines). Orchestrates the full workflow: log loading, axis/vehicle-type selection, model parameter configuration, gain computation, and result visualization in three pyqtgraph tabs (General: logged data, poles/zeros, step response of the model next to the one measured with the flown gains, Bode; Robustness: Nyquist with margins, sensitivities, root locus; Residuals: residual autocorrelation and residual-input cross-correlation), and the checks: the verdict of the model check next to the fits, the band of interest of the loop on the Bode plot, the verdict of the tuning check and the banner of both over the gains.
 
 - **`data_extractor.py`** — Parses PX4 ULog binary logs using `pyulog`. Extracts and interpolates signals (rates, setpoints, actuator outputs, airspeed). Returns numpy arrays aligned to a common time base.
 
@@ -133,7 +133,7 @@ verdicts) → PX4 gains
 
 - **`check_widgets.py`** — Widgets of both checks: `CheckBadge` (verdict of a check, clicked for the details: the model's next to the fits, the tuning's over the gains), `ChecksPanel` (non-modal details of each check in plain sentences, following the gains, with links to the plots, under a disclaimer that stays in view), `ChecksBanner` (reasons of the checks that are not good, the worst first, with "Use anyway" on a bad model) and `ChecksCorner` (banner and tuning badge, in the corner of the tuning tabs).
 
-- **`pid_analyse_window.py`** — Secondary pyqtgraph window with the step response of the flown controller, estimated from the logged data by Wiener deconvolution over sliding windows.
+- **`pid_analyse_window.py`** — Secondary pyqtgraph window with the step response of the flown controller, estimated from the logged data (reference of the preset to output) by Wiener deconvolution over sliding 4 s windows: `compute_step_responses` gives the response of all the excited windows together, which the main window also shows, and the response of each of them.
 
 - **`closed_loop_sim.py`** — Simulates closed-loop behavior with the identified model and designed gains to validate stability before applying to the aircraft.
 
