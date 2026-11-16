@@ -4,6 +4,7 @@ Run with:  poetry run pytest test_presets.py
 """
 
 import presets
+import pytest
 
 
 def _redirect(monkeypatch, tmp_path):
@@ -68,3 +69,16 @@ def test_non_mapping_file_falls_back_to_defaults(tmp_path, monkeypatch):
     loaded = presets.load_presets()
 
     assert loaded == presets.DEFAULT_PRESETS
+
+
+@pytest.mark.parametrize(
+    "name, axis", [("Rollrate(FW)", 0), ("Pitchrate(FW)", 1), ("Yawrate(FW)", 2)]
+)
+def test_fixed_wing_rate_presets_have_the_gain_compression_of_their_axis(name, axis):
+    preset = presets.DEFAULT_PRESETS[name]
+
+    assert preset["output"] == f"vehicle_angular_velocity/xyz[{axis}].0"
+    assert set(preset["gains"]) == {"P", "I", "D", "FF"}
+    assert preset["gain_compression"] == (
+        f"gain_compression/compression_gains[{axis}].0"
+    )
