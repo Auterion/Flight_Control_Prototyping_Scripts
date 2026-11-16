@@ -771,9 +771,8 @@ class Window(QDialog):
         self.step_legend = ps.addLegend(step_plot, "bottom-right")
         self.step_reference_curve = step_plot.plot(pen=ps.pen(ps.INK, 1, "--"))
         self.flown_step_response_curve = step_plot.plot(pen=ps.pen(ps.ORANGE, 1.5))
+        self.flown_model_step_curve = step_plot.plot(pen=ps.pen(ps.MUTED, 1.5, "--"))
         self.step_response_curve = step_plot.plot(pen=ps.pen(ps.BLUE, 2), name="Model")
-        # Over the model's: dashes of both show where they are the same
-        self.flown_model_step_curve = step_plot.plot(pen=ps.pen(ps.ORANGE, 1.5, "--"))
         envelope_pen = ps.pen(ps.CRITICAL, 1, "--")
         self.overshoot_limit_curve = step_plot.plot(pen=envelope_pen)
         self.settling_time_curve = step_plot.plot(pen=envelope_pen)
