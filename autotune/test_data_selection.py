@@ -18,6 +18,7 @@ from data_selection_window import (  # noqa: E402
     kRangeColors,
     kValidation,
 )
+from pid_analyse_window import PIDAnalyseWindow  # noqa: E402
 from PyQt5.QtCore import QPointF, Qt  # noqa: E402
 from PyQt5.QtWidgets import QApplication, QFileDialog  # noqa: E402
 
@@ -400,6 +401,49 @@ def test_saved_selection_is_restored_with_its_preset(selection):
     assert presets.load_presets()["Rollrate"]["reference"] == (
         "vehicle_rates_setpoint/roll.0"
     )
+
+
+def analysed_signals(selection, monkeypatch):
+    analysed = {}
+    monkeypatch.setattr(
+        PIDAnalyseWindow,
+        "generate_step_response",
+        lambda self, u, y, t: analysed.update(u=u, y=y, t=t),
+    )
+    selection.plotPIDAnalysis()
+    return analysed
+
+
+def test_tuning_analysis_is_the_response_to_the_reference_of_the_preset(
+    selection, monkeypatch
+):
+    drag_span(selection, 76.5, 83.5)
+
+    analysed = analysed_signals(selection, monkeypatch)
+
+    t, _, y, _ = selection.getRangeData(kEstimation)
+    reference_index = selection.topic_names.index("vehicle_rates_setpoint/roll.0")
+    reference = selection.data_extractor.getAlignedData(
+        selection.topics[reference_index], t
+    )
+    assert analysed["t"] == pytest.approx(t)
+    assert analysed["y"] == pytest.approx(y)
+    assert analysed["u"] == pytest.approx(reference)
+
+
+def test_tuning_analysis_of_a_preset_without_reference_uses_its_input(
+    selection, monkeypatch
+):
+    selection.combo_preset.setCurrentIndex(
+        selection.combo_preset.findText("Rollrate(closed-loop)")
+    )
+    drag_span(selection, 76.5, 83.5)
+
+    analysed = analysed_signals(selection, monkeypatch)
+
+    _, u, _, _ = selection.getRangeData(kEstimation)
+    assert selection.topic_names[selection.index_u] == "vehicle_rates_setpoint/roll.0"
+    assert analysed["u"] == pytest.approx(u)
 
 
 def test_selection_without_ranges_is_the_whole_log(selection):

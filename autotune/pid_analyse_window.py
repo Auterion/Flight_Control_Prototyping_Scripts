@@ -61,13 +61,13 @@ class PIDAnalyseWindow(QDialog):
         self, u: np.ndarray, y: np.ndarray, t: np.ndarray
     ) -> dict:
         """Compute and plot step response."""
-        time, responses = compute_step_responses(u, y, t)
-        if responses is None:
+        time, response, window_responses = compute_step_responses(u, y, t)
+        if response is None:
             self.clearPlot()
             return {}
 
-        metrics = compute_step_response_metrics(time, responses)
-        self.plotStepResponses(time, responses, metrics)
+        metrics = compute_step_response_metrics(time, response)
+        self.plotStepResponses(time, response, window_responses, metrics)
         return metrics
 
     def curves(self):
@@ -84,27 +84,22 @@ class PIDAnalyseWindow(QDialog):
             curve.setData([], [])
         self.metrics_text.setLines([])
 
-    def plotStepResponses(self, time, responses, metrics):
-        n_windows = len(responses)
+    def plotStepResponses(self, time, response, window_responses, metrics):
+        n_windows = len(window_responses)
         breaks = np.full((n_windows, 1), np.nan)
         self.window_responses_curve.setData(
             np.hstack([np.tile(time, (n_windows, 1)), breaks]).ravel(),
-            np.hstack([responses, breaks]).ravel(),
+            np.hstack([window_responses, breaks]).ravel(),
         )
 
-        mean_resp = responses.mean(axis=0)
-        std_resp = responses.std(axis=0)
-        self.mean_response_curve.setData(time, mean_resp)
-        self.std_lower_curve.setData(time, mean_resp - std_resp)
-        self.std_upper_curve.setData(time, mean_resp + std_resp)
+        std_resp = window_responses.std(axis=0)
+        self.mean_response_curve.setData(time, response)
+        self.std_lower_curve.setData(time, response - std_resp)
+        self.std_upper_curve.setData(time, response + std_resp)
         self.step_input_curve.setData([time[0], 0, time[-1]], [0, 1, 1])
 
         self.metrics_text.setLines(
-            [
-                (f"{k}: {v[0]:.2f} ± {v[1]:.2f}", ps.MUTED)
-                for k, v in metrics.items()
-                if not np.isnan(v[0])
-            ]
+            [(f"{k}: {v:.2f}", ps.MUTED) for k, v in metrics.items() if not np.isnan(v)]
         )
 
 
@@ -113,17 +108,33 @@ def compute_step_responses(
     y: np.ndarray,
     t: np.ndarray,
     cutfreq: float = 25.0,
-    window_duration: float = 1.0,
+    window_duration: float = 4.0,
+    min_relative_energy: float = 0.1,
 ):
-    """Compute step responses from input/output signals."""
+    """Step response from u to y, estimated over sliding windows.
+
+    Returns its time, the response estimated from all the windows together
+    and the response of each window, None when the data are too short or
+    have no input.
+
+    The windows taper the response by their overlap with themselves shifted
+    by its time: 0.5 s of response read 20% low in 1 s windows for a loop
+    as slow as the pitch rate of a fixed-wing, 7% low in 4 s windows. Data
+    shorter than window_duration are one window.
+
+    Only the windows whose input has more than min_relative_energy times the
+    energy of the most excited one are used: the others mostly hold noise.
+    """
     dt = np.diff(t).mean()
     if np.isclose(dt, 0):
-        return None, None
+        return None, None, None
     fs = 1 / dt
 
-    frame_samples = int(window_duration * fs)
-    shift = frame_samples // 16
     response_window_samples = int(0.5 * fs)
+    frame_samples = min(int(window_duration * fs), len(u))
+    if frame_samples < 2 * response_window_samples:
+        return None, None, None
+    shift = max(frame_samples // 16, 1)
     time_response = t[:response_window_samples] - t[0]
 
     # Sliding windows
@@ -135,68 +146,57 @@ def compute_step_responses(
     u_windows = u_windows * window_func
     y_windows = y_windows * window_func
 
+    input_energy = (u_windows**2).sum(axis=1)
+    excited = input_energy > min_relative_energy * input_energy.max()
+    if not excited.any():
+        return None, None, None
+
     # Deconvolution
-    deconvolved = wiener_deconvolution(u_windows, y_windows, cutfreq, fs)
-    step_responses = deconvolved[:, :response_window_samples].cumsum(axis=1)
+    impulse_response, window_impulse_responses = wiener_deconvolution(
+        u_windows[excited], y_windows[excited], cutfreq, fs
+    )
+    step_response = impulse_response[:response_window_samples].cumsum()
+    window_step_responses = window_impulse_responses[
+        :, :response_window_samples
+    ].cumsum(axis=1)
 
     # Remove outlier windows
-    peaks = step_responses.max(axis=1)
+    peaks = window_step_responses.max(axis=1)
     median_peak = np.median(peaks)
     mad = np.median(np.abs(peaks - median_peak))
-    mask = np.abs(peaks - median_peak) < 3 * mad
-    step_responses = step_responses[mask]
+    mask = np.abs(peaks - median_peak) <= 3 * mad
 
-    return time_response, step_responses
+    return time_response, step_response, window_step_responses[mask]
 
 
-def compute_step_response_metrics(time: np.ndarray, responses: np.ndarray) -> dict:
-    """Compute rise time, settling time, overshoot, steady-state error."""
-    rise_times, settling_times, overshoots, steady_state_errors = [], [], [], []
+def compute_step_response_metrics(time: np.ndarray, response: np.ndarray) -> dict:
+    """Rise time, settling time, overshoot and steady-state error of a step
+    response."""
+    final_val = response[-1]
 
-    for resp in responses:
-        final_val = resp[-1]
+    # Rise time (10% -> 90%)
+    try:
+        t10 = time[np.where(response >= 0.1 * final_val)[0][0]]
+        t90 = time[np.where(response >= 0.9 * final_val)[0][0]]
+        rise_time = t90 - t10
+    except IndexError:
+        rise_time = np.nan
 
-        # Rise time (10% -> 90%)
-        try:
-            t10 = time[np.where(resp >= 0.1 * final_val)[0][0]]
-            t90 = time[np.where(resp >= 0.9 * final_val)[0][0]]
-            rise_times.append(t90 - t10)
-        except IndexError:
-            rise_times.append(np.nan)
+    # Settling time (stays within ±10% of final value till the end)
+    outside_bounds = np.abs(response - final_val) > 0.1 * np.abs(final_val)
+    settling_time = time[
+        np.where(outside_bounds)[0][-1] + 1 if outside_bounds.any() else 0
+    ]
 
-        # Settling time (within ±10% of final value)
-        tolerance = 0.1 * final_val
-        within_bounds = np.where(np.abs(resp - final_val) <= tolerance)[0]
-        if len(within_bounds) > 0:
-            for idx in within_bounds:
-                # check that response stays within bounds till the end
-                if np.all(np.abs(resp[idx:] - final_val) <= tolerance):
-                    settling_times.append(time[idx])
-                    break
-            else:
-                settling_times.append(np.nan)
-        else:
-            settling_times.append(np.nan)
+    peak_val = np.max(response[: int(len(response) * 0.8)])  # ignore drift at end
 
-        # Overshoot
-        peak_val = np.max(resp[: int(len(resp) * 0.8)])  # ignore drift at end
-        overshoot = (peak_val - final_val) / final_val * 100
-        overshoots.append(overshoot)
-
-        # Steady-state error (final value vs ideal 1.0)
-        steady_state_errors.append(final_val - 1)
-
-    metrics = {
-        "rise_time (s)": (np.nanmean(rise_times), np.nanstd(rise_times)),
-        "settling_time (s)": (np.nanmean(settling_times), np.nanstd(settling_times)),
-        "overshoot (%)": (np.nanmean(overshoots), np.nanstd(overshoots)),
-        "steady_state_error": (
-            np.nanmean(steady_state_errors),
-            np.nanstd(steady_state_errors),
-        ),
+    return {
+        "rise_time (s)": rise_time,
+        "settling_time (s)": settling_time,
+        "overshoot (%)": (peak_val - final_val) / final_val * 100,
+        # Final value vs ideal 1.0
+        "steady_state_error": final_val - 1,
     }
-
-    return metrics
 
 
 def wiener_deconvolution(
@@ -204,9 +204,22 @@ def wiener_deconvolution(
     output: np.ndarray,
     cutoff_freq: float,
     fs: float,
-    epsilon: float = 1e-3,
-) -> np.ndarray:
-    """Wiener deconvolution on input/output signals."""
+    epsilon: float = 1e-5,
+):
+    """Wiener deconvolution on windows of input/output signals.
+
+    Returns the impulse response of all the windows together and that of
+    each window. Together, the spectra of the windows are summed before the
+    division: each frequency comes from the windows that excite it, where
+    the mean of the windows would be shrunk by those that do not.
+
+    epsilon is the regularization relative to the highest input power, so
+    that the response does not depend on the units of the signals. The
+    response of all the windows barely depends on it: on the roll rate of
+    logs/quadrotor_sitl_jmavsim.ulg, 1e-6 to 1e-4 give the same within 1%.
+    Higher shrinks the response to an input whose spectrum has gaps, lower
+    lets the noise through in the response of each window.
+    """
     n_samples = input_.shape[1]
     n_fft = 2 ** int(np.ceil(np.log2(n_samples)))
 
@@ -218,14 +231,20 @@ def wiener_deconvolution(
     H = np.fft.fft(input_padded, axis=-1)
     G = np.fft.fft(output_padded, axis=-1)
 
-    # Wiener filter
     snr = create_frequency_mask(n_fft, cutoff_freq, fs)
-    H_conj = np.conj(H)
-    deconv_freq = (H_conj * G) / (H * H_conj + epsilon / snr[None, :])
+    cross_spectra = np.conj(H) * G
+    input_powers = (np.conj(H) * H).real
 
-    # IFFT to get impulse response
-    deconvolved = np.real(np.fft.ifft(deconv_freq, axis=-1))
-    return deconvolved[:, :n_samples]
+    def impulse_response(cross_spectrum, input_power):
+        # Wiener filter
+        regularization = epsilon * input_power.max(axis=-1, keepdims=True) / snr
+        deconv_freq = cross_spectrum / (input_power + regularization)
+        return np.real(np.fft.ifft(deconv_freq, axis=-1))[..., :n_samples]
+
+    return (
+        impulse_response(cross_spectra.sum(axis=0), input_powers.sum(axis=0)),
+        impulse_response(cross_spectra, input_powers),
+    )
 
 
 def create_frequency_mask(

@@ -719,6 +719,13 @@ class DataSelectionWindow(QDialog):
 
         t_sel, u_sel, y_sel, _ = self.getRangeData(kEstimation)
 
+        # The tuning is the response to the reference of the loop: the selected
+        # input is the output of the controller, unless the preset has no
+        # reference
+        reference, *_ = self.getFlownController(t_sel)
+        if reference is not None:
+            u_sel = reference
+
         # Create analysis window if not open yet
         if not hasattr(self, "pid_window") or self.pid_window is None:
             self.pid_window = PIDAnalyseWindow(self)
